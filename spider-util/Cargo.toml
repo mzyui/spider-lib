@@ -1,0 +1,32 @@
+[package]
+name = "spider-util"
+version = "0.3.1"
+edition = "2024"
+description = "Shared utility functions and types for the spider-lib ecosystem"
+license = "MIT"
+documentation = "https://docs.rs/spider-util"
+homepage = "https://github.com/mzyui/spider-lib"
+repository = "https://github.com/mzyui/spider-lib"
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+bincode.workspace = true
+bytes.workspace = true
+csv.workspace = true
+dashmap.workspace = true
+http.workspace = true
+linkify.workspace = true
+once_cell.workspace = true
+parking_lot.workspace = true
+psl.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+seahash.workspace = true
+thiserror.workspace = true
+url.workspace = true
+twox-hash = "2.1.2"
+
