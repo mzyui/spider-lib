@@ -29,12 +29,11 @@ use spider_util::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 
 #[allow(clippy::too_many_arguments)]
-use tokio::sync::Semaphore;
-
 pub fn spawn_downloader_task<S, C>(
     scheduler: Arc<Scheduler>,
     req_rx: AsyncReceiver<Request>,

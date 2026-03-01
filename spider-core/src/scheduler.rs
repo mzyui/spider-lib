@@ -47,11 +47,9 @@ use spider_util::constants::DEFAULT_VISITED_CACHE_SIZE;
 #[cfg(feature = "checkpoint")]
 use crate::SchedulerCheckpoint;
 
-#[cfg(not(feature = "checkpoint"))]
-use spider_util::constants::MAX_PENDING_REQUESTS;
-
 use spider_util::constants::{
     BLOOM_FILTER_CAPACITY, BLOOM_FILTER_HASH_FUNCTIONS,
+    MAX_PENDING_REQUESTS,
     VISITED_URL_CACHE_CAPACITY, VISITED_URL_CACHE_TTL_SECS,
 };
 use spider_util::error::SpiderError;

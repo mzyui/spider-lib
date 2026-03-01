@@ -48,6 +48,12 @@ use crate::spider::Spider;
 use num_cpus;
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
+
+#[cfg(feature = "checkpoint")]
+type RestoreResult = (
+    Option<crate::SchedulerCheckpoint>,
+    Option<std::collections::HashMap<String, serde_json::Value>>,
+);
 use spider_util::error::SpiderError;
 use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
@@ -59,8 +65,6 @@ use crate::stats::StatCollector;
 #[cfg(feature = "checkpoint")]
 use log::{debug, warn};
 
-#[cfg(feature = "checkpoint")]
-use crate::SchedulerCheckpoint;
 #[cfg(feature = "checkpoint")]
 use rmp_serde;
 #[cfg(feature = "checkpoint")]
@@ -432,7 +436,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     #[cfg(feature = "checkpoint")]
     fn restore_checkpoint(
         &mut self,
-    ) -> Result<(Option<SchedulerCheckpoint>, Option<std::collections::HashMap<String, serde_json::Value>>), SpiderError> {
+    ) -> Result<RestoreResult, SpiderError> {
         let mut scheduler_state = None;
         let mut pipeline_states = None;
 
