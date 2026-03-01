@@ -1,0 +1,162 @@
+[package]
+name = "spider-lib"
+version = "2.0.1"
+edition = "2024"
+authors = ["mzyui <mzyui@proton.me>"]
+description = "A Rust-based web scraping framework inspired by Scrapy (Python)."
+homepage = "https://github.com/mzyui/spider-lib"
+repository = "https://github.com/mzyui/spider-lib"
+license = "MIT"
+readme = "README.md"
+documentation = "https://docs.rs/spider-lib"
+keywords = ["web-scraping", "crawler", "scraper", "async", "rust"]
+categories = ["web-programming", "development-tools", "parsing"]
+
+[workspace]
+members = [
+    "spider-core",
+    "spider-downloader",
+    "spider-macro",
+    "spider-middleware",
+    "spider-pipeline",
+    "spider-util",
+]
+
+# Centralized workspace dependencies for consistent versions across crates
+[workspace.dependencies]
+# Core async/runtime
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync", "time", "fs", "signal"] }
+async-trait = "0.1"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1.0.228", features = ["derive", "rc"] }
+serde_json = "1.0.149"
+rmp-serde = "1.3.1"
+bincode = "1.3"
+
+# HTTP/Network
+reqwest = { version = "0.13.2", features = ["json", "stream", "multipart", "form", "native-tls"], default-features = false }
+http = "1.4.0"
+url = { version = "2.5.8", features = ["serde"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Concurrency/Sync
+parking_lot = "0.12"
+dashmap = { version = "6.1.0", features = ["serde"] }
+crossbeam = "0.8"
+kanal = "0.1"
+moka = { version = "0.12", features = ["future", "sync"] }
+governor = "0.3"
+
+# Utilities
+anyhow = "1.0"
+thiserror = "2.0.18"
+bytes = { version = "1.11.1", features = ["serde"] }
+seahash = "4.1.0"
+rand = "0.8"
+time = { version = "0.3", features = ["serde"] }
+once_cell = "1.19"
+num_cpus = "1.16"
+dirs = "5.0"
+
+# HTML/Web scraping
+scraper = "0.19"
+linkify = "0.10.0"
+psl = "2.1.183"
+robotstxt = "0.3.0"
+ua_generator = "0.5.46"
+
+# Cookies
+cookie = "0.17"
+cookie_store = "0.20"
+
+# Database/Storage
+rusqlite = "0.31"
+csv = "1.1"
+
+# Proc macros
+syn = { version = "2.0", features = ["full"] }
+quote = "1.0"
+
+[dependencies]
+
+spider-util = { version = "0.3.1", path = "spider-util" }
+spider-macro = { version = "0.1.8", path = "spider-macro" }
+spider-middleware = { version = "0.3.1", path = "spider-middleware", features = ["core"] }
+spider-core = { version = "1.0.1", path = "spider-core" }
+spider-pipeline = { version = "0.3.1", path = "spider-pipeline" }
+
+
+[features]
+default = ["core"]
+core = ["spider-middleware/core", "spider-pipeline/core"]
+
+middleware-cache = ["spider-middleware/middleware-cache"]
+middleware-proxy = ["spider-middleware/middleware-proxy"]
+middleware-user-agent = ["spider-middleware/middleware-user-agent"]
+middleware-robots = ["spider-middleware/middleware-robots"]
+middleware-cookies = ["spider-middleware/middleware-cookies"]
+
+pipeline-csv = ["spider-pipeline/pipeline-csv"]
+pipeline-json = ["spider-pipeline/pipeline-json"]
+pipeline-jsonl = ["spider-pipeline/pipeline-jsonl"]
+pipeline-sqlite = ["spider-pipeline/pipeline-sqlite"]
+pipeline-stream-json = ["spider-pipeline/pipeline-stream-json"]
+
+checkpoint = ["spider-core/checkpoint"]
+cookie-store = ["spider-core/cookie-store", "middleware-cookies"]
+
+
+# Note: middleware-cookies and cookie-store are interdependent features
+# When using middleware-cookies, cookie-store should also be enabled
+# When using cookie-store, middleware-cookies functionality may be desired
+
+[[example]]
+name = "quotes"
+path = "examples/quotes.rs"
+
+[[example]]
+name = "books"
+path = "examples/books.rs"
+
+
+[dev-dependencies]
+env_logger.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+dashmap.workspace = true
+
+[profile.release]
+# Full link-time optimization for maximum performance
+lto = "fat"
+# Single codegen unit allows better cross-module optimization
+codegen-units = 1
+# Abort on panic - smaller binaries, faster unwinding
+panic = "abort"
+# Maximum optimization level
+opt-level = 3
+
+# Release profile with debug symbols for profiling
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+# Keep debug symbols but strip debug info from dependencies
+debug-assertions = false
+
+# Benchmark profile - optimized but faster to compile than release
+[profile.bench]
+inherits = "release"
+# Use thin LTO for faster compilation during benchmarking
+lto = "thin"
+codegen-units = 4
+
+# Development profile with optimizations for debugging
+[profile.dev-opt]
+inherits = "dev"
+opt-level = 2
+debug-assertions = true

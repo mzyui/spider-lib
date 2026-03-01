@@ -1,0 +1,14 @@
+[profile.dev]
+opt-level = 0
+debug = 1
+debug-assertions = true
+overflow-checks = true
+lto = false
+codegen-units = 256
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+
+[build]
+jobs = 4
