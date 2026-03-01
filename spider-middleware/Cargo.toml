@@ -1,0 +1,44 @@
+[package]
+name = "spider-middleware"
+version = "0.3.1"
+edition = "2024"
+authors = ["mzyui <mzyui@proton.me>"]
+description = "Middleware implementations for the spider-lib web scraping framework."
+homepage = "https://github.com/mzyui/spider-lib"
+repository = "https://github.com/mzyui/spider-lib"
+license = "MIT"
+readme = "README.md"
+keywords = ["web-scraping", "middleware", "crawler", "scraper", "rust"]
+categories = ["web-programming", "development-tools", "parsing"]
+
+[dependencies]
+async-trait.workspace = true
+dashmap.workspace = true
+governor.workspace = true
+moka.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+tokio.workspace = true
+log.workspace = true
+url.workspace = true
+bytes.workspace = true
+bincode = { workspace = true, optional = true }
+dirs = { workspace = true, optional = true }
+cookie = { workspace = true, optional = true }
+cookie_store = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
+robotstxt = { workspace = true, optional = true }
+ua_generator = { workspace = true, optional = true }
+seahash.workspace = true
+http.workspace = true
+spider-util = { version = "0.3.1", path = "../spider-util" }
+
+[features]
+default = ["core"]
+core = []
+middleware-cache = ["dep:bincode", "dep:dirs"]
+middleware-proxy = []
+middleware-user-agent = ["dep:ua_generator"]
+middleware-robots = ["dep:robotstxt"]
+middleware-cookies = ["dep:cookie", "dep:cookie_store", "dep:time"]
