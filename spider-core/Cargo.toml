@@ -1,0 +1,43 @@
+[package]
+name = "spider-core"
+version = "1.0.1"
+edition = "2024"
+authors = ["mzyui <mzyui@proton.me>"]
+description = "Core functionality for the spider-lib web scraping framework."
+homepage = "https://github.com/mzyui/spider-lib"
+repository = "https://github.com/mzyui/spider-lib"
+license = "MIT"
+readme = "README.md"
+keywords = ["web-scraping", "crawler", "scraper", "async", "rust"]
+categories = ["web-programming", "development-tools", "parsing"]
+
+[dependencies]
+parking_lot.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+cookie_store = { workspace = true, optional = true }
+crossbeam.workspace = true
+dashmap.workspace = true
+futures-util.workspace = true
+kanal.workspace = true
+moka.workspace = true
+num_cpus.workspace = true
+rmp-serde = { workspace = true, optional = true }
+time = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+url.workspace = true
+
+spider-macro = { version = "0.1.8", path = "../spider-macro" }
+spider-util = { version = "0.3.1", path = "../spider-util" }
+spider-middleware = { version = "0.3.1", path = "../spider-middleware" }
+spider-pipeline = { version = "0.3.1", path = "../spider-pipeline" }
+spider-downloader = { version = "0.4.1", path = "../spider-downloader" }
+
+[features]
+default = ["core"]
+core = []
+checkpoint = ["dep:rmp-serde", "dep:time"]
+cookie-store = ["dep:cookie_store"]

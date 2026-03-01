@@ -1,0 +1,408 @@
+//! The core Crawler implementation for the `spider-lib` framework.
+//!
+//! This module defines the `Crawler` struct, which acts as the central orchestrator
+//! for the web scraping process. It ties together the scheduler, downloader,
+//! middlewares, spiders, and item pipelines to execute a crawl. The crawler
+//! manages the lifecycle of requests and items, handles concurrency, supports
+//! checkpointing for fault tolerance, and collects statistics for monitoring.
+//!
+//! It utilizes a task-based asynchronous model, spawning distinct tasks for
+//! handling initial requests, downloading web pages, parsing responses, and
+//! processing scraped items.
+
+use crate::Downloader;
+use crate::scheduler::Scheduler;
+use crate::spider::Spider;
+use crate::state::CrawlerState;
+use crate::stats::StatCollector;
+use crate::engine::CrawlerContext;
+use anyhow::Result;
+use futures_util::future::join_all;
+use kanal::{AsyncReceiver, bounded_async};
+use spider_middleware::middleware::Middleware;
+use spider_pipeline::pipeline::Pipeline;
+use spider_util::error::SpiderError;
+use spider_util::item::ScrapedItem;
+use spider_util::request::Request;
+use log::{debug, error, info, trace, warn};
+
+#[cfg(feature = "checkpoint")]
+use crate::checkpoint::save_checkpoint;
+#[cfg(feature = "checkpoint")]
+use std::path::PathBuf;
+
+use std::sync::Arc;
+use std::time::Duration;
+
+#[cfg(feature = "cookie-store")]
+use tokio::sync::RwLock;
+
+#[cfg(feature = "cookie-store")]
+use cookie_store::CookieStore;
+
+/// The central orchestrator for the web scraping process, handling requests, responses, items, concurrency, checkpointing, and statistics collection.
+pub struct Crawler<S: Spider, C> {
+    scheduler: Arc<Scheduler>,
+    req_rx: AsyncReceiver<Request>,
+    stats: Arc<StatCollector>,
+    downloader: Arc<dyn Downloader<Client = C> + Send + Sync>,
+    middlewares: Vec<Box<dyn Middleware<C> + Send + Sync>>,
+    spider: Arc<S>,
+    spider_state: Arc<S::State>,
+    pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
+    max_concurrent_downloads: usize,
+    parser_workers: usize,
+    max_concurrent_pipelines: usize,
+    channel_capacity: usize,
+    #[cfg(feature = "checkpoint")]
+    checkpoint_path: Option<PathBuf>,
+    #[cfg(feature = "checkpoint")]
+    checkpoint_interval: Option<Duration>,
+    #[cfg(feature = "cookie-store")]
+    pub cookie_store: Arc<RwLock<CookieStore>>,
+}
+
+impl<S, C> Crawler<S, C>
+where
+    S: Spider + 'static,
+    S::Item: ScrapedItem,
+    C: Send + Sync + Clone + 'static,
+{
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        scheduler: Arc<Scheduler>,
+        req_rx: AsyncReceiver<Request>,
+        downloader: Arc<dyn Downloader<Client = C> + Send + Sync>,
+        middlewares: Vec<Box<dyn Middleware<C> + Send + Sync>>,
+        spider: S,
+        pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
+        max_concurrent_downloads: usize,
+        parser_workers: usize,
+        max_concurrent_pipelines: usize,
+        channel_capacity: usize,
+        #[cfg(feature = "checkpoint")] checkpoint_path: Option<PathBuf>,
+        #[cfg(feature = "checkpoint")] checkpoint_interval: Option<Duration>,
+        stats: Arc<StatCollector>,
+        #[cfg(feature = "cookie-store")] cookie_store: Arc<tokio::sync::RwLock<CookieStore>>,
+    ) -> Self {
+        Crawler {
+            scheduler,
+            req_rx,
+            stats,
+            downloader,
+            middlewares,
+            spider: Arc::new(spider),
+            spider_state: Arc::new(S::State::default()),
+            pipelines,
+            max_concurrent_downloads,
+            parser_workers,
+            max_concurrent_pipelines,
+            channel_capacity,
+            #[cfg(feature = "checkpoint")]
+            checkpoint_path,
+            #[cfg(feature = "checkpoint")]
+            checkpoint_interval,
+            #[cfg(feature = "cookie-store")]
+            cookie_store,
+        }
+    }
+
+    pub async fn start_crawl(self) -> Result<(), SpiderError> {
+        info!(
+            "Crawler starting crawl with configuration: max_concurrent_downloads={}, parser_workers={}, max_concurrent_pipelines={}",
+            self.max_concurrent_downloads, self.parser_workers, self.max_concurrent_pipelines
+        );
+
+        #[cfg(feature = "checkpoint")]
+        let Crawler {
+            scheduler,
+            req_rx,
+            stats,
+            downloader,
+            middlewares,
+            spider,
+            spider_state,
+            pipelines,
+            max_concurrent_downloads,
+            parser_workers,
+            max_concurrent_pipelines,
+            channel_capacity: _,
+            checkpoint_path,
+            checkpoint_interval,
+            #[cfg(feature = "cookie-store")]
+                cookie_store: _,
+        } = self;
+
+        #[cfg(not(feature = "checkpoint"))]
+        let Crawler {
+            scheduler,
+            req_rx,
+            stats,
+            downloader,
+            middlewares,
+            spider,
+            spider_state,
+            pipelines,
+            max_concurrent_downloads,
+            parser_workers,
+            max_concurrent_pipelines,
+            channel_capacity: _,
+            #[cfg(feature = "cookie-store")]
+                cookie_store: _,
+        } = self;
+
+        let state = CrawlerState::new();
+        let pipelines = Arc::new(pipelines);
+
+        // Create aggregated context for efficient sharing across tasks
+        let ctx = CrawlerContext::new(
+            Arc::clone(&scheduler),
+            Arc::clone(&stats),
+            Arc::clone(&spider),
+            Arc::clone(&spider_state),
+            Arc::clone(&pipelines),
+        );
+
+        let channel_capacity = std::cmp::max(
+            self.max_concurrent_downloads * 3,
+            self.parser_workers * self.max_concurrent_pipelines * 2,
+        )
+        .max(self.channel_capacity);
+
+        trace!("Creating communication channels with capacity: {}", channel_capacity);
+        let (res_tx, res_rx) = bounded_async(channel_capacity);
+        let (item_tx, item_rx) = bounded_async(channel_capacity);
+
+        trace!("Spawning initial requests task");
+        let init_task = spawn_init_task(ctx.clone());
+
+        trace!("Initializing middleware manager");
+        let middlewares = super::SharedMiddlewareManager::new(middlewares);
+
+        trace!("Spawning downloader task");
+        let downloader = super::spawn_downloader_task::<S, C>(
+            Arc::clone(&ctx.scheduler),
+            req_rx,
+            downloader,
+            middlewares,
+            state.clone(),
+            res_tx.clone(),
+            max_concurrent_downloads,
+            Arc::clone(&ctx.stats),
+        );
+
+        trace!("Spawning parser task");
+        let parser = super::spawn_parser_task::<S>(
+            Arc::clone(&ctx.scheduler),
+            Arc::clone(&ctx.spider),
+            Arc::clone(&ctx.spider_state),
+            state.clone(),
+            res_rx,
+            item_tx.clone(),
+            parser_workers,
+            Arc::clone(&ctx.stats),
+        );
+
+        trace!("Spawning item processor task");
+        let processor = super::spawn_item_processor_task::<S>(
+            state.clone(),
+            item_rx,
+            Arc::clone(&ctx.pipelines),
+            max_concurrent_pipelines,
+            Arc::clone(&ctx.stats),
+        );
+
+        #[cfg(feature = "checkpoint")]
+        {
+            if let (Some(path), Some(interval)) = (&checkpoint_path, checkpoint_interval) {
+                let scheduler_cp = Arc::clone(&ctx.scheduler);
+                let pipelines_cp = Arc::clone(&ctx.pipelines);
+                let path_cp = path.clone();
+
+                #[cfg(feature = "cookie-store")]
+                let cookie_store_cp = self.cookie_store.clone();
+
+                #[cfg(not(feature = "cookie-store"))]
+                let _cookie_store_cp = ();
+
+                trace!("Starting periodic checkpoint task with interval: {:?}", interval);
+                tokio::spawn(async move {
+                    let mut interval_timer = tokio::time::interval(interval);
+                    interval_timer.tick().await;
+                    loop {
+                        tokio::select! {
+                            _ = interval_timer.tick() => {
+                                trace!("Checkpoint timer ticked, creating snapshot");
+                                if let Ok(scheduler_checkpoint) = scheduler_cp.snapshot().await {
+                                    debug!("Scheduler snapshot created, saving checkpoint to {:?}", path_cp);
+
+                                    #[cfg(feature = "cookie-store")]
+                                    let save_result = save_checkpoint::<S>(&path_cp, scheduler_checkpoint, &pipelines_cp, &cookie_store_cp).await;
+
+                                    #[cfg(not(feature = "cookie-store"))]
+                                    let save_result = save_checkpoint::<S>(&path_cp, scheduler_checkpoint, &pipelines_cp, &()).await;
+
+                                    if let Err(e) = save_result {
+                                        error!("Periodic checkpoint save failed: {}", e);
+                                    } else {
+                                        debug!("Periodic checkpoint saved successfully to {:?}", path_cp);
+                                    }
+                                } else {
+                                    warn!("Failed to create scheduler snapshot for checkpoint");
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                info!("Ctrl-C received, initiating graceful shutdown.");
+            }
+            _ = async {
+                loop {
+                    if scheduler.is_idle() && state.is_idle() {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        if scheduler.is_idle() && state.is_idle() {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                }
+            } => {
+                info!("Crawl has become idle, initiating shutdown.");
+            }
+        };
+
+        trace!("Closing communication channels");
+        drop(res_tx);
+        drop(item_tx);
+
+        if let Err(e) = scheduler.shutdown().await {
+            error!("Error during scheduler shutdown: {}", e);
+        } else {
+            debug!("Scheduler shutdown initiated successfully");
+        }
+
+        let timeout_duration = Duration::from_secs(30);
+
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(processor);
+        tasks.spawn(parser);
+        tasks.spawn(downloader);
+        tasks.spawn(init_task);
+
+        let results = tokio::time::timeout(timeout_duration, async {
+            let mut results = Vec::new();
+            while let Some(result) = tasks.join_next().await {
+                results.push(result);
+            }
+            results
+        })
+        .await;
+
+        let results = match results {
+            Ok(results) => {
+                trace!("All tasks completed during shutdown");
+                results
+            }
+            Err(_) => {
+                warn!(
+                    "Tasks did not complete within timeout ({}s), aborting remaining tasks and continuing with shutdown...",
+                    timeout_duration.as_secs()
+                );
+                tasks.abort_all();
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
+
+                Vec::new()
+            }
+        };
+
+        for result in results {
+            if let Err(e) = result {
+                error!("Task failed during shutdown: {}", e);
+            } else {
+                trace!("Task completed successfully during shutdown");
+            }
+        }
+
+        #[cfg(feature = "checkpoint")]
+        {
+            if let Some(path) = &checkpoint_path {
+                debug!("Creating final checkpoint at {:?}", path);
+                let scheduler_checkpoint = scheduler.snapshot().await?;
+
+                #[cfg(feature = "cookie-store")]
+                let result = save_checkpoint::<S>(
+                    path,
+                    scheduler_checkpoint,
+                    &pipelines,
+                    &self.cookie_store,
+                )
+                .await;
+
+                #[cfg(not(feature = "cookie-store"))]
+                let result =
+                    save_checkpoint::<S>(path, scheduler_checkpoint, &pipelines, &()).await;
+
+                if let Err(e) = result {
+                    error!("Final checkpoint save failed: {}", e);
+                } else {
+                    info!("Final checkpoint saved successfully to {:?}", path);
+                }
+            }
+        }
+
+        info!("Closing item pipelines...");
+        let futures: Vec<_> = pipelines.iter().map(|p| p.close()).collect();
+        join_all(futures).await;
+        debug!("All item pipelines closed");
+
+        info!("Crawl finished successfully\n{}", stats);
+        Ok(())
+    }
+
+    pub fn stats(&self) -> Arc<StatCollector> {
+        Arc::clone(&self.stats)
+    }
+
+    /// Returns a reference to the spider state.
+    pub fn state(&self) -> &S::State {
+        &self.spider_state
+    }
+
+    /// Returns an Arc clone of the spider state.
+    pub fn state_arc(&self) -> Arc<S::State> {
+        Arc::clone(&self.spider_state)
+    }
+}
+
+fn spawn_init_task<S, I>(
+    ctx: CrawlerContext<S, I>,
+) -> tokio::task::JoinHandle<()>
+where
+    S: Spider<Item = I> + 'static,
+    I: ScrapedItem,
+{
+    tokio::spawn(async move {
+        match ctx.spider.start_requests() {
+            Ok(requests) => {
+                for mut req in requests {
+                    req.url.set_fragment(None);
+                    match ctx.scheduler.enqueue_request(req).await {
+                        Ok(_) => {
+                            ctx.stats.increment_requests_enqueued();
+                        }
+                        Err(e) => {
+                            error!("Failed to enqueue initial request: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => error!("Failed to create start requests: {}", e),
+        }
+    })
+}

@@ -1,0 +1,514 @@
+//! # Builder Module
+//!
+//! Provides the [`CrawlerBuilder`], a fluent API for constructing and configuring
+//! [`Crawler`](crate::Crawler) instances with customizable settings and components.
+//!
+//! ## Overview
+//!
+//! The [`CrawlerBuilder`] simplifies the process of assembling various `spider-core`
+//! components into a fully configured web crawler. It provides a flexible,
+//! ergonomic interface for setting up all aspects of the crawling process.
+//!
+//! ## Key Features
+//!
+//! - **Concurrency Configuration**: Control the number of concurrent downloads,
+//!   parsing workers, and pipeline processors
+//! - **Component Registration**: Attach custom downloaders, middlewares, and pipelines
+//! - **Checkpoint Management**: Configure automatic saving and loading of crawl state
+//!   (requires `checkpoint` feature)
+//! - **Statistics Integration**: Initialize and connect the [`StatCollector`](crate::stats::StatCollector)
+//! - **Default Handling**: Automatic addition of essential middlewares when needed
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! use spider_core::CrawlerBuilder;
+//! use spider_middleware::rate_limit::RateLimitMiddleware;
+//! use spider_pipeline::console::ConsolePipeline;
+//! use spider_util::error::SpiderError;
+//!
+//! async fn setup_crawler() -> Result<(), SpiderError> {
+//!     let crawler = CrawlerBuilder::new(MySpider)
+//!         .max_concurrent_downloads(10)
+//!         .max_parser_workers(4)
+//!         .add_middleware(RateLimitMiddleware::default())
+//!         .add_pipeline(ConsolePipeline::new())
+//!         .with_checkpoint_path("./crawl.checkpoint")
+//!         .build()
+//!         .await?;
+//!
+//!     crawler.start_crawl().await
+//! }
+//! ```
+
+use crate::Downloader;
+use crate::ReqwestClientDownloader;
+use crate::scheduler::Scheduler;
+use crate::spider::Spider;
+use num_cpus;
+use spider_middleware::middleware::Middleware;
+use spider_pipeline::pipeline::Pipeline;
+use spider_util::error::SpiderError;
+use std::marker::PhantomData;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use super::Crawler;
+use crate::stats::StatCollector;
+#[cfg(feature = "checkpoint")]
+use log::{debug, warn};
+
+#[cfg(feature = "checkpoint")]
+use crate::SchedulerCheckpoint;
+#[cfg(feature = "checkpoint")]
+use rmp_serde;
+#[cfg(feature = "checkpoint")]
+use std::fs;
+
+/// Configuration for the crawler's concurrency settings.
+///
+/// This struct holds tunable parameters that control the parallelism
+/// and throughput of the crawler.
+pub struct CrawlerConfig {
+    /// The maximum number of concurrent downloads.
+    pub max_concurrent_downloads: usize,
+    /// The number of workers dedicated to parsing responses.
+    pub parser_workers: usize,
+    /// The maximum number of concurrent item processing pipelines.
+    pub max_concurrent_pipelines: usize,
+    /// The capacity of communication channels between components.
+    pub channel_capacity: usize,
+}
+
+impl Default for CrawlerConfig {
+    fn default() -> Self {
+        CrawlerConfig {
+            max_concurrent_downloads: num_cpus::get().max(16),
+            parser_workers: num_cpus::get().clamp(4, 16),
+            max_concurrent_pipelines: num_cpus::get().min(8),
+            channel_capacity: 1000,
+        }
+    }
+}
+
+/// A fluent builder for constructing [`Crawler`] instances.
+///
+/// `CrawlerBuilder` provides a chainable API for configuring all aspects
+/// of a web crawler, including concurrency settings, middleware, pipelines,
+/// and checkpoint options.
+///
+/// ## Type Parameters
+///
+/// - `S`: The [`Spider`] implementation type
+/// - `D`: The [`Downloader`] implementation type
+///
+/// ## Example
+///
+/// ```rust,ignore
+/// # use spider_core::{CrawlerBuilder, Spider};
+/// # use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+/// # struct MySpider;
+/// # #[async_trait::async_trait]
+/// # impl Spider for MySpider {
+/// #     type Item = String;
+/// #     type State = ();
+/// #     fn start_urls(&self) -> Vec<&'static str> { vec![] }
+/// #     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> { todo!() }
+/// # }
+/// let builder = CrawlerBuilder::new(MySpider)
+///     .max_concurrent_downloads(8)
+///     .max_parser_workers(4);
+/// ```
+pub struct CrawlerBuilder<S: Spider, D>
+where
+    D: Downloader,
+{
+    config: CrawlerConfig,
+    downloader: D,
+    spider: Option<S>,
+    middlewares: Vec<Box<dyn Middleware<D::Client> + Send + Sync>>,
+    pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
+    checkpoint_path: Option<PathBuf>,
+    checkpoint_interval: Option<Duration>,
+    _phantom: PhantomData<S>,
+}
+
+impl<S: Spider> Default for CrawlerBuilder<S, ReqwestClientDownloader> {
+    fn default() -> Self {
+        Self {
+            config: CrawlerConfig::default(),
+            downloader: ReqwestClientDownloader::default(),
+            spider: None,
+            middlewares: Vec::new(),
+            pipelines: Vec::new(),
+            checkpoint_path: None,
+            checkpoint_interval: None,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<S: Spider> CrawlerBuilder<S, ReqwestClientDownloader> {
+    /// Creates a new `CrawlerBuilder` for a given spider with the default [`ReqwestClientDownloader`].
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// let crawler = CrawlerBuilder::new(MySpider)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn new(spider: S) -> Self {
+        Self {
+            spider: Some(spider),
+            ..Default::default()
+        }
+    }
+}
+
+impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
+    /// Sets the maximum number of concurrent downloads.
+    ///
+    /// This controls how many HTTP requests can be in-flight simultaneously.
+    /// Higher values increase throughput but may overwhelm target servers.
+    ///
+    /// ## Default
+    ///
+    /// Defaults to the number of CPU cores, with a minimum of 16.
+    pub fn max_concurrent_downloads(mut self, limit: usize) -> Self {
+        self.config.max_concurrent_downloads = limit;
+        self
+    }
+
+    /// Sets the number of worker tasks dedicated to parsing responses.
+    ///
+    /// Parser workers process HTTP responses concurrently, calling the
+    /// spider's [`parse`](Spider::parse) method to extract items and
+    /// discover new URLs.
+    ///
+    /// ## Default
+    ///
+    /// Defaults to the number of CPU cores, clamped between 4 and 16.
+    pub fn max_parser_workers(mut self, limit: usize) -> Self {
+        self.config.parser_workers = limit;
+        self
+    }
+
+    /// Sets the maximum number of concurrent item processing pipelines.
+    ///
+    /// This controls how many items can be processed by pipelines simultaneously.
+    ///
+    /// ## Default
+    ///
+    /// Defaults to the number of CPU cores, with a maximum of 8.
+    pub fn max_concurrent_pipelines(mut self, limit: usize) -> Self {
+        self.config.max_concurrent_pipelines = limit;
+        self
+    }
+
+    /// Sets the capacity of internal communication channels.
+    ///
+    /// This controls the buffer size for channels between the downloader,
+    /// parser, and pipeline components. Higher values can improve throughput
+    /// at the cost of increased memory usage.
+    ///
+    /// ## Default
+    ///
+    /// Defaults to 1000.
+    pub fn channel_capacity(mut self, capacity: usize) -> Self {
+        self.config.channel_capacity = capacity;
+        self
+    }
+
+    /// Sets a custom downloader implementation.
+    ///
+    /// Use this method to provide a custom [`Downloader`] implementation
+    /// instead of the default [`ReqwestClientDownloader`].
+    pub fn downloader(mut self, downloader: D) -> Self {
+        self.downloader = downloader;
+        self
+    }
+
+    /// Adds a middleware to the crawler's middleware stack.
+    ///
+    /// Middlewares intercept and modify requests before they are sent and
+    /// responses after they are received. They are executed in the order
+    /// they are added.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// let crawler = CrawlerBuilder::new(MySpider)
+    ///     .add_middleware(RateLimitMiddleware::default())
+    ///     .add_middleware(RetryMiddleware::new())
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_middleware<M>(mut self, middleware: M) -> Self
+    where
+        M: Middleware<D::Client> + Send + Sync + 'static,
+    {
+        self.middlewares.push(Box::new(middleware));
+        self
+    }
+
+    /// Adds a pipeline to the crawler's pipeline stack.
+    ///
+    /// Pipelines process scraped items after they are extracted by the spider.
+    /// They can be used for validation, transformation, deduplication, or
+    /// storage (e.g., writing to files or databases).
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// let crawler = CrawlerBuilder::new(MySpider)
+    ///     .add_pipeline(ConsolePipeline::new())
+    ///     .add_pipeline(JsonPipeline::new("output.json")?)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn add_pipeline<P>(mut self, pipeline: P) -> Self
+    where
+        P: Pipeline<S::Item> + 'static,
+    {
+        self.pipelines.push(Box::new(pipeline));
+        self
+    }
+
+    /// Sets the path for saving and loading checkpoints.
+    ///
+    /// When enabled, the crawler periodically saves its state to this file,
+    /// allowing crawls to be resumed after interruption.
+    ///
+    /// Requires the `checkpoint` feature to be enabled.
+    pub fn with_checkpoint_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.checkpoint_path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    /// Sets the interval between automatic checkpoint saves.
+    ///
+    /// When enabled, the crawler saves its state at this interval.
+    /// Shorter intervals provide more frequent recovery points but may
+    /// impact performance.
+    ///
+    /// Requires the `checkpoint` feature to be enabled.
+    pub fn with_checkpoint_interval(mut self, interval: Duration) -> Self {
+        self.checkpoint_interval = Some(interval);
+        self
+    }
+
+    /// Builds the [`Crawler`] instance.
+    ///
+    /// This method finalizes the crawler configuration and initializes all
+    /// components. It performs validation and sets up default values where
+    /// necessary.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SpiderError::ConfigurationError`] if:
+    /// - `max_concurrent_downloads` is 0
+    /// - `parser_workers` is 0
+    /// - No spider was provided to the builder
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let crawler = CrawlerBuilder::new(MySpider)
+    ///     .max_concurrent_downloads(10)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub async fn build(mut self) -> Result<Crawler<S, D::Client>, SpiderError>
+    where
+        D: Downloader + Send + Sync + 'static,
+        D::Client: Send + Sync + Clone,
+        S::Item: Send + Sync + 'static,
+    {
+        let spider = self.take_spider()?;
+        self.init_default_pipeline();
+
+        // Restore checkpoint and get scheduler state
+        #[cfg(feature = "checkpoint")]
+        let (scheduler_state, pipeline_states) = self.restore_checkpoint()?;
+        #[cfg(not(feature = "checkpoint"))]
+        let scheduler_state: Option<()> = None;
+
+        // Restore pipeline states if checkpoint was loaded
+        #[cfg(feature = "checkpoint")]
+        {
+            if let Some(states) = pipeline_states {
+                for (name, state) in states {
+                    if let Some(pipeline) = self.pipelines.iter().find(|p| p.name() == name) {
+                        pipeline.restore_state(state).await?;
+                    } else {
+                        warn!("Checkpoint contains state for unknown pipeline: {}", name);
+                    }
+                }
+            }
+        }
+
+        // Get cookie store if feature is enabled
+        #[cfg(feature = "cookie-store")]
+        let cookie_store = {
+            #[cfg(feature = "checkpoint")]
+            {
+                let (_, cookie_store) = self.restore_cookie_store().await?;
+                cookie_store
+            }
+            #[cfg(not(feature = "checkpoint"))]
+            {
+                Some(crate::CookieStore::default())
+            }
+        };
+
+        // Create scheduler with or without checkpoint state
+        let (scheduler_arc, req_rx) = Scheduler::new(scheduler_state);
+        let downloader_arc = Arc::new(self.downloader);
+        let stats = Arc::new(StatCollector::new());
+
+        // Build crawler with or without cookie store based on feature flag
+        #[cfg(feature = "cookie-store")]
+        let crawler = Crawler::new(
+            scheduler_arc,
+            req_rx,
+            downloader_arc,
+            self.middlewares,
+            spider,
+            self.pipelines,
+            self.config.max_concurrent_downloads,
+            self.config.parser_workers,
+            self.config.max_concurrent_pipelines,
+            self.config.channel_capacity,
+            #[cfg(feature = "checkpoint")]
+            self.checkpoint_path.take(),
+            #[cfg(feature = "checkpoint")]
+            self.checkpoint_interval,
+            stats,
+            Arc::new(tokio::sync::RwLock::new(
+                cookie_store.unwrap_or_default(),
+            )),
+        );
+
+        #[cfg(not(feature = "cookie-store"))]
+        let crawler = Crawler::new(
+            scheduler_arc,
+            req_rx,
+            downloader_arc,
+            self.middlewares,
+            spider,
+            self.pipelines,
+            self.config.max_concurrent_downloads,
+            self.config.parser_workers,
+            self.config.max_concurrent_pipelines,
+            self.config.channel_capacity,
+            #[cfg(feature = "checkpoint")]
+            self.checkpoint_path.take(),
+            #[cfg(feature = "checkpoint")]
+            self.checkpoint_interval,
+            stats,
+        );
+
+        Ok(crawler)
+    }
+
+    /// Restores checkpoint state from disk (checkpoint feature only).
+    ///
+    /// This internal method loads a previously saved checkpoint file and
+    /// restores the scheduler state and pipeline states.
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of `(SchedulerCheckpoint, Option<HashMap<String, Value>>)`.
+    /// If no checkpoint path is configured or the file doesn't exist, returns
+    /// default values.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SpiderError`] if deserialization fails.
+    /// Note: Checkpoint file read/deserialization errors are logged as warnings
+    /// but do not fail the operation—the crawl proceeds without checkpoint data.
+    #[cfg(feature = "checkpoint")]
+    fn restore_checkpoint(
+        &mut self,
+    ) -> Result<(Option<SchedulerCheckpoint>, Option<std::collections::HashMap<String, serde_json::Value>>), SpiderError> {
+        let mut scheduler_state = None;
+        let mut pipeline_states = None;
+
+        if let Some(path) = &self.checkpoint_path {
+            debug!("Attempting to load checkpoint from {:?}", path);
+            match fs::read(path) {
+                Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
+                    Ok(checkpoint) => {
+                        scheduler_state = Some(checkpoint.scheduler);
+                        pipeline_states = Some(checkpoint.pipelines);
+                    }
+                    Err(e) => warn!("Failed to deserialize checkpoint from {:?}: {}", path, e),
+                },
+                Err(e) => warn!("Failed to read checkpoint file {:?}: {}", path, e),
+            }
+        }
+
+        Ok((scheduler_state, pipeline_states))
+    }
+
+    /// Restores cookie store from checkpoint (checkpoint + cookie-store features).
+    #[cfg(all(feature = "checkpoint", feature = "cookie-store"))]
+    async fn restore_cookie_store(
+        &mut self,
+    ) -> Result<(Option<()>, Option<crate::CookieStore>), SpiderError> {
+        let mut cookie_store = None;
+
+        if let Some(path) = &self.checkpoint_path {
+            debug!("Attempting to load cookie store from checkpoint {:?}", path);
+            match fs::read(path) {
+                Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
+                    Ok(checkpoint) => {
+                        cookie_store = Some(checkpoint.cookie_store);
+                    }
+                    Err(e) => warn!("Failed to deserialize cookie store from {:?}: {}", path, e),
+                },
+                Err(e) => warn!("Failed to read checkpoint file {:?}: {}", path, e),
+            }
+        }
+
+        Ok((None, cookie_store))
+    }
+
+    /// Extracts the spider from the builder.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SpiderError::ConfigurationError`] if:
+    /// - `max_concurrent_downloads` is 0
+    /// - `parser_workers` is 0
+    /// - No spider was provided
+    fn take_spider(&mut self) -> Result<S, SpiderError> {
+        if self.config.max_concurrent_downloads == 0 {
+            return Err(SpiderError::ConfigurationError(
+                "max_concurrent_downloads must be greater than 0.".to_string(),
+            ));
+        }
+        if self.config.parser_workers == 0 {
+            return Err(SpiderError::ConfigurationError(
+                "parser_workers must be greater than 0.".to_string(),
+            ));
+        }
+        self.spider.take().ok_or_else(|| {
+            SpiderError::ConfigurationError("Crawler must have a spider.".to_string())
+        })
+    }
+
+    /// Initializes the pipeline stack with a default [`ConsolePipeline`] if empty.
+    ///
+    /// This ensures that scraped items are always output somewhere, even if
+    /// no explicit pipelines are configured by the user.
+    fn init_default_pipeline(&mut self) {
+        if self.pipelines.is_empty() {
+            use spider_pipeline::console::ConsolePipeline;
+            self.pipelines.push(Box::new(ConsolePipeline::new()));
+        }
+    }
+}
+
