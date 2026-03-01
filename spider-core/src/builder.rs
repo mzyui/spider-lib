@@ -45,7 +45,7 @@ use crate::Downloader;
 use crate::ReqwestClientDownloader;
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
-use num_cpus;
+use crate::config::{CheckpointConfig, CrawlerConfig};
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
 
@@ -56,7 +56,7 @@ type RestoreResult = (
 );
 use spider_util::error::SpiderError;
 use std::marker::PhantomData;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -69,32 +69,6 @@ use log::{debug, warn};
 use rmp_serde;
 #[cfg(feature = "checkpoint")]
 use std::fs;
-
-/// Configuration for the crawler's concurrency settings.
-///
-/// This struct holds tunable parameters that control the parallelism
-/// and throughput of the crawler.
-pub struct CrawlerConfig {
-    /// The maximum number of concurrent downloads.
-    pub max_concurrent_downloads: usize,
-    /// The number of workers dedicated to parsing responses.
-    pub parser_workers: usize,
-    /// The maximum number of concurrent item processing pipelines.
-    pub max_concurrent_pipelines: usize,
-    /// The capacity of communication channels between components.
-    pub channel_capacity: usize,
-}
-
-impl Default for CrawlerConfig {
-    fn default() -> Self {
-        CrawlerConfig {
-            max_concurrent_downloads: num_cpus::get().max(16),
-            parser_workers: num_cpus::get().clamp(4, 16),
-            max_concurrent_pipelines: num_cpus::get().min(8),
-            channel_capacity: 1000,
-        }
-    }
-}
 
 /// A fluent builder for constructing [`Crawler`] instances.
 ///
@@ -129,12 +103,11 @@ where
     D: Downloader,
 {
     config: CrawlerConfig,
+    checkpoint_config: CheckpointConfig,
     downloader: D,
     spider: Option<S>,
     middlewares: Vec<Box<dyn Middleware<D::Client> + Send + Sync>>,
     pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
-    checkpoint_path: Option<PathBuf>,
-    checkpoint_interval: Option<Duration>,
     _phantom: PhantomData<S>,
 }
 
@@ -142,12 +115,11 @@ impl<S: Spider> Default for CrawlerBuilder<S, ReqwestClientDownloader> {
     fn default() -> Self {
         Self {
             config: CrawlerConfig::default(),
+            checkpoint_config: CheckpointConfig::default(),
             downloader: ReqwestClientDownloader::default(),
             spider: None,
             middlewares: Vec::new(),
             pipelines: Vec::new(),
-            checkpoint_path: None,
-            checkpoint_interval: None,
             _phantom: PhantomData,
         }
     }
@@ -287,7 +259,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     ///
     /// Requires the `checkpoint` feature to be enabled.
     pub fn with_checkpoint_path<P: AsRef<Path>>(mut self, path: P) -> Self {
-        self.checkpoint_path = Some(path.as_ref().to_path_buf());
+        self.checkpoint_config.path = Some(path.as_ref().to_path_buf());
         self
     }
 
@@ -299,7 +271,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     ///
     /// Requires the `checkpoint` feature to be enabled.
     pub fn with_checkpoint_interval(mut self, interval: Duration) -> Self {
-        self.checkpoint_interval = Some(interval);
+        self.checkpoint_config.interval = Some(interval);
         self
     }
 
@@ -332,6 +304,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     {
         let spider = self.take_spider()?;
         self.init_default_pipeline();
+
+        // Validate config
+        self.config.validate().map_err(SpiderError::ConfigurationError)?;
 
         // Restore checkpoint and get scheduler state
         #[cfg(feature = "checkpoint")]
@@ -381,14 +356,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
             self.middlewares,
             spider,
             self.pipelines,
-            self.config.max_concurrent_downloads,
-            self.config.parser_workers,
-            self.config.max_concurrent_pipelines,
-            self.config.channel_capacity,
+            self.config,
             #[cfg(feature = "checkpoint")]
-            self.checkpoint_path.take(),
-            #[cfg(feature = "checkpoint")]
-            self.checkpoint_interval,
+            self.checkpoint_config,
             stats,
             Arc::new(tokio::sync::RwLock::new(
                 cookie_store.unwrap_or_default(),
@@ -403,14 +373,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
             self.middlewares,
             spider,
             self.pipelines,
-            self.config.max_concurrent_downloads,
-            self.config.parser_workers,
-            self.config.max_concurrent_pipelines,
-            self.config.channel_capacity,
+            self.config,
             #[cfg(feature = "checkpoint")]
-            self.checkpoint_path.take(),
-            #[cfg(feature = "checkpoint")]
-            self.checkpoint_interval,
+            self.checkpoint_config,
             stats,
         );
 
@@ -440,7 +405,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         let mut scheduler_state = None;
         let mut pipeline_states = None;
 
-        if let Some(path) = &self.checkpoint_path {
+        if let Some(path) = &self.checkpoint_config.path {
             debug!("Attempting to load checkpoint from {:?}", path);
             match fs::read(path) {
                 Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
@@ -464,7 +429,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     ) -> Result<(Option<()>, Option<crate::CookieStore>), SpiderError> {
         let mut cookie_store = None;
 
-        if let Some(path) = &self.checkpoint_path {
+        if let Some(path) = &self.checkpoint_config.path {
             debug!("Attempting to load cookie store from checkpoint {:?}", path);
             match fs::read(path) {
                 Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {

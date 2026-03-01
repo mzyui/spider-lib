@@ -1,0 +1,349 @@
+//! # Configuration Module
+//!
+//! Provides configuration structs for the crawler and its components.
+//!
+//! ## Overview
+//!
+//! This module defines configuration structs that group related parameters
+//! together, following the Parameter Object pattern. Each configuration struct
+//! implements a builder pattern for ergonomic construction.
+//!
+//! ## Key Structs
+//!
+//! - [`CrawlerConfig`]: Core crawler concurrency and channel settings
+//! - [`CheckpointConfig`]: Checkpoint save/load configuration
+//! - [`ParserConfig`]: Parser worker configuration
+//! - [`DownloaderConfig`]: Downloader concurrency configuration
+//! - [`ItemProcessorConfig`]: Item processing pipeline configuration
+//!
+//! ## Example
+//!
+//! ```rust
+//! use spider_core::config::{CrawlerConfig, CheckpointConfig};
+//! use std::time::Duration;
+//!
+//! let crawler_config = CrawlerConfig::default()
+//!     .with_max_concurrent_downloads(10)
+//!     .with_parser_workers(4)
+//!     .with_max_concurrent_pipelines(8)
+//!     .with_channel_capacity(2000);
+//!
+//! let checkpoint_config = CheckpointConfig::builder()
+//!     .path("./crawl.checkpoint")
+//!     .interval(Duration::from_secs(60))
+//!     .build();
+//! ```
+
+use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Core configuration for the crawler's concurrency settings.
+///
+/// This struct holds tunable parameters that control the parallelism
+/// and throughput of the crawler.
+#[derive(Debug, Clone)]
+pub struct CrawlerConfig {
+    /// The maximum number of concurrent downloads.
+    pub max_concurrent_downloads: usize,
+    /// The number of workers dedicated to parsing responses.
+    pub parser_workers: usize,
+    /// The maximum number of concurrent item processing pipelines.
+    pub max_concurrent_pipelines: usize,
+    /// The capacity of communication channels between components.
+    pub channel_capacity: usize,
+}
+
+impl Default for CrawlerConfig {
+    fn default() -> Self {
+        CrawlerConfig {
+            max_concurrent_downloads: num_cpus::get().max(16),
+            parser_workers: num_cpus::get().clamp(4, 16),
+            max_concurrent_pipelines: num_cpus::get().min(8),
+            channel_capacity: 1000,
+        }
+    }
+}
+
+impl CrawlerConfig {
+    /// Creates a new `CrawlerConfig` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the maximum number of concurrent downloads.
+    pub fn with_max_concurrent_downloads(mut self, limit: usize) -> Self {
+        self.max_concurrent_downloads = limit;
+        self
+    }
+
+    /// Sets the number of parser workers.
+    pub fn with_parser_workers(mut self, count: usize) -> Self {
+        self.parser_workers = count;
+        self
+    }
+
+    /// Sets the maximum number of concurrent pipelines.
+    pub fn with_max_concurrent_pipelines(mut self, limit: usize) -> Self {
+        self.max_concurrent_pipelines = limit;
+        self
+    }
+
+    /// Sets the channel capacity.
+    pub fn with_channel_capacity(mut self, capacity: usize) -> Self {
+        self.channel_capacity = capacity;
+        self
+    }
+
+    /// Validates the configuration.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.max_concurrent_downloads == 0 {
+            return Err("max_concurrent_downloads must be greater than 0".to_string());
+        }
+        if self.parser_workers == 0 {
+            return Err("parser_workers must be greater than 0".to_string());
+        }
+        if self.max_concurrent_pipelines == 0 {
+            return Err("max_concurrent_pipelines must be greater than 0".to_string());
+        }
+        Ok(())
+    }
+}
+
+/// Configuration for checkpoint save/load operations.
+///
+/// This struct holds settings for automatic checkpoint persistence,
+/// allowing crawls to be resumed after interruption.
+#[derive(Debug, Clone, Default)]
+pub struct CheckpointConfig {
+    /// Optional path for saving and loading checkpoints.
+    pub path: Option<PathBuf>,
+    /// Optional interval between automatic checkpoint saves.
+    pub interval: Option<Duration>,
+}
+
+impl CheckpointConfig {
+    /// Creates a new `CheckpointConfig` with no path or interval.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Creates a new `CheckpointConfigBuilder` for fluent construction.
+    pub fn builder() -> CheckpointConfigBuilder {
+        CheckpointConfigBuilder::default()
+    }
+
+    /// Sets the checkpoint path.
+    pub fn with_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    /// Sets the checkpoint interval.
+    pub fn with_interval(mut self, interval: Duration) -> Self {
+        self.interval = Some(interval);
+        self
+    }
+
+    /// Returns true if checkpointing is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.path.is_some()
+    }
+}
+
+/// Builder for `CheckpointConfig`.
+#[derive(Debug, Default)]
+pub struct CheckpointConfigBuilder {
+    path: Option<PathBuf>,
+    interval: Option<Duration>,
+}
+
+impl CheckpointConfigBuilder {
+    /// Creates a new builder with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the checkpoint path.
+    pub fn path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.path = Some(path.as_ref().to_path_buf());
+        self
+    }
+
+    /// Sets the checkpoint interval.
+    pub fn interval(mut self, interval: Duration) -> Self {
+        self.interval = Some(interval);
+        self
+    }
+
+    /// Builds the `CheckpointConfig`.
+    pub fn build(self) -> CheckpointConfig {
+        CheckpointConfig {
+            path: self.path,
+            interval: self.interval,
+        }
+    }
+}
+
+/// Configuration for the parser workers.
+///
+/// This struct holds settings specific to the response parsing subsystem.
+#[derive(Debug, Clone)]
+pub struct ParserConfig {
+    /// The number of parser worker tasks to spawn.
+    pub worker_count: usize,
+    /// The capacity of the internal parse queue per worker.
+    pub queue_capacity: usize,
+}
+
+impl Default for ParserConfig {
+    fn default() -> Self {
+        ParserConfig {
+            worker_count: num_cpus::get().clamp(4, 16),
+            queue_capacity: 100,
+        }
+    }
+}
+
+impl ParserConfig {
+    /// Creates a new `ParserConfig` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the number of parser workers.
+    pub fn with_worker_count(mut self, count: usize) -> Self {
+        self.worker_count = count;
+        self
+    }
+
+    /// Sets the internal queue capacity per worker.
+    pub fn with_queue_capacity(mut self, capacity: usize) -> Self {
+        self.queue_capacity = capacity;
+        self
+    }
+}
+
+/// Configuration for the downloader.
+///
+/// This struct holds settings specific to the HTTP download subsystem.
+#[derive(Debug, Clone)]
+pub struct DownloaderConfig {
+    /// The maximum number of concurrent downloads.
+    pub max_concurrent: usize,
+    /// The backpressure threshold for response channel occupancy.
+    pub backpressure_threshold: usize,
+}
+
+impl Default for DownloaderConfig {
+    fn default() -> Self {
+        let max_concurrent = num_cpus::get().max(16);
+        DownloaderConfig {
+            max_concurrent,
+            backpressure_threshold: max_concurrent * 2,
+        }
+    }
+}
+
+impl DownloaderConfig {
+    /// Creates a new `DownloaderConfig` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the maximum number of concurrent downloads.
+    pub fn with_max_concurrent(mut self, limit: usize) -> Self {
+        self.max_concurrent = limit;
+        self
+    }
+
+    /// Sets the backpressure threshold.
+    pub fn with_backpressure_threshold(mut self, threshold: usize) -> Self {
+        self.backpressure_threshold = threshold;
+        self
+    }
+}
+
+/// Configuration for the item processor.
+///
+/// This struct holds settings specific to the item processing pipeline.
+#[derive(Debug, Clone)]
+pub struct ItemProcessorConfig {
+    /// The maximum number of concurrent pipeline processors.
+    pub max_concurrent: usize,
+}
+
+impl Default for ItemProcessorConfig {
+    fn default() -> Self {
+        ItemProcessorConfig {
+            max_concurrent: num_cpus::get().min(8),
+        }
+    }
+}
+
+impl ItemProcessorConfig {
+    /// Creates a new `ItemProcessorConfig` with default settings.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the maximum number of concurrent processors.
+    pub fn with_max_concurrent(mut self, limit: usize) -> Self {
+        self.max_concurrent = limit;
+        self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crawler_config_default() {
+        let config = CrawlerConfig::default();
+        assert!(config.max_concurrent_downloads > 0);
+        assert!(config.parser_workers > 0);
+        assert!(config.max_concurrent_pipelines > 0);
+        assert!(config.channel_capacity > 0);
+    }
+
+    #[test]
+    fn test_crawler_config_builder() {
+        let config = CrawlerConfig::new()
+            .with_max_concurrent_downloads(20)
+            .with_parser_workers(8)
+            .with_max_concurrent_pipelines(4)
+            .with_channel_capacity(500);
+
+        assert_eq!(config.max_concurrent_downloads, 20);
+        assert_eq!(config.parser_workers, 8);
+        assert_eq!(config.max_concurrent_pipelines, 4);
+        assert_eq!(config.channel_capacity, 500);
+    }
+
+    #[test]
+    fn test_crawler_config_validation() {
+        let valid_config = CrawlerConfig::default();
+        assert!(valid_config.validate().is_ok());
+
+        let invalid_config = CrawlerConfig::new().with_max_concurrent_downloads(0);
+        assert!(invalid_config.validate().is_err());
+    }
+
+    #[test]
+    fn test_checkpoint_config_builder() {
+        let config = CheckpointConfig::builder()
+            .path("./test.checkpoint")
+            .interval(Duration::from_secs(30))
+            .build();
+
+        assert!(config.path.is_some());
+        assert!(config.interval.is_some());
+        assert!(config.is_enabled());
+    }
+
+    #[test]
+    fn test_checkpoint_config_disabled() {
+        let config = CheckpointConfig::new();
+        assert!(!config.is_enabled());
+    }
+}

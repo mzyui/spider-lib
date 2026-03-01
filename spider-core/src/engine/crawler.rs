@@ -15,6 +15,7 @@ use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
+use crate::config::CrawlerConfig;
 use crate::engine::CrawlerContext;
 use anyhow::Result;
 use futures_util::future::join_all;
@@ -29,7 +30,7 @@ use log::{debug, error, info, trace, warn};
 #[cfg(feature = "checkpoint")]
 use crate::checkpoint::save_checkpoint;
 #[cfg(feature = "checkpoint")]
-use std::path::PathBuf;
+use crate::config::CheckpointConfig;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -50,14 +51,9 @@ pub struct Crawler<S: Spider, C> {
     spider: Arc<S>,
     spider_state: Arc<S::State>,
     pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
-    max_concurrent_downloads: usize,
-    parser_workers: usize,
-    max_concurrent_pipelines: usize,
-    channel_capacity: usize,
+    config: CrawlerConfig,
     #[cfg(feature = "checkpoint")]
-    checkpoint_path: Option<PathBuf>,
-    #[cfg(feature = "checkpoint")]
-    checkpoint_interval: Option<Duration>,
+    checkpoint_config: CheckpointConfig,
     #[cfg(feature = "cookie-store")]
     pub cookie_store: Arc<RwLock<CookieStore>>,
 }
@@ -76,12 +72,8 @@ where
         middlewares: Vec<Box<dyn Middleware<C> + Send + Sync>>,
         spider: S,
         pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
-        max_concurrent_downloads: usize,
-        parser_workers: usize,
-        max_concurrent_pipelines: usize,
-        channel_capacity: usize,
-        #[cfg(feature = "checkpoint")] checkpoint_path: Option<PathBuf>,
-        #[cfg(feature = "checkpoint")] checkpoint_interval: Option<Duration>,
+        config: CrawlerConfig,
+        #[cfg(feature = "checkpoint")] checkpoint_config: CheckpointConfig,
         stats: Arc<StatCollector>,
         #[cfg(feature = "cookie-store")] cookie_store: Arc<tokio::sync::RwLock<CookieStore>>,
     ) -> Self {
@@ -94,14 +86,9 @@ where
             spider: Arc::new(spider),
             spider_state: Arc::new(S::State::default()),
             pipelines,
-            max_concurrent_downloads,
-            parser_workers,
-            max_concurrent_pipelines,
-            channel_capacity,
+            config,
             #[cfg(feature = "checkpoint")]
-            checkpoint_path,
-            #[cfg(feature = "checkpoint")]
-            checkpoint_interval,
+            checkpoint_config,
             #[cfg(feature = "cookie-store")]
             cookie_store,
         }
@@ -110,10 +97,9 @@ where
     pub async fn start_crawl(self) -> Result<(), SpiderError> {
         info!(
             "Crawler starting crawl with configuration: max_concurrent_downloads={}, parser_workers={}, max_concurrent_pipelines={}",
-            self.max_concurrent_downloads, self.parser_workers, self.max_concurrent_pipelines
+            self.config.max_concurrent_downloads, self.config.parser_workers, self.config.max_concurrent_pipelines
         );
 
-        #[cfg(feature = "checkpoint")]
         let Crawler {
             scheduler,
             req_rx,
@@ -123,30 +109,9 @@ where
             spider,
             spider_state,
             pipelines,
-            max_concurrent_downloads,
-            parser_workers,
-            max_concurrent_pipelines,
-            channel_capacity: _,
-            checkpoint_path,
-            checkpoint_interval,
-            #[cfg(feature = "cookie-store")]
-                cookie_store: _,
-        } = self;
-
-        #[cfg(not(feature = "checkpoint"))]
-        let Crawler {
-            scheduler,
-            req_rx,
-            stats,
-            downloader,
-            middlewares,
-            spider,
-            spider_state,
-            pipelines,
-            max_concurrent_downloads,
-            parser_workers,
-            max_concurrent_pipelines,
-            channel_capacity: _,
+            config,
+            #[cfg(feature = "checkpoint")]
+            checkpoint_config,
             #[cfg(feature = "cookie-store")]
                 cookie_store: _,
         } = self;
@@ -164,10 +129,10 @@ where
         );
 
         let channel_capacity = std::cmp::max(
-            self.max_concurrent_downloads * 3,
-            self.parser_workers * self.max_concurrent_pipelines * 2,
+            config.max_concurrent_downloads * 3,
+            config.parser_workers * config.max_concurrent_pipelines * 2,
         )
-        .max(self.channel_capacity);
+        .max(config.channel_capacity);
 
         trace!("Creating communication channels with capacity: {}", channel_capacity);
         let (res_tx, res_rx) = bounded_async(channel_capacity);
@@ -180,41 +145,41 @@ where
         let middlewares = super::SharedMiddlewareManager::new(middlewares);
 
         trace!("Spawning downloader task");
-        let downloader = super::spawn_downloader_task::<S, C>(
+        let downloader_handle = super::spawn_downloader_task::<S, C>(
             Arc::clone(&ctx.scheduler),
             req_rx,
             downloader,
             middlewares,
             state.clone(),
             res_tx.clone(),
-            max_concurrent_downloads,
+            config.max_concurrent_downloads,
             Arc::clone(&ctx.stats),
         );
 
         trace!("Spawning parser task");
-        let parser = super::spawn_parser_task::<S>(
+        let parser_handle = super::spawn_parser_task::<S>(
             Arc::clone(&ctx.scheduler),
             Arc::clone(&ctx.spider),
             Arc::clone(&ctx.spider_state),
             state.clone(),
             res_rx,
             item_tx.clone(),
-            parser_workers,
+            config.parser_workers,
             Arc::clone(&ctx.stats),
         );
 
         trace!("Spawning item processor task");
-        let processor = super::spawn_item_processor_task::<S>(
+        let processor_handle = super::spawn_item_processor_task::<S>(
             state.clone(),
             item_rx,
             Arc::clone(&ctx.pipelines),
-            max_concurrent_pipelines,
+            config.max_concurrent_pipelines,
             Arc::clone(&ctx.stats),
         );
 
         #[cfg(feature = "checkpoint")]
         {
-            if let (Some(path), Some(interval)) = (&checkpoint_path, checkpoint_interval) {
+            if let (Some(path), Some(interval)) = (&checkpoint_config.path, checkpoint_config.interval) {
                 let scheduler_cp = Arc::clone(&ctx.scheduler);
                 let pipelines_cp = Arc::clone(&ctx.pipelines);
                 let path_cp = path.clone();
@@ -289,9 +254,9 @@ where
         let timeout_duration = Duration::from_secs(30);
 
         let mut tasks = tokio::task::JoinSet::new();
-        tasks.spawn(processor);
-        tasks.spawn(parser);
-        tasks.spawn(downloader);
+        tasks.spawn(processor_handle);
+        tasks.spawn(parser_handle);
+        tasks.spawn(downloader_handle);
         tasks.spawn(init_task);
 
         let results = tokio::time::timeout(timeout_duration, async {
@@ -331,7 +296,7 @@ where
 
         #[cfg(feature = "checkpoint")]
         {
-            if let Some(path) = &checkpoint_path {
+            if let Some(path) = &checkpoint_config.path {
                 debug!("Creating final checkpoint at {:?}", path);
                 let scheduler_checkpoint = scheduler.snapshot().await?;
 

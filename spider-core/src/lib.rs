@@ -36,6 +36,7 @@
 pub mod builder;
 #[cfg(feature = "checkpoint")]
 pub mod checkpoint;
+pub mod config;
 pub mod engine;
 pub mod prelude;
 pub mod scheduler;
