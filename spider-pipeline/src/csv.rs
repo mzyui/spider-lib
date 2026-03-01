@@ -1,0 +1,255 @@
+//! Item Pipeline for exporting scraped items to CSV files.
+//!
+//! This module provides the `CsvPipeline`, an item pipeline designed
+//! for writing `ScrapedItem`s to a Comma Separated Values (CSV) file.
+//!
+//! Key features include:
+//! - Dynamic header generation: The column headers of the CSV file are
+//!   automatically inferred from the keys of the first `ScrapedItem`
+//!   processed by the pipeline.
+//! - Asynchronous writing: All file I/O operations are performed on a
+//!   dedicated blocking thread, preventing blocking of the main asynchronous
+//!   event loop.
+//! - State persistence: The pipeline can save and restore its internal state
+//!   (specifically, the determined headers) to support crawler checkpointing.
+//! - Handling of complex data: Nested JSON objects or arrays within an item
+//!   are serialized to JSON strings within their respective CSV cells.
+
+use crate::pipeline::Pipeline;
+use async_trait::async_trait;
+use csv::Writer;
+use kanal::unbounded_async;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use spider_util::error::PipelineError;
+use spider_util::item::ScrapedItem;
+use std::fs::{File, OpenOptions};
+use std::marker::PhantomData;
+use std::path::Path;
+use log::{debug, error, info};
+
+#[derive(Serialize, Deserialize)]
+struct CsvState {
+    headers: Vec<String>,
+}
+
+enum CsvCommand {
+    Write {
+        item_value: Value,
+        responder: kanal::AsyncSender<Result<(), PipelineError>>,
+    },
+    GetState(kanal::AsyncSender<Result<Option<Value>, PipelineError>>),
+    RestoreState {
+        state: Value,
+        responder: kanal::AsyncSender<Result<(), PipelineError>>,
+    },
+    Shutdown(kanal::AsyncSender<()>),
+}
+
+/// A pipeline that exports scraped items to a CSV file.
+/// Headers are determined from the keys of the first item processed.
+pub struct CsvPipeline<I> {
+    command_sender: kanal::AsyncSender<CsvCommand>,
+    _phantom: PhantomData<I>,
+}
+
+impl<I: ScrapedItem> CsvPipeline<I> {
+    /// Creates a new `CsvPipeline`.
+    pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
+        spider_util::util::validate_output_dir(&file_path)
+            .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;
+        let path_buf = file_path.as_ref().to_path_buf();
+        info!("Initializing CsvPipeline for file: {:?}", path_buf);
+
+        let (command_sender, command_receiver) = unbounded_async::<CsvCommand>();
+        let path_clone = path_buf.clone();
+
+        // Spawn a task to handle the CSV writing
+        tokio::task::spawn(async move {
+            let mut writer_state: Option<(Writer<File>, Vec<String>)> = None;
+
+            info!("CSV async task started for file: {:?}", path_clone);
+
+            while let Ok(command) = command_receiver.recv().await {
+                match command {
+                    CsvCommand::Write {
+                        item_value,
+                        responder,
+                    } => {
+                        let result = (|| {
+                            if writer_state.is_none() {
+                                let file_exists = path_clone.exists();
+                                let should_write_header =
+                                    !file_exists || path_clone.metadata()?.len() == 0;
+
+                                let file = OpenOptions::new()
+                                    .create(true)
+                                    .append(true)
+                                    .open(&path_clone)?;
+
+                                let mut writer = Writer::from_writer(file);
+                                let headers = if let Some(map) = item_value.as_object() {
+                                    let mut h: Vec<String> = map.keys().cloned().collect();
+                                    h.sort();
+                                    h
+                                } else {
+                                    return Err(PipelineError::ItemError(
+                                        "First item for CSV must be a JSON object".to_string(),
+                                    ));
+                                };
+
+                                if should_write_header {
+                                    writer.write_record(&headers)?;
+                                }
+                                writer_state = Some((writer, headers));
+                            }
+
+                            let (writer, headers) = writer_state.as_mut().unwrap();
+                            let record = if let Some(map) = item_value.as_object() {
+                                headers
+                                    .iter()
+                                    .map(|h| {
+                                        map.get(h)
+                                            .map(|v| {
+                                                if let Some(s) = v.as_str() {
+                                                    s.to_string()
+                                                } else {
+                                                    v.to_string()
+                                                }
+                                            })
+                                            .unwrap_or_default()
+                                    })
+                                    .collect::<Vec<String>>()
+                            } else {
+                                return Err(PipelineError::ItemError(
+                                    "Item for CSV must be a JSON object.".to_string(),
+                                ));
+                            };
+
+                            writer.write_record(&record)?;
+                            writer.flush()?;
+                            Ok(())
+                        })();
+
+                        if responder.send(result).await.is_err() {
+                            error!("Failed to send CSV write response.");
+                        }
+                    }
+                    CsvCommand::GetState(responder) => {
+                        let result = (|| {
+                            if let Some((_, headers)) = &writer_state {
+                                let state = CsvState {
+                                    headers: headers.clone(),
+                                };
+                                let value = serde_json::to_value(state)?;
+                                Ok(Some(value))
+                            } else {
+                                Ok(None)
+                            }
+                        })();
+                        if responder.send(result).await.is_err() {
+                            error!("Failed to send GetState response.");
+                        }
+                    }
+                    CsvCommand::RestoreState { state, responder } => {
+                        let result = (|| {
+                            let state: CsvState = serde_json::from_value(state)?;
+                            let file = OpenOptions::new()
+                                .create(true)
+                                .append(true)
+                                .open(&path_clone)?;
+                            let writer = Writer::from_writer(file);
+                            writer_state = Some((writer, state.headers));
+                            info!("CSV Exporter state restored.");
+                            Ok(())
+                        })();
+                        if responder.send(result).await.is_err() {
+                            error!("Failed to send RestoreState response.");
+                        }
+                    }
+                    CsvCommand::Shutdown(responder) => {
+                        info!("CSV async task received shutdown command.");
+                        let _ = responder.send(()).await;
+                        break;
+                    }
+                }
+            }
+            info!("CSV async task for file: {:?} finished.", path_clone);
+        });
+
+        Ok(CsvPipeline {
+            command_sender,
+            _phantom: PhantomData,
+        })
+    }
+}
+
+#[async_trait]
+impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
+    fn name(&self) -> &str {
+        "CsvPipeline"
+    }
+
+    async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
+        debug!("CsvPipeline processing item.");
+        let item_value = item.to_json_value();
+
+        let (tx, rx) = kanal::unbounded_async();
+        self.command_sender
+            .send(CsvCommand::Write {
+                item_value,
+                responder: tx,
+            })
+            .await
+            .map_err(|e| PipelineError::Other(format!("Failed to send Write command: {}", e)))?;
+
+        let result = rx.recv().await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive Write response: {}", e))
+        })?;
+        result?;
+
+        Ok(Some(item))
+    }
+
+    async fn close(&self) -> Result<(), PipelineError> {
+        info!("Closing CsvPipeline.");
+        let (tx, rx) = kanal::unbounded_async();
+        self.command_sender
+            .send(CsvCommand::Shutdown(tx))
+            .await
+            .map_err(|e| PipelineError::Other(format!("Failed to send Shutdown command: {}", e)))?;
+        rx.recv().await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive shutdown response: {}", e))
+        })?;
+        Ok(())
+    }
+
+    async fn get_state(&self) -> Result<Option<Value>, PipelineError> {
+        let (tx, rx) = kanal::unbounded_async();
+        self.command_sender
+            .send(CsvCommand::GetState(tx))
+            .await
+            .map_err(|e| PipelineError::Other(format!("Failed to send GetState command: {}", e)))?;
+        let result = rx.recv().await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive GetState response: {}", e))
+        })?;
+        Ok(result?)
+    }
+
+    async fn restore_state(&self, state: Value) -> Result<(), PipelineError> {
+        let (tx, rx) = kanal::unbounded_async();
+        self.command_sender
+            .send(CsvCommand::RestoreState {
+                state,
+                responder: tx,
+            })
+            .await
+            .map_err(|e| {
+                PipelineError::Other(format!("Failed to send RestoreState command: {}", e))
+            })?;
+        let result = rx.recv().await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive RestoreState response: {}", e))
+        })?;
+        Ok(result?)
+    }
+}

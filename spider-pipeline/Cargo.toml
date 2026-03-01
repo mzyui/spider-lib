@@ -1,0 +1,35 @@
+[package]
+name = "spider-pipeline"
+version = "0.3.1"
+edition = "2024"
+authors = ["mzyui <mzyui@proton.me>"]
+description = "Pipeline implementations for the spider-lib web scraping framework."
+homepage = "https://github.com/mzyui/spider-lib"
+repository = "https://github.com/mzyui/spider-lib"
+license = "MIT"
+readme = "README.md"
+keywords = ["web-scraping", "pipeline", "crawler", "scraper", "rust"]
+categories = ["web-programming", "development-tools", "parsing"]
+
+[dependencies]
+async-trait.workspace = true
+csv = { workspace = true, optional = true }
+dashmap.workspace = true
+rusqlite = { workspace = true, optional = true }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+log.workspace = true
+seahash.workspace = true
+kanal.workspace = true
+
+spider-util = { version = "0.3.1", path = "../spider-util" }
+
+[features]
+default = ["core"]
+core = []
+pipeline-csv = ["dep:csv"]
+pipeline-json = []
+pipeline-jsonl = []
+pipeline-sqlite = ["dep:rusqlite"]
+pipeline-stream-json = []
