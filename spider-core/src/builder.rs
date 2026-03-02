@@ -64,6 +64,7 @@ use super::Crawler;
 use crate::stats::StatCollector;
 #[cfg(feature = "checkpoint")]
 use log::{debug, warn};
+use log::LevelFilter;
 
 #[cfg(feature = "checkpoint")]
 use rmp_serde;
@@ -108,6 +109,7 @@ where
     spider: Option<S>,
     middlewares: Vec<Box<dyn Middleware<D::Client> + Send + Sync>>,
     pipelines: Vec<Box<dyn Pipeline<S::Item>>>,
+    log_level: Option<LevelFilter>,
     _phantom: PhantomData<S>,
 }
 
@@ -120,6 +122,7 @@ impl<S: Spider> Default for CrawlerBuilder<S, ReqwestClientDownloader> {
             spider: None,
             middlewares: Vec::new(),
             pipelines: Vec::new(),
+            log_level: None,
             _phantom: PhantomData,
         }
     }
@@ -252,6 +255,35 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
+    /// Sets the log level for `spider-*` library crates.
+    ///
+    /// This configures the logging level specifically for the spider-lib ecosystem
+    /// (spider-core, spider-middleware, spider-pipeline, spider-util, spider-downloader).
+    /// Logs from other dependencies (e.g., reqwest, tokio) will not be affected.
+    ///
+    /// ## Log Levels
+    ///
+    /// - `LevelFilter::Error` - Only error messages
+    /// - `LevelFilter::Warn` - Warnings and errors
+    /// - `LevelFilter::Info` - Informational messages, warnings, and errors
+    /// - `LevelFilter::Debug` - Debug messages and above
+    /// - `LevelFilter::Trace` - All messages including trace
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// use log::LevelFilter;
+    ///
+    /// let crawler = CrawlerBuilder::new(MySpider)
+    ///     .log_level(LevelFilter::Debug)
+    ///     .build()
+    ///     .await?;
+    /// ```
+    pub fn log_level(mut self, level: LevelFilter) -> Self {
+        self.log_level = Some(level);
+        self
+    }
+
     /// Sets the path for saving and loading checkpoints.
     ///
     /// When enabled, the crawler periodically saves its state to this file,
@@ -304,6 +336,11 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     {
         let spider = self.take_spider()?;
         self.init_default_pipeline();
+
+        // Initialize logging for spider-* crates if log level is configured
+        if let Some(level) = self.log_level {
+            self.init_logging(level);
+        }
 
         // Validate config
         self.config.validate().map_err(SpiderError::ConfigurationError)?;
@@ -478,6 +515,26 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
             use spider_pipeline::console::ConsolePipeline;
             self.pipelines.push(Box::new(ConsolePipeline::new()));
         }
+    }
+
+    /// Initializes logging for spider-* crates only.
+    ///
+    /// This sets up env_logger with a filter that only enables logging for
+    /// crates within the spider-lib ecosystem.
+    fn init_logging(&self, level: LevelFilter) {
+        use env_logger::{Builder, Env};
+
+        let mut builder = Builder::from_env(Env::default().default_filter_or("off"));
+
+        // Set filter specifically for spider-* crates
+        builder.filter_module("spider_core", level);
+        builder.filter_module("spider_middleware", level);
+        builder.filter_module("spider_pipeline", level);
+        builder.filter_module("spider_util", level);
+        builder.filter_module("spider_downloader", level);
+        builder.filter_module("spider_macro", level);
+
+        builder.init();
     }
 }
 

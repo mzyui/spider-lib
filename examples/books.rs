@@ -205,11 +205,12 @@ impl Spider for BooksSpider {
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("spider_lib=info,spider_core=info,spider_downloader=info,spider_middleware=info,spider_pipeline=info,spider_util=info"))
-        .init();
-
     // The builder defaults to using ReqwestClientDownloader
-    let crawler = CrawlerBuilder::new(BooksSpider).build().await?;
+    // Use log_level() to configure logging for spider-* crates only
+    let crawler = CrawlerBuilder::new(BooksSpider)
+        .log_level(log::LevelFilter::Debug)
+        .build()
+        .await?;
 
     let state = crawler.state_arc();
     crawler.start_crawl().await?;

@@ -2069,6 +2069,7 @@ dependencies = [
  "cookie_store",
  "crossbeam",
  "dashmap 6.1.0",
+ "env_logger",
  "futures-util",
  "kanal",
  "log",
