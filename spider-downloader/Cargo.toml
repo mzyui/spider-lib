@@ -12,7 +12,6 @@ readme = "README.md"
 [dependencies]
 async-trait.workspace = true
 reqwest.workspace = true
-serde_json.workspace = true
 spider-util = { version = "0.3.2", path = "../spider-util" }
 tokio.workspace = true
 log.workspace = true
