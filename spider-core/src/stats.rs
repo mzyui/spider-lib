@@ -240,18 +240,18 @@ impl StatCollector {
         let recent_items_per_second = self.items_scraped_ema.get_rate();
 
         StatsSnapshot {
-            requests_enqueued: self.requests_enqueued.load(Ordering::SeqCst),
-            requests_sent: self.requests_sent.load(Ordering::SeqCst),
-            requests_succeeded: self.requests_succeeded.load(Ordering::SeqCst),
-            requests_failed: self.requests_failed.load(Ordering::SeqCst),
-            requests_retried: self.requests_retried.load(Ordering::SeqCst),
-            requests_dropped: self.requests_dropped.load(Ordering::SeqCst),
-            responses_received: self.responses_received.load(Ordering::SeqCst),
-            responses_from_cache: self.responses_from_cache.load(Ordering::SeqCst),
-            total_bytes_downloaded: self.total_bytes_downloaded.load(Ordering::SeqCst),
-            items_scraped: self.items_scraped.load(Ordering::SeqCst),
-            items_processed: self.items_processed.load(Ordering::SeqCst),
-            items_dropped_by_pipeline: self.items_dropped_by_pipeline.load(Ordering::SeqCst),
+            requests_enqueued: self.requests_enqueued.load(Ordering::Acquire),
+            requests_sent: self.requests_sent.load(Ordering::Acquire),
+            requests_succeeded: self.requests_succeeded.load(Ordering::Acquire),
+            requests_failed: self.requests_failed.load(Ordering::Acquire),
+            requests_retried: self.requests_retried.load(Ordering::Acquire),
+            requests_dropped: self.requests_dropped.load(Ordering::Acquire),
+            responses_received: self.responses_received.load(Ordering::Acquire),
+            responses_from_cache: self.responses_from_cache.load(Ordering::Acquire),
+            total_bytes_downloaded: self.total_bytes_downloaded.load(Ordering::Acquire),
+            items_scraped: self.items_scraped.load(Ordering::Acquire),
+            items_processed: self.items_processed.load(Ordering::Acquire),
+            items_dropped_by_pipeline: self.items_dropped_by_pipeline.load(Ordering::Acquire),
             response_status_counts: status_counts,
             elapsed_duration: self.start_time.elapsed(),
             average_request_time: self.average_request_time(),
@@ -272,46 +272,46 @@ impl StatCollector {
 
     /// Increments the count of enqueued requests.
     pub(crate) fn increment_requests_enqueued(&self) {
-        self.requests_enqueued.fetch_add(1, Ordering::SeqCst);
+        self.requests_enqueued.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of sent requests.
     pub(crate) fn increment_requests_sent(&self) {
-        self.requests_sent.fetch_add(1, Ordering::SeqCst);
+        self.requests_sent.fetch_add(1, Ordering::AcqRel);
         // Update the EMA with a count of 1 for this event
         self.requests_sent_ema.update(1);
     }
 
     /// Increments the count of successful requests.
     pub(crate) fn increment_requests_succeeded(&self) {
-        self.requests_succeeded.fetch_add(1, Ordering::SeqCst);
+        self.requests_succeeded.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of failed requests.
     pub(crate) fn increment_requests_failed(&self) {
-        self.requests_failed.fetch_add(1, Ordering::SeqCst);
+        self.requests_failed.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of retried requests.
     pub(crate) fn increment_requests_retried(&self) {
-        self.requests_retried.fetch_add(1, Ordering::SeqCst);
+        self.requests_retried.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of dropped requests.
     pub(crate) fn increment_requests_dropped(&self) {
-        self.requests_dropped.fetch_add(1, Ordering::SeqCst);
+        self.requests_dropped.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of received responses.
     pub(crate) fn increment_responses_received(&self) {
-        self.responses_received.fetch_add(1, Ordering::SeqCst);
+        self.responses_received.fetch_add(1, Ordering::AcqRel);
         // Update the EMA with a count of 1 for this event
         self.responses_received_ema.update(1);
     }
 
     /// Increments the count of responses served from cache.
     pub(crate) fn increment_responses_from_cache(&self) {
-        self.responses_from_cache.fetch_add(1, Ordering::SeqCst);
+        self.responses_from_cache.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Records a response status code.
@@ -322,25 +322,25 @@ impl StatCollector {
     /// Adds to the total bytes downloaded.
     pub(crate) fn add_bytes_downloaded(&self, bytes: usize) {
         self.total_bytes_downloaded
-            .fetch_add(bytes, Ordering::SeqCst);
+            .fetch_add(bytes, Ordering::AcqRel);
     }
 
     /// Increments the count of scraped items.
     pub(crate) fn increment_items_scraped(&self) {
-        self.items_scraped.fetch_add(1, Ordering::SeqCst);
+        self.items_scraped.fetch_add(1, Ordering::AcqRel);
         // Update the EMA with a count of 1 for this event
         self.items_scraped_ema.update(1);
     }
 
     /// Increments the count of processed items.
     pub(crate) fn increment_items_processed(&self) {
-        self.items_processed.fetch_add(1, Ordering::SeqCst);
+        self.items_processed.fetch_add(1, Ordering::AcqRel);
     }
 
     /// Increments the count of items dropped by pipelines.
     pub(crate) fn increment_items_dropped_by_pipeline(&self) {
         self.items_dropped_by_pipeline
-            .fetch_add(1, Ordering::SeqCst);
+            .fetch_add(1, Ordering::AcqRel);
     }
 
     /// Records the time taken for a request.

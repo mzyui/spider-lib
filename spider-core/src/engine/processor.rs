@@ -138,7 +138,7 @@ where
                 } else {
                     trace!("Item was dropped during pipeline processing");
                 }
-                state_clone.processing_items.fetch_sub(1, Ordering::SeqCst);
+                state_clone.processing_items.fetch_sub(1, Ordering::AcqRel);
                 trace!("Released processing permit");
                 drop(permit);
             });

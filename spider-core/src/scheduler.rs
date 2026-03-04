@@ -76,6 +76,7 @@ enum SchedulerMessage {
 use spider_util::bloom::BloomFilter;
 
 use tokio::sync::Notify;
+use parking_lot::Mutex;
 
 /// Manages the request queue and tracks visited URLs to prevent duplicate crawling.
 ///
@@ -106,7 +107,7 @@ pub struct Scheduler {
     /// Bloom filter for fast preliminary duplicate detection.
     bloom: std::sync::Arc<parking_lot::RwLock<BloomFilter>>,
     /// Buffer for batching Bloom filter updates.
-    buffer: Arc<std::sync::Mutex<Vec<String>>>,
+    buffer: Arc<Mutex<Vec<String>>>,
     /// Notifier for triggering buffer flushes.
     notify: Arc<Notify>,
     /// Sender for internal scheduler messages.
@@ -211,7 +212,7 @@ impl Scheduler {
             salvaged = SegQueue::new();
         }
 
-        let buffer = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let buffer = Arc::new(Mutex::new(Vec::new()));
         let notify = Arc::new(Notify::new());
 
         let scheduler = Arc::new(Scheduler {
@@ -278,7 +279,7 @@ impl Scheduler {
                         } else {
                             trace!("Successfully sent request to crawler");
                         }
-                        self.pending.fetch_sub(1, Ordering::SeqCst);
+                        self.pending.fetch_sub(1, Ordering::AcqRel);
                     },
                     recv_res = rx_internal.recv() => {
                         trace!("Received internal message while sending request");
@@ -308,7 +309,7 @@ impl Scheduler {
                 let request = Arc::unwrap_or_clone(arc_request);
                 trace!("Enqueuing request: {}", request.url);
                 self.queue.push(request);
-                self.pending.fetch_add(1, Ordering::SeqCst);
+                self.pending.fetch_add(1, Ordering::AcqRel);
                 true
             }
             Ok(SchedulerMessage::MarkAsVisited(fingerprint)) => {
@@ -322,7 +323,7 @@ impl Scheduler {
 
                 // Then move fingerprint into buffer (no clone needed)
                 {
-                    let mut buffer = self.buffer.lock().unwrap();
+                    let mut buffer = self.buffer.lock();
                     buffer.push(fingerprint);
                     if buffer.len() >= 100 {
                         self.notify.notify_one();
@@ -342,7 +343,7 @@ impl Scheduler {
 
                 // Then extend buffer with the fingerprints (no clone needed)
                 {
-                    let mut buffer = self.buffer.lock().unwrap();
+                    let mut buffer = self.buffer.lock();
                     buffer.append(&mut fingerprints);
                     if buffer.len() >= 100 {
                         self.notify.notify_one();
@@ -521,7 +522,7 @@ impl Scheduler {
         }
 
         {
-            let buffer = self.buffer.lock().unwrap();
+            let buffer = self.buffer.lock();
             if buffer.iter().any(|item| item == fingerprint) {
                 return true;
             }
@@ -531,7 +532,7 @@ impl Scheduler {
     }
 
     fn flush_buffer_now(&self) {
-        let mut buffer = self.buffer.lock().unwrap();
+        let mut buffer = self.buffer.lock();
         if !buffer.is_empty() {
             let items: Vec<String> = buffer.drain(..).collect();
             drop(buffer);
@@ -545,7 +546,7 @@ impl Scheduler {
 
     async fn flush_buffer(
         &self,
-        _buffer: Arc<std::sync::Mutex<Vec<String>>>,
+        _buffer: Arc<Mutex<Vec<String>>>,
         notify: Arc<Notify>,
     ) {
         loop {
@@ -569,7 +570,7 @@ impl Scheduler {
 
     #[inline]
     pub fn len(&self) -> usize {
-        self.pending.load(Ordering::SeqCst)
+        self.pending.load(Ordering::Acquire)
     }
 
     #[inline]

@@ -11,17 +11,16 @@
 //! - **Better code organization**: Related state is grouped together
 //! - **Easier refactoring**: Adding new shared state only requires one change
 
-use std::sync::Arc;
 use crate::{Scheduler, stats::StatCollector, spider::Spider};
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::item::ScrapedItem;
+use std::sync::Arc;
 
-/// Aggregated context shared across all crawler tasks.
+/// Inner data shared across all crawler tasks.
 ///
-/// This struct bundles together all the Arc-wrapped components that need to be
-/// shared between the crawler's various async tasks. Instead of cloning each
-/// Arc individually, we can clone this context with a single Arc::clone().
-pub struct CrawlerContext<S, I>
+/// This struct contains all the Arc-wrapped components that need to be
+/// shared between the crawler's various async tasks.
+pub struct CrawlerContextInner<S, I>
 where
     S: Spider<Item = I>,
     I: ScrapedItem,
@@ -33,19 +32,22 @@ where
     pub pipelines: Arc<Vec<Box<dyn Pipeline<I>>>>,
 }
 
+/// Aggregated context shared across all crawler tasks.
+///
+/// This struct wraps CrawlerContextInner in a single Arc, allowing
+/// efficient cloning with just one atomic reference count operation.
+pub struct CrawlerContext<S, I>(pub Arc<CrawlerContextInner<S, I>>)
+where
+    S: Spider<Item = I>,
+    I: ScrapedItem;
+
 impl<S, I> Clone for CrawlerContext<S, I>
 where
     S: Spider<Item = I>,
     I: ScrapedItem,
 {
     fn clone(&self) -> Self {
-        Self {
-            scheduler: Arc::clone(&self.scheduler),
-            stats: Arc::clone(&self.stats),
-            spider: Arc::clone(&self.spider),
-            spider_state: Arc::clone(&self.spider_state),
-            pipelines: Arc::clone(&self.pipelines),
-        }
+        CrawlerContext(Arc::clone(&self.0))
     }
 }
 
@@ -62,17 +64,17 @@ where
         spider_state: Arc<S::State>,
         pipelines: Arc<Vec<Box<dyn Pipeline<I>>>>,
     ) -> Self {
-        Self {
+        CrawlerContext(Arc::new(CrawlerContextInner {
             scheduler,
             stats,
             spider,
             spider_state,
             pipelines,
-        }
+        }))
     }
 
     /// Creates a CrawlerContext from a Crawler instance.
-    pub fn from_crawler<C>(
+    pub fn from_crawler(
         scheduler: Arc<Scheduler>,
         stats: Arc<StatCollector>,
         spider: Arc<S>,
@@ -80,5 +82,18 @@ where
         pipelines: Arc<Vec<Box<dyn Pipeline<I>>>>,
     ) -> Self {
         Self::new(scheduler, stats, spider, spider_state, pipelines)
+    }
+}
+
+// Implement Deref for convenient access to inner fields
+impl<S, I> std::ops::Deref for CrawlerContext<S, I>
+where
+    S: Spider<Item = I>,
+    I: ScrapedItem,
+{
+    type Target = CrawlerContextInner<S, I>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }

@@ -103,7 +103,7 @@ where
         tokio::spawn(async move {
             while let Ok(response) = internal_parse_rx_clone.recv().await {
                 debug!("Parsing response from {}", response.url);
-                state_clone.parsing_responses.fetch_add(1, Ordering::SeqCst);
+                state_clone.parsing_responses.fetch_add(1, Ordering::AcqRel);
 
                 {
                     let start_time = Instant::now();
@@ -127,7 +127,7 @@ where
                         Err(e) => error!("Spider parsing error: {:?}", e),
                     }
                 }
-                state_clone.parsing_responses.fetch_sub(1, Ordering::SeqCst);
+                state_clone.parsing_responses.fetch_sub(1, Ordering::AcqRel);
             }
         });
     }
@@ -173,7 +173,7 @@ where
                         tokio::spawn(async move {
                             while let Ok(response) = internal_parse_rx_clone.recv().await {
                                 debug!("Parsing response from {}", response.url);
-                                state_clone.parsing_responses.fetch_add(1, Ordering::SeqCst);
+                                state_clone.parsing_responses.fetch_add(1, Ordering::AcqRel);
 
                                 {
                                     let start_time = Instant::now();
@@ -198,7 +198,7 @@ where
                                         Err(e) => error!("Spider parsing error: {:?}", e),
                                     }
                                 }
-                                state_clone.parsing_responses.fetch_sub(1, Ordering::SeqCst);
+                                state_clone.parsing_responses.fetch_sub(1, Ordering::AcqRel);
                             }
                         });
 
@@ -240,11 +240,11 @@ where
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
 
-            state.parsing_responses.fetch_add(1, Ordering::SeqCst);
+            state.parsing_responses.fetch_add(1, Ordering::AcqRel);
             if internal_parse_tx.send(response).await.is_err() {
                 error!("Internal parse channel closed, cannot send response to parser worker.");
             }
-            state.parsing_responses.fetch_sub(1, Ordering::SeqCst);
+            state.parsing_responses.fetch_sub(1, Ordering::AcqRel);
         }
 
         trace!("Closing internal parse channel");
@@ -349,11 +349,11 @@ pub async fn process_crawl_outputs<S>(
             break;
         }
 
-        state.processing_items.fetch_add(1, Ordering::SeqCst);
+        state.processing_items.fetch_add(1, Ordering::AcqRel);
         if item_tx.send(item).await.is_err() {
             error!("Failed to send item to processing channel");
             item_error_total += 1;
-            state.processing_items.fetch_sub(1, Ordering::SeqCst);
+            state.processing_items.fetch_sub(1, Ordering::AcqRel);
         }
     }
 

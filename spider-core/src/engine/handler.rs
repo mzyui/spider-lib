@@ -102,7 +102,7 @@ where
                 continue;
             }
 
-            state.in_flight_requests.fetch_add(1, Ordering::SeqCst);
+            state.in_flight_requests.fetch_add(1, Ordering::AcqRel);
             let downloader_clone = Arc::clone(&downloader);
             let middlewares_clone = middlewares.clone();
             let res_tx_clone = res_tx.clone();
@@ -138,7 +138,7 @@ where
 
                 state_clone
                     .in_flight_requests
-                    .fetch_sub(1, Ordering::SeqCst);
+                    .fetch_sub(1, Ordering::AcqRel);
                 // Permit is automatically released when dropped
             });
         }
