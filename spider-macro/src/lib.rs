@@ -7,14 +7,13 @@
 //! The `spider-macro` crate contains procedural macros that automate the
 //! implementation of common traits and patterns used in the spider framework.
 //! These macros significantly reduce the amount of boilerplate code required
-//! when defining custom data structures for scraped items.
+//! when defining custom data structures for scraped items and spider state.
 //!
 //! ## Key Macros
 //!
 //! - **`#[scraped_item]`**: Derives the `ScrapedItem` trait along with necessary
 //!   implementations for serialization, deserialization, cloning, and type
-//!   conversions. This macro automatically implements all required traits for
-//!   a struct to be used as a scraped item in the framework.
+//!   conversions.
 //!
 //! ## Features
 //!
