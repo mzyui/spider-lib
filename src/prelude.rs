@@ -23,6 +23,8 @@ pub use spider_core::{
     scheduler::Scheduler,
     state::CrawlerState,
     stats::StatCollector,
+    // Thread-safe state primitives
+    state::{Counter, Counter64, Flag, VisitedUrls, ConcurrentMap, ConcurrentVec, StateAccessMetrics},
     tokio,
 };
 

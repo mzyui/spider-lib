@@ -71,3 +71,6 @@
 
 pub mod prelude;
 pub use prelude::*;
+
+// Re-export procedural macros
+pub use spider_macro::scraped_item;

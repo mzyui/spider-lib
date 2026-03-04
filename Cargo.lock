@@ -2096,7 +2096,6 @@ dependencies = [
  "async-trait",
  "log",
  "reqwest",
- "serde_json",
  "spider-util",
  "tokio",
 ]
