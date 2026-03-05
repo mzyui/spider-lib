@@ -16,13 +16,13 @@
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use dashmap::DashSet;
+use log::{debug, info};
 use seahash::SeaHasher;
 use serde_json::Value;
 use spider_util::{error::PipelineError, item::ScrapedItem};
 use std::collections::HashSet;
 use std::hash::Hasher;
 use std::marker::PhantomData;
-use log::{debug, info};
 
 /// A pipeline that filters out duplicate items based on a configurable set of fields.
 pub struct DeduplicationPipeline<I: ScrapedItem> {

@@ -19,6 +19,7 @@ use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use csv::Writer;
 use kanal::unbounded_async;
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use spider_util::error::PipelineError;
@@ -26,7 +27,6 @@ use spider_util::item::ScrapedItem;
 use std::fs::{File, OpenOptions};
 use std::marker::PhantomData;
 use std::path::Path;
-use log::{debug, error, info};
 
 #[derive(Serialize, Deserialize)]
 struct CsvState {

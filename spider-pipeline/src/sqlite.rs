@@ -13,13 +13,13 @@
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
+use log::{debug, error, info, trace};
 use rusqlite::{Connection, params, params_from_iter};
 use serde_json::Value;
 use spider_util::{error::PipelineError, item::ScrapedItem};
 use std::marker::PhantomData;
 use std::path::Path;
 use tokio::sync::{Mutex, mpsc, oneshot};
-use log::{debug, error, info, trace};
 
 enum SqliteCommand {
     CreateSchema {

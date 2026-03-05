@@ -13,6 +13,7 @@
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
+use log::{debug, info};
 use spider_util::{error::PipelineError, item::ScrapedItem};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -20,7 +21,6 @@ use std::marker::PhantomData;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use log::{debug, info};
 
 /// A pipeline that writes each scraped item to a JSON Lines (.jsonl) file.
 /// Each item is written as a JSON object on a new line.

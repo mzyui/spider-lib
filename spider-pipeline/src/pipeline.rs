@@ -59,4 +59,3 @@ pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
         Ok(())
     }
 }
-

@@ -17,6 +17,7 @@
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use kanal::unbounded_async;
+use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use spider_util::error::PipelineError;
@@ -25,7 +26,6 @@ use std::fs::File;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::path::Path;
-use log::{debug, error, info};
 
 #[derive(Serialize, Deserialize)]
 struct JsonState {
@@ -59,10 +59,7 @@ impl<I: ScrapedItem> JsonPipeline<I> {
 
         tokio::task::spawn(async move {
             let mut items: Vec<Value> = Vec::new();
-            info!(
-                "JsonPipeline async task started for file: {:?}",
-                path_buf
-            );
+            info!("JsonPipeline async task started for file: {:?}", path_buf);
 
             while let Ok(command) = command_receiver.recv().await {
                 match command {
@@ -88,10 +85,7 @@ impl<I: ScrapedItem> JsonPipeline<I> {
                         let result = (|| {
                             let state: JsonState = serde_json::from_value(state)?;
                             items = state.items;
-                            info!(
-                                "JsonPipeline state restored with {} items.",
-                                items.len()
-                            );
+                            info!("JsonPipeline state restored with {} items.", items.len());
                             Ok(())
                         })();
                         if responder.send(result).await.is_err() {
@@ -114,10 +108,7 @@ impl<I: ScrapedItem> JsonPipeline<I> {
                     }
                 }
             }
-            info!(
-                "JsonPipeline async task for file: {:?} finished.",
-                path_buf
-            );
+            info!("JsonPipeline async task for file: {:?} finished.", path_buf);
         });
 
         Ok(JsonPipeline {

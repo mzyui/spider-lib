@@ -37,4 +37,3 @@ pub mod sqlite;
 
 #[cfg(feature = "pipeline-stream-json")]
 pub mod stream_json;
-

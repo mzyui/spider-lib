@@ -7,10 +7,10 @@
 //!
 //! It serves as a straightforward way to verify that spiders are extracting
 //! data correctly and that items are flowing through the pipeline as expected.
-use spider_util::{error::PipelineError, item::ScrapedItem};
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use log::info;
+use spider_util::{error::PipelineError, item::ScrapedItem};
 
 /// A pipeline that prints scraped items to the console.
 pub struct ConsolePipeline;

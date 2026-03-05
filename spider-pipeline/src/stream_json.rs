@@ -13,6 +13,7 @@
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use kanal::unbounded_async;
+use log::{debug, error, info};
 use serde_json::Value;
 use spider_util::error::PipelineError;
 use spider_util::item::ScrapedItem;
@@ -20,7 +21,6 @@ use std::fs::OpenOptions;
 use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 use std::path::Path;
-use log::{debug, error, info};
 
 const DEFAULT_BATCH_SIZE: usize = 100;
 
@@ -49,10 +49,7 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
         spider_util::util::validate_output_dir(&file_path)
             .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;
         let path_buf = file_path.as_ref().to_path_buf();
-        info!(
-            "Initializing StreamJsonPipeline for file: {:?}",
-            path_buf
-        );
+        info!("Initializing StreamJsonPipeline for file: {:?}", path_buf);
 
         let (command_sender, command_receiver) = unbounded_async::<StreamJsonCommand>();
 
@@ -182,4 +179,3 @@ impl<I: ScrapedItem> Pipeline<I> for StreamJsonPipeline<I> {
         })?
     }
 }
-
