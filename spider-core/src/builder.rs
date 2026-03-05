@@ -43,9 +43,9 @@
 
 use crate::Downloader;
 use crate::ReqwestClientDownloader;
+use crate::config::{CheckpointConfig, CrawlerConfig};
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
-use crate::config::{CheckpointConfig, CrawlerConfig};
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
 
@@ -62,9 +62,9 @@ use std::time::Duration;
 
 use super::Crawler;
 use crate::stats::StatCollector;
+use log::LevelFilter;
 #[cfg(feature = "checkpoint")]
 use log::{debug, warn};
-use log::LevelFilter;
 
 #[cfg(feature = "checkpoint")]
 use rmp_serde;
@@ -147,6 +147,23 @@ impl<S: Spider> CrawlerBuilder<S, ReqwestClientDownloader> {
 }
 
 impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
+    #[cfg(feature = "checkpoint")]
+    fn load_checkpoint_from_path(&self, path: &std::path::Path) -> Option<crate::Checkpoint> {
+        match fs::read(path) {
+            Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
+                Ok(checkpoint) => Some(checkpoint),
+                Err(e) => {
+                    warn!("Failed to deserialize checkpoint from {:?}: {}", path, e);
+                    None
+                }
+            },
+            Err(e) => {
+                warn!("Failed to read checkpoint file {:?}: {}", path, e);
+                None
+            }
+        }
+    }
+
     /// Sets the maximum number of concurrent downloads.
     ///
     /// This controls how many HTTP requests can be in-flight simultaneously.
@@ -343,7 +360,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         }
 
         // Validate config
-        self.config.validate().map_err(SpiderError::ConfigurationError)?;
+        self.config
+            .validate()
+            .map_err(SpiderError::ConfigurationError)?;
 
         // Restore checkpoint and get scheduler state
         #[cfg(feature = "checkpoint")]
@@ -397,9 +416,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
             #[cfg(feature = "checkpoint")]
             self.checkpoint_config,
             stats,
-            Arc::new(tokio::sync::RwLock::new(
-                cookie_store.unwrap_or_default(),
-            )),
+            Arc::new(tokio::sync::RwLock::new(cookie_store.unwrap_or_default())),
         );
 
         #[cfg(not(feature = "cookie-store"))]
@@ -436,23 +453,15 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Note: Checkpoint file read/deserialization errors are logged as warnings
     /// but do not fail the operation—the crawl proceeds without checkpoint data.
     #[cfg(feature = "checkpoint")]
-    fn restore_checkpoint(
-        &mut self,
-    ) -> Result<RestoreResult, SpiderError> {
+    fn restore_checkpoint(&mut self) -> Result<RestoreResult, SpiderError> {
         let mut scheduler_state = None;
         let mut pipeline_states = None;
 
         if let Some(path) = &self.checkpoint_config.path {
             debug!("Attempting to load checkpoint from {:?}", path);
-            match fs::read(path) {
-                Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
-                    Ok(checkpoint) => {
-                        scheduler_state = Some(checkpoint.scheduler);
-                        pipeline_states = Some(checkpoint.pipelines);
-                    }
-                    Err(e) => warn!("Failed to deserialize checkpoint from {:?}: {}", path, e),
-                },
-                Err(e) => warn!("Failed to read checkpoint file {:?}: {}", path, e),
+            if let Some(checkpoint) = self.load_checkpoint_from_path(path) {
+                scheduler_state = Some(checkpoint.scheduler);
+                pipeline_states = Some(checkpoint.pipelines);
             }
         }
 
@@ -468,14 +477,8 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
 
         if let Some(path) = &self.checkpoint_config.path {
             debug!("Attempting to load cookie store from checkpoint {:?}", path);
-            match fs::read(path) {
-                Ok(bytes) => match rmp_serde::from_slice::<crate::Checkpoint>(&bytes) {
-                    Ok(checkpoint) => {
-                        cookie_store = Some(checkpoint.cookie_store);
-                    }
-                    Err(e) => warn!("Failed to deserialize cookie store from {:?}: {}", path, e),
-                },
-                Err(e) => warn!("Failed to read checkpoint file {:?}: {}", path, e),
+            if let Some(checkpoint) = self.load_checkpoint_from_path(path) {
+                cookie_store = Some(checkpoint.cookie_store);
             }
         }
 
@@ -537,4 +540,3 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         builder.init();
     }
 }
-
