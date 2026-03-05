@@ -176,7 +176,7 @@ impl Spider for BooksSpider {
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(BooksSpider)
-        .log_level(log::LevelFilter::Debug)
+        .log_level(log::LevelFilter::Info)
         .build()
         .await?;
 
