@@ -40,6 +40,7 @@
 //! println!("{}", stats.to_markdown_string());
 //! ```
 
+use moka::sync::Cache;
 use spider_util::error::SpiderError;
 use spider_util::metrics::ExpMovingAverage;
 use std::{
@@ -50,7 +51,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use moka::sync::Cache;
 
 // A snapshot of the current statistics, used for reporting.
 // This avoids code duplication in the various export/display methods.
@@ -325,11 +325,13 @@ impl StatCollector {
             .fetch_add(bytes, Ordering::AcqRel);
     }
 
-    /// Increments the count of scraped items.
-    pub(crate) fn increment_items_scraped(&self) {
-        self.items_scraped.fetch_add(1, Ordering::AcqRel);
-        // Update the EMA with a count of 1 for this event
-        self.items_scraped_ema.update(1);
+    /// Adds multiple scraped items to the counter.
+    pub(crate) fn add_items_scraped(&self, count: usize) {
+        if count == 0 {
+            return;
+        }
+        self.items_scraped.fetch_add(count, Ordering::AcqRel);
+        self.items_scraped_ema.update(count);
     }
 
     /// Increments the count of processed items.

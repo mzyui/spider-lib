@@ -62,5 +62,7 @@ pub use spider_macro::scraped_item;
 pub use async_trait::async_trait;
 pub use dashmap::DashMap;
 pub use spider::Spider;
-pub use state::{Counter, Counter64, Flag, VisitedUrls, ConcurrentMap, ConcurrentVec, StateAccessMetrics};
+pub use state::{
+    ConcurrentMap, ConcurrentVec, Counter, Counter64, Flag, StateAccessMetrics, VisitedUrls,
+};
 pub use tokio;

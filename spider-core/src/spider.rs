@@ -249,5 +249,9 @@ pub trait Spider: Send + Sync + 'static {
     /// }
     /// # }
     /// ```
-    async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError>;
+    async fn parse(
+        &self,
+        response: Response,
+        state: &Self::State,
+    ) -> Result<ParseOutput<Self::Item>, SpiderError>;
 }

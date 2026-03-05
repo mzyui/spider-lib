@@ -41,9 +41,9 @@
 //! }
 //! ```
 
-use std::sync::atomic::{AtomicUsize, AtomicBool, AtomicU64, Ordering};
 use dashmap::DashMap;
 use parking_lot::RwLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 // ============================================================================
 // Counter - Thread-safe atomic counter
@@ -115,7 +115,8 @@ impl Counter {
 
     /// Atomically compares and swaps the value.
     pub fn compare_and_swap(&self, current: usize, new: usize) -> usize {
-        self.0.compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire)
+        self.0
+            .compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire)
             .unwrap_or(current)
     }
 }
@@ -237,7 +238,8 @@ impl Flag {
 
     /// Atomically compares and swaps the value.
     pub fn compare_and_swap(&self, current: bool, new: bool) -> bool {
-        self.0.compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire)
+        self.0
+            .compare_exchange(current, new, Ordering::AcqRel, Ordering::Acquire)
             .unwrap_or(current)
     }
 }
@@ -606,11 +608,9 @@ impl Clone for StateAccessMetrics {
             read_count: AtomicUsize::new(self.read_count.load(Ordering::Acquire)),
             write_count: AtomicUsize::new(self.write_count.load(Ordering::Acquire)),
             concurrent_access_peak: AtomicUsize::new(
-                self.concurrent_access_peak.load(Ordering::Acquire)
+                self.concurrent_access_peak.load(Ordering::Acquire),
             ),
-            current_concurrent: AtomicUsize::new(
-                self.current_concurrent.load(Ordering::Acquire)
-            ),
+            current_concurrent: AtomicUsize::new(self.current_concurrent.load(Ordering::Acquire)),
         }
     }
 }

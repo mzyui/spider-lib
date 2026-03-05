@@ -43,23 +43,23 @@
 //! ```
 
 #[cfg(feature = "checkpoint")]
-use spider_util::constants::DEFAULT_VISITED_CACHE_SIZE;
-#[cfg(feature = "checkpoint")]
 use crate::SchedulerCheckpoint;
+#[cfg(feature = "checkpoint")]
+use spider_util::constants::DEFAULT_VISITED_CACHE_SIZE;
 
+use crossbeam::queue::SegQueue;
+use kanal::{AsyncReceiver, AsyncSender, bounded_async, unbounded_async};
+use log::{debug, error, info, trace, warn};
+use moka::sync::Cache;
 use spider_util::constants::{
-    BLOOM_FILTER_CAPACITY, BLOOM_FILTER_HASH_FUNCTIONS,
-    MAX_PENDING_REQUESTS,
-    VISITED_URL_CACHE_CAPACITY, VISITED_URL_CACHE_TTL_SECS,
+    BLOOM_BUFFER_FLUSH_SIZE, BLOOM_FILTER_CAPACITY, BLOOM_FILTER_HASH_FUNCTIONS,
+    BLOOM_FLUSH_INTERVAL_MS, MAX_PENDING_REQUESTS, VISITED_URL_CACHE_CAPACITY,
+    VISITED_URL_CACHE_TTL_SECS,
 };
 use spider_util::error::SpiderError;
 use spider_util::request::Request;
-use crossbeam::queue::SegQueue;
-use kanal::{AsyncReceiver, AsyncSender, bounded_async, unbounded_async};
-use moka::sync::Cache;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use log::{debug, error, info, trace, warn};
 
 /// Internal messages sent to the scheduler's event loop.
 enum SchedulerMessage {
@@ -75,8 +75,8 @@ enum SchedulerMessage {
 
 use spider_util::bloom::BloomFilter;
 
-use tokio::sync::Notify;
 use parking_lot::Mutex;
+use tokio::sync::Notify;
 
 /// Manages the request queue and tracks visited URLs to prevent duplicate crawling.
 ///
@@ -194,7 +194,9 @@ impl Scheduler {
                 }
             } else {
                 queue = SegQueue::new();
-                visited = Cache::builder().max_capacity(DEFAULT_VISITED_CACHE_SIZE).build();
+                visited = Cache::builder()
+                    .max_capacity(DEFAULT_VISITED_CACHE_SIZE)
+                    .build();
                 pending = AtomicUsize::new(0);
                 salvaged = SegQueue::new();
             }
@@ -232,10 +234,9 @@ impl Scheduler {
         });
 
         let scheduler_bloom = Arc::clone(&scheduler);
-        let buffer_clone = buffer.clone();
         let notify_clone = notify.clone();
         tokio::spawn(async move {
-            scheduler_bloom.flush_buffer(buffer_clone, notify_clone).await;
+            scheduler_bloom.flush_buffer(notify_clone).await;
         });
 
         let scheduler_task = Arc::clone(&scheduler);
@@ -325,7 +326,7 @@ impl Scheduler {
                 {
                     let mut buffer = self.buffer.lock();
                     buffer.push(fingerprint);
-                    if buffer.len() >= 100 {
+                    if buffer.len() >= BLOOM_BUFFER_FLUSH_SIZE {
                         self.notify.notify_one();
                     }
                 }
@@ -335,7 +336,7 @@ impl Scheduler {
             Ok(SchedulerMessage::MarkAsVisitedBatch(mut fingerprints)) => {
                 let count = fingerprints.len();
                 trace!("Marking {} URL fingerprints as visited in batch", count);
-                
+
                 // Insert all fingerprints into visited cache
                 for fingerprint in &fingerprints {
                     self.visited.insert(fingerprint.clone(), true);
@@ -345,7 +346,7 @@ impl Scheduler {
                 {
                     let mut buffer = self.buffer.lock();
                     buffer.append(&mut fingerprints);
-                    if buffer.len() >= 100 {
+                    if buffer.len() >= BLOOM_BUFFER_FLUSH_SIZE {
                         self.notify.notify_one();
                     }
                 }
@@ -459,15 +460,12 @@ impl Scheduler {
         self.is_shutting_down.store(true, Ordering::SeqCst);
 
         if !self.tx.is_closed() {
-            self.tx
-                .send(SchedulerMessage::Shutdown)
-                .await
-                .map_err(|e| {
-                    SpiderError::GeneralError(format!(
-                        "Scheduler: Failed to send shutdown signal: {}",
-                        e
-                    ))
-                })
+            self.tx.send(SchedulerMessage::Shutdown).await.map_err(|e| {
+                SpiderError::GeneralError(format!(
+                    "Scheduler: Failed to send shutdown signal: {}",
+                    e
+                ))
+            })
         } else {
             debug!("Scheduler internal channel already closed, skipping shutdown signal");
             Ok(())
@@ -544,17 +542,13 @@ impl Scheduler {
         }
     }
 
-    async fn flush_buffer(
-        &self,
-        _buffer: Arc<Mutex<Vec<String>>>,
-        notify: Arc<Notify>,
-    ) {
+    async fn flush_buffer(&self, notify: Arc<Notify>) {
         loop {
             tokio::select! {
                 _ = notify.notified() => {
                     self.flush_buffer_now();
                 }
-                _ = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(BLOOM_FLUSH_INTERVAL_MS)) => {
                     self.flush_buffer_now();
                 }
             }

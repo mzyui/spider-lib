@@ -48,9 +48,7 @@
 mod primitives;
 
 pub use primitives::{
-    Counter, Counter64, Flag, VisitedUrls,
-    ConcurrentMap, ConcurrentVec,
-    StateAccessMetrics,
+    ConcurrentMap, ConcurrentVec, Counter, Counter64, Flag, StateAccessMetrics, VisitedUrls,
 };
 
 // ============================================================================
