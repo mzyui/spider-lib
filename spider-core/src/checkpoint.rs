@@ -48,6 +48,7 @@
 
 use crate::spider::Spider;
 use dashmap::DashSet;
+use log::{info, warn};
 use rmp_serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -59,7 +60,6 @@ use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use log::{info, warn};
 
 #[cfg(feature = "cookie-store")]
 use tokio::sync::RwLock;
@@ -150,4 +150,3 @@ where
     info!("Checkpoint saved successfully.");
     Ok(())
 }
-
