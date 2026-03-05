@@ -1,9 +1,9 @@
-// Use the prelude for easy access to common types and traits.
 use dashmap::DashMap;
 use spider_lib::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+/// Scraped item model for a book detail page.
 #[scraped_item]
 pub struct BookItem {
     pub title: String,
@@ -16,7 +16,7 @@ pub struct BookItem {
     pub stock: String,
 }
 
-// State untuk tracking jumlah halaman dan buku yang telah diproses
+/// Shared runtime state for the books spider example.
 #[derive(Clone, Default)]
 pub struct BooksSpiderState {
     page_count: Arc<AtomicUsize>,
@@ -25,27 +25,33 @@ pub struct BooksSpiderState {
 }
 
 impl BooksSpiderState {
+    /// Increments the number of processed pages.
     pub fn increment_page_count(&self) {
         self.page_count.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Increments the number of discovered books.
     pub fn increment_book_count(&self) {
         self.book_count.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Returns the current processed page count.
     pub fn get_page_count(&self) -> usize {
         self.page_count.load(Ordering::SeqCst)
     }
 
+    /// Returns the current discovered book count.
     pub fn get_book_count(&self) -> usize {
         self.book_count.load(Ordering::SeqCst)
     }
 
+    /// Marks a URL as visited in the local state map.
     pub fn mark_url_visited(&self, url: String) {
         self.visited_urls.insert(url, true);
     }
 }
 
+/// Example spider for https://books.toscrape.com/.
 pub struct BooksSpider;
 
 #[async_trait]
@@ -62,20 +68,17 @@ impl Spider for BooksSpider {
         response: Response,
         state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        // Update state - bisa dilakukan secara concurrent tanpa blocking spider
         state.increment_page_count();
         state.mark_url_visited(response.url.to_string());
 
         let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        // Check if this is a category/listing page or a book detail page
         if html
             .select(&".product_main".to_selector()?)
             .next()
             .is_some()
         {
-            // This is a book detail page
             let title = html
                 .select(&".product_main h1".to_selector()?)
                 .next()
@@ -92,7 +95,6 @@ impl Spider for BooksSpider {
                 .trim()
                 .to_string();
 
-            // Extract rating from star rating class
             let rating = html
                 .select(&".star-rating".to_selector()?)
                 .next()
@@ -106,7 +108,6 @@ impl Spider for BooksSpider {
                 })
                 .unwrap_or_default();
 
-            // Extract additional details from the table
             let mut upc = String::new();
             let mut tax = String::new();
             let mut reviews = String::new();
@@ -138,42 +139,12 @@ impl Spider for BooksSpider {
                 upc,
                 tax,
                 reviews,
-                stock: String::new(), // Initialize stock field
+                stock: String::new(),
             });
 
             state.increment_book_count();
         } else {
-            // This is a category/listing page
             for book in html.select(&"article.product_pod".to_selector()?) {
-                // Extract title
-                let _title = book
-                    .select(&"h3 a".to_selector()?)
-                    .next()
-                    .and_then(|a| a.attr("title"))
-                    .unwrap_or_default()
-                    .to_string();
-
-                // Extract price
-                let _price = book
-                    .select(&".price_color".to_selector()?)
-                    .next()
-                    .map(|e| e.text().collect::<String>())
-                    .unwrap_or_default();
-
-                // Extract rating
-                let rating_class = book
-                    .select(&".star-rating".to_selector()?)
-                    .next()
-                    .and_then(|e| e.attr("class"))
-                    .unwrap_or_default();
-
-                let _rating = rating_class
-                    .split_whitespace()
-                    .find(|&c| c != "star-rating")
-                    .unwrap_or_default()
-                    .to_string();
-
-                // Follow link to individual book page to get more details
                 if let Some(book_link) = book
                     .select(&"h3 a".to_selector()?)
                     .next()
@@ -188,7 +159,6 @@ impl Spider for BooksSpider {
                 state.increment_book_count();
             }
 
-            // Handle pagination - find next page link
             if let Some(next_href) = html
                 .select(&".next > a[href]".to_selector()?)
                 .next()
@@ -205,8 +175,6 @@ impl Spider for BooksSpider {
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
-    // The builder defaults to using ReqwestClientDownloader
-    // Use log_level() to configure logging for spider-* crates only
     let crawler = CrawlerBuilder::new(BooksSpider)
         .log_level(log::LevelFilter::Debug)
         .build()
