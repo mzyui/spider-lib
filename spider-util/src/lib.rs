@@ -32,7 +32,7 @@ pub mod util;
 
 pub use constants::*;
 pub use formatters::{
-    format_bytes, format_duration, format_request_time, ByteFormatter, DefaultByteFormatter,
-    DefaultDurationFormatter, DefaultRateCalculator, DurationFormatter, RateCalculator,
+    ByteFormatter, DefaultByteFormatter, DefaultDurationFormatter, DefaultRateCalculator,
+    DurationFormatter, RateCalculator, format_bytes, format_duration, format_request_time,
 };
 pub use http_client::HttpClient;

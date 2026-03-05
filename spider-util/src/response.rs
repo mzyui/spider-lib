@@ -150,7 +150,6 @@ pub struct Response {
     pub cached: bool,
 }
 
-
 impl Response {
     /// Reconstructs the original [`Request`] that led to this response.
     ///

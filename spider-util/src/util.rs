@@ -63,4 +63,3 @@ impl ToSelector for String {
         Selector::parse(self).map_err(|e| SpiderError::HtmlParseError(e.to_string()))
     }
 }
-

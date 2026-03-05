@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 
 // Re-export formatters to avoid duplication
 pub use crate::formatters::{
-    DurationFormatter, ByteFormatter, RateCalculator,
-    DefaultDurationFormatter, DefaultByteFormatter, DefaultRateCalculator,
+    ByteFormatter, DefaultByteFormatter, DefaultDurationFormatter, DefaultRateCalculator,
+    DurationFormatter, RateCalculator,
 };
 
 // Thread-safe exponential moving average for tracking recent rates

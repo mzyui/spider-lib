@@ -87,4 +87,3 @@ impl Clone for Box<dyn ScrapedItem + Send + Sync> {
         self.box_clone()
     }
 }
-

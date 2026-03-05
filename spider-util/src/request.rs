@@ -228,7 +228,11 @@ impl Serialize for Request {
         let meta_map: HashMap<String, Value> = self
             .meta
             .as_ref()
-            .map(|m| m.iter().map(|e| (e.key().clone(), e.value().clone())).collect())
+            .map(|m| {
+                m.iter()
+                    .map(|e| (e.key().clone(), e.value().clone()))
+                    .collect()
+            })
             .unwrap_or_default();
         s.serialize_field("meta", &meta_map)?;
         s.end()
@@ -551,7 +555,10 @@ impl Request {
     /// Gets a value from metadata using DashMap's API.
     ///
     /// This is intended for internal framework use where direct access is needed.
-    pub fn get_meta_ref(&self, key: &str) -> Option<dashmap::mapref::one::Ref<'_, String, serde_json::Value>> {
+    pub fn get_meta_ref(
+        &self,
+        key: &str,
+    ) -> Option<dashmap::mapref::one::Ref<'_, String, serde_json::Value>> {
         self.meta.as_ref().and_then(|m| m.get(key))
     }
 
@@ -601,7 +608,10 @@ impl Request {
         let current_attempts = self.get_retry_attempts();
         self.meta
             .get_or_insert_with(|| Arc::new(DashMap::new()))
-            .insert(Self::RETRY_ATTEMPTS_KEY.to_string(), serde_json::Value::from(current_attempts + 1));
+            .insert(
+                Self::RETRY_ATTEMPTS_KEY.to_string(),
+                serde_json::Value::from(current_attempts + 1),
+            );
     }
 
     /// Generates a unique fingerprint for the request based on its URL, method, and body.
