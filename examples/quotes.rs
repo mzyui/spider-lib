@@ -1,8 +1,8 @@
 // Use the prelude for easy access to common types and traits.
+use dashmap::DashMap;
 use spider_lib::prelude::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use dashmap::DashMap;
 
 #[scraped_item]
 pub struct QuoteItem {
@@ -21,11 +21,11 @@ impl QuotesSpiderState {
     pub fn increment_page_count(&self) {
         self.page_count.fetch_add(1, Ordering::SeqCst);
     }
-    
+
     pub fn get_page_count(&self) -> usize {
         self.page_count.load(Ordering::SeqCst)
     }
-    
+
     pub fn mark_url_visited(&self, url: String) {
         self.visited_urls.insert(url, true);
     }
@@ -42,11 +42,15 @@ impl Spider for QuotesSpider {
         vec!["https://quotes.toscrape.com/"]
     }
 
-    async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
+    async fn parse(
+        &self,
+        response: Response,
+        state: &Self::State,
+    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
         // Update state - bisa dilakukan secara concurrent tanpa blocking spider
         state.increment_page_count();
         state.mark_url_visited(response.url.to_string());
-        
+
         let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
