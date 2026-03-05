@@ -14,6 +14,11 @@ use crate::error::SpiderError;
 #[async_trait]
 pub trait HttpClient: Send + Sync {
     /// Fetches the content of a URL as text.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the request fails, times out, or the response body
+    /// cannot be read.
     async fn get_text(
         &self,
         url: &str,
@@ -21,7 +26,6 @@ pub trait HttpClient: Send + Sync {
     ) -> Result<(StatusCode, Bytes), SpiderError>;
 }
 
-// Implement the trait for reqwest::Client
 #[async_trait]
 impl HttpClient for reqwest::Client {
     async fn get_text(

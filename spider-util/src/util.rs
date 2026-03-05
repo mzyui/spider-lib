@@ -29,6 +29,10 @@ pub fn normalize_origin(request: &Request) -> String {
 }
 
 /// Validates that the parent directory of a given file path exists, creating it if necessary.
+///
+/// # Errors
+///
+/// Returns an error if the parent directory cannot be created.
 pub fn validate_output_dir(file_path: impl AsRef<Path>) -> Result<(), SpiderError> {
     let Some(parent_dir) = file_path.as_ref().parent() else {
         return Ok(());
@@ -42,13 +46,22 @@ pub fn validate_output_dir(file_path: impl AsRef<Path>) -> Result<(), SpiderErro
 }
 
 /// Creates a directory and all of its parent components if they are missing.
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be created.
 pub fn create_dir(dir_path: impl AsRef<Path>) -> Result<(), SpiderError> {
     fs::create_dir_all(dir_path)?;
     Ok(())
 }
 
+/// Converts a string selector expression into a parsed [`Selector`].
 pub trait ToSelector {
     /// Parses a string slice into a `scraper::Selector`, returning a `SpiderError` on failure.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpiderError::HtmlParseError`] when selector parsing fails.
     fn to_selector(&self) -> Result<Selector, SpiderError>;
 }
 

@@ -6,13 +6,13 @@ use parking_lot::RwLock;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-// Re-export formatters to avoid duplication
+/// Formatter traits and default implementations for metrics output.
 pub use crate::formatters::{
     ByteFormatter, DefaultByteFormatter, DefaultDurationFormatter, DefaultRateCalculator,
     DurationFormatter, RateCalculator,
 };
 
-// Thread-safe exponential moving average for tracking recent rates
+/// Thread-safe exponential moving average used to track recent event rates.
 #[derive(Debug)]
 pub struct ExpMovingAverage {
     alpha: f64,
@@ -22,6 +22,9 @@ pub struct ExpMovingAverage {
 }
 
 impl ExpMovingAverage {
+    /// Creates a new moving average with smoothing factor `alpha`.
+    ///
+    /// Lower values react more slowly to changes; higher values react faster.
     pub fn new(alpha: f64) -> Self {
         ExpMovingAverage {
             alpha,
@@ -31,6 +34,7 @@ impl ExpMovingAverage {
         }
     }
 
+    /// Records `count` new events and updates the smoothed rate periodically.
     pub fn update(&self, count: usize) {
         let now = Instant::now();
         let mut last_update = self.last_update.write();
@@ -39,25 +43,23 @@ impl ExpMovingAverage {
         *event_count += count;
         let time_delta = now.duration_since(*last_update).as_secs_f64();
 
-        // Update rate every second or so to prevent excessive computation
         if time_delta >= 1.0 {
             let current_rate = *event_count as f64 / time_delta;
             let mut rate = self.rate.write();
-            // Apply exponential moving average formula
             *rate = self.alpha * current_rate + (1.0 - self.alpha) * (*rate);
 
-            // Reset for next interval
             *event_count = 0;
             *last_update = now;
         }
     }
 
+    /// Returns the current smoothed events-per-second rate.
     pub fn get_rate(&self) -> f64 {
         *self.rate.read()
     }
 }
 
-// Snapshot of statistics for reporting purposes
+/// Point-in-time snapshot of crawler metrics for reporting and export.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MetricsSnapshot {
     pub requests_enqueued: usize,
@@ -88,49 +90,74 @@ pub struct MetricsSnapshot {
 }
 
 impl MetricsSnapshot {
+    /// Formats [`Self::elapsed_duration`] into a human-readable string.
     pub fn formatted_duration(&self) -> String {
         DefaultDurationFormatter.formatted_duration(self.elapsed_duration)
     }
 
+    /// Formats an optional request duration for display.
     pub fn formatted_request_time(&self, duration: Option<Duration>) -> String {
         DefaultDurationFormatter.formatted_request_time(duration)
     }
 
+    /// Returns average sent requests per second over total elapsed duration.
     pub fn requests_per_second(&self) -> f64 {
         DefaultRateCalculator.calculate_rate(self.requests_sent, self.elapsed_duration)
     }
 
+    /// Returns average received responses per second over total elapsed duration.
     pub fn responses_per_second(&self) -> f64 {
         DefaultRateCalculator.calculate_rate(self.responses_received, self.elapsed_duration)
     }
 
+    /// Returns average scraped items per second over total elapsed duration.
     pub fn items_per_second(&self) -> f64 {
         DefaultRateCalculator.calculate_rate(self.items_scraped, self.elapsed_duration)
     }
 
+    /// Formats [`Self::total_bytes_downloaded`] into a human-readable size string.
     pub fn formatted_bytes(&self) -> String {
         DefaultByteFormatter.formatted_bytes(self.total_bytes_downloaded)
     }
 }
 
-// Trait for creating snapshots from metric collectors
+/// Trait for metrics collectors that can produce a snapshot value.
 pub trait SnapshotProvider {
+    /// Snapshot type produced by this provider.
     type Snapshot: Clone;
+
+    /// Builds a snapshot of the current metrics state.
     fn create_snapshot(&self) -> Self::Snapshot;
 }
 
-// Trait for exporting metrics in different formats
+/// Trait for exporting metrics into multiple output formats.
 pub trait MetricsExporter<T> {
+    /// Exports metrics as compact JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when serialization fails.
     fn to_json_string(&self) -> Result<String, crate::error::SpiderError>;
+
+    /// Exports metrics as pretty-printed JSON.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when serialization fails.
     fn to_json_string_pretty(&self) -> Result<String, crate::error::SpiderError>;
+
+    /// Exports metrics as a Markdown report.
     fn to_markdown_string(&self) -> String;
+
+    /// Exports metrics as a plain-text display report.
     fn to_display_string(&self) -> String;
 }
 
-// Default implementation for displaying metrics
+/// Default formatter for human-readable metrics display output.
 pub struct MetricsDisplayFormatter;
 
 impl MetricsDisplayFormatter {
+    /// Formats a snapshot provider into a multi-line summary string.
     pub fn format_metrics<T: MetricsSnapshotProvider>(&self, snapshot: &T) -> String {
         format!(
             "\nCrawl Statistics\n----------------\nduration : {}\n  speed    : req/s: {:.2}, resp/s: {:.2}, item/s: {:.2}\nrequests : enqueued: {}, sent: {}, ok: {}, fail: {}, retry: {}, drop: {}\nresponse : received: {}, from_cache: {}, downloaded: {}\nitems    : scraped: {}, processed: {}, dropped: {}\nreq time : avg: {}, fastest: {}, slowest: {}, total: {}\nparsing  : avg: {}, fastest: {}, slowest: {}, total: {}\nstatus   : {}\n",
@@ -172,7 +199,7 @@ impl MetricsDisplayFormatter {
     }
 }
 
-// Trait for metrics that can provide snapshot data
+/// Read-only accessor interface consumed by metrics display/export formatters.
 pub trait MetricsSnapshotProvider {
     fn get_requests_enqueued(&self) -> usize;
     fn get_requests_sent(&self) -> usize;
