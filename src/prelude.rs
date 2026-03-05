@@ -22,16 +22,16 @@ pub use spider_core::{
     // Core modules
     scheduler::Scheduler,
     state::CrawlerState,
-    stats::StatCollector,
     // Thread-safe state primitives
-    state::{Counter, Counter64, Flag, VisitedUrls, ConcurrentMap, ConcurrentVec, StateAccessMetrics},
+    state::{
+        ConcurrentMap, ConcurrentVec, Counter, Counter64, Flag, StateAccessMetrics, VisitedUrls,
+    },
+    stats::StatCollector,
     tokio,
 };
 
 // Re-export ParseOutput and ScrapedItem from spider_util
-pub use spider_util::{
-    item::{ParseOutput, ScrapedItem},
-};
+pub use spider_util::item::{ParseOutput, ScrapedItem};
 
 // Re-export Pipeline from spider_pipeline
 pub use spider_pipeline::pipeline::Pipeline;
@@ -65,9 +65,7 @@ pub use spider_middleware::robots::RobotsTxtMiddleware;
 #[cfg(feature = "middleware-cookies")]
 pub use spider_middleware::cookies::CookieMiddleware;
 
-pub use spider_pipeline::{
-    console::ConsolePipeline, dedup::DeduplicationPipeline,
-};
+pub use spider_pipeline::{console::ConsolePipeline, dedup::DeduplicationPipeline};
 
 #[cfg(feature = "pipeline-csv")]
 pub use spider_pipeline::csv::CsvPipeline;
@@ -83,7 +81,6 @@ pub use spider_pipeline::sqlite::SqlitePipeline;
 
 #[cfg(feature = "pipeline-stream-json")]
 pub use spider_pipeline::stream_json::StreamJsonPipeline;
-
 
 #[cfg(feature = "checkpoint")]
 pub use spider_core::checkpoint::{Checkpoint, SchedulerCheckpoint};
