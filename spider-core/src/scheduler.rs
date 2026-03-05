@@ -456,6 +456,11 @@ impl Scheduler {
         Ok(())
     }
 
+    /// Signals the scheduler loop to stop processing new work.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the shutdown message cannot be sent.
     pub async fn shutdown(&self) -> Result<(), SpiderError> {
         self.is_shutting_down.store(true, Ordering::SeqCst);
 
@@ -472,6 +477,11 @@ impl Scheduler {
         }
     }
 
+    /// Marks a single fingerprint as visited.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the message cannot be delivered to the scheduler loop.
     pub async fn mark_visited(&self, fingerprint: String) -> Result<(), SpiderError> {
         trace!(
             "Sending MarkAsVisited message for fingerprint: {}",
@@ -491,6 +501,13 @@ impl Scheduler {
             })
     }
 
+    /// Marks multiple fingerprints as visited in one message.
+    ///
+    /// If `fingerprints` is empty, this method returns immediately.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the batch message cannot be delivered to the scheduler loop.
     pub async fn mark_visited_batch(&self, fingerprints: Vec<String>) -> Result<(), SpiderError> {
         if fingerprints.is_empty() {
             return Ok(());
@@ -514,6 +531,7 @@ impl Scheduler {
             })
     }
 
+    /// Returns `true` if `fingerprint` has already been visited.
     pub fn is_visited(&self, fingerprint: &str) -> bool {
         if !self.bloom.read().might_contain(fingerprint) {
             return false;
@@ -557,21 +575,25 @@ impl Scheduler {
         }
     }
 
+    /// Returns `true` when `request` has not been visited yet.
     pub fn should_enqueue(&self, request: &Request) -> bool {
         let fingerprint = request.fingerprint();
         !self.is_visited(&fingerprint)
     }
 
+    /// Returns the number of pending requests in the scheduler.
     #[inline]
     pub fn len(&self) -> usize {
         self.pending.load(Ordering::Acquire)
     }
 
+    /// Returns `true` if the scheduler has no pending requests.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
+    /// Returns `true` when the scheduler is currently idle.
     #[inline]
     pub fn is_idle(&self) -> bool {
         self.is_empty()

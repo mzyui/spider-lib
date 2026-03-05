@@ -340,6 +340,7 @@ where
         Ok(())
     }
 
+    /// Returns a shared handle to crawler runtime statistics.
     pub fn stats(&self) -> Arc<StatCollector> {
         Arc::clone(&self.stats)
     }
