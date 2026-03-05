@@ -1,104 +1,77 @@
 # spider-core
 
-The core engine of the `spider-lib` web scraping framework.
+Core engine for `spider-lib`: spider trait, crawler runtime, scheduler, builder, and shared crawl state.
 
-## Overview
+## Install
 
-The `spider-core` crate provides the fundamental components for building web scrapers, including the main `Crawler`, `Scheduler`, `Spider` trait, and other essential infrastructure for managing the crawling process.
+```toml
+[dependencies]
+spider-core = "1.0.3"
+```
 
-This crate implements the central orchestration layer of the web scraping framework. It manages the flow of requests and responses, coordinates concurrent operations, and provides the foundation for middleware and pipeline systems.
+Usually you will use this through `spider-lib`, but this crate is useful if you want lower-level control.
 
-## Key Components
+## Main Components
 
-- **Crawler**: The main orchestrator that manages the crawling process
-- **Scheduler**: Handles request queuing and duplicate detection
-- **Spider**: Trait defining the interface for custom scraping logic
-- **CrawlerBuilder**: Fluent API for configuring and building crawlers
-- **Middleware**: Interceptors for processing requests and responses
-- **Pipeline**: Processors for scraped items
-- **Stats**: Collection and reporting of crawl statistics
-- **Checkpoint**: Support for resuming crawls from saved state
+- `Spider`: trait for crawl logic.
+- `Crawler`: runtime engine.
+- `CrawlerBuilder`: crawler configuration and composition.
+- `Scheduler`: request queueing and dedup behavior.
+- `StatCollector`: runtime statistics.
 
-## Architecture
+## Minimal Usage
 
-The spider-core crate serves as the central hub connecting all other components of the spider framework. It handles:
-
-- Request scheduling and execution
-- Response processing
-- Concurrent crawling operations
-- State management
-- Statistics collection
-- Checkpoint and resume functionality
-
-## Usage
-
-Most users will interact with the components re-exported from this crate through the main `spider-lib` facade. However, this crate can be used independently for fine-grained control over the crawling process.
-
-```rust
-use spider_core::{Crawler, CrawlerBuilder, Spider, Scheduler};
-use spider_util::{request::Request, response::Response, error::SpiderError};
-
-#[derive(Default)]
-struct MySpider;
+```rust,no_run
+use spider_core::{async_trait, CrawlerBuilder, Spider};
+use spider_util::{error::SpiderError, item::ParseOutput, response::Response};
 
 #[spider_macro::scraped_item]
-struct MyItem {
+struct Item {
     title: String,
-    url: String,
 }
 
-#[async_trait::async_trait]
+#[derive(Clone, Default)]
+struct State;
+
+struct MySpider;
+
+#[async_trait]
 impl Spider for MySpider {
-    type Item = MyItem;
+    type Item = Item;
+    type State = State;
 
     fn start_urls(&self) -> Vec<&'static str> {
         vec!["https://example.com"]
     }
 
-    async fn parse(&mut self, response: Response) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        // Custom parsing logic here
-        todo!()
+    async fn parse(
+        &self,
+        _response: Response,
+        _state: &Self::State,
+    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+        Ok(ParseOutput::new())
     }
 }
-
-async fn run_crawler() -> Result<(), SpiderError> {
-    let crawler = CrawlerBuilder::new(MySpider).build().await?;
-    crawler.start_crawl().await
-}
 ```
 
-## Dependencies
+## Feature Flags
 
-This crate depends on:
-- `spider-util`: For basic data structures and utilities
-- `spider-middleware`: For request/response processing
-- `spider-downloader`: For HTTP request execution
-- `spider-pipeline`: For item processing
-- Various external crates for async processing, serialization, and data structures
+- `core` (default)
+- `checkpoint`: enables checkpoint/resume support.
+- `cookie-store`: enables `cookie_store` integration.
 
-## Features
-
-This crate uses feature flags to allow selective inclusion of optional functionality:
-
-- `core` (default): Includes core functionality
-- `checkpoint`: Enables checkpoint and resume functionality (requires `rmp-serde`, `time`)
-- `cookie-store`: Enables advanced cookie store integration (requires `cookie_store`)
-
-### Important Feature Relationships
-- `cookie-store` and `middleware-cookies` (from spider-middleware) are interdependent: When using `cookie-store`, `middleware-cookies` functionality may be desired for managing cookies effectively. When using `middleware-cookies`, `cookie-store` should be enabled for full functionality.
-
-To use only core functionality:
 ```toml
 [dependencies]
-spider-core = { version = "...", default-features = false, features = ["core"] }
+spider-core = { version = "1.0.3", features = ["checkpoint"] }
 ```
 
-To include specific features:
-```toml
-[dependencies]
-spider-core = { version = "...", features = ["checkpoint", "cookie-store"] }
-```
+## Related Crates
+
+- [`spider-downloader`](../spider-downloader/README.md)
+- [`spider-middleware`](../spider-middleware/README.md)
+- [`spider-pipeline`](../spider-pipeline/README.md)
+- [`spider-util`](../spider-util/README.md)
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+MIT. See [LICENSE](./LICENSE).

@@ -1,26 +1,26 @@
 # spider-downloader
 
-Provides traits and implementations for HTTP downloaders in the `spider-lib` framework.
+Downloader traits and reqwest-based downloader implementation for `spider-lib`.
 
-## Overview
+## Install
 
-The `spider-downloader` crate defines the foundational traits for handling HTTP requests and responses within the web crawling framework. It abstracts the underlying HTTP client implementation, allowing for flexibility in choosing different HTTP libraries while maintaining a consistent interface for the crawling engine.
+```toml
+[dependencies]
+spider-downloader = "0.4.3"
+```
 
-## Key Components
+## Exports
 
-- **Downloader Trait**: Interface for components that execute web requests and produce `Response` objects. Implementations typically wrap HTTP client libraries like `reqwest`.
-- **HttpClient Trait**: Basic interface for performing simple GET requests, used for internal utility functions or when a full `Request` object isn't necessary.
-
-## Architecture
-
-The downloader system is designed to be pluggable, allowing users to implement custom downloaders with different behaviors (e.g., with different retry strategies, proxy support, or caching mechanisms).
+- `Downloader`: trait for request execution.
+- `HttpClient`: lightweight HTTP client trait re-export.
+- `ReqwestClientDownloader`: default reqwest implementation.
 
 ## Usage
 
-```rust
-use spider_downloader::{Downloader, HttpClient};
-use spider_util::{request::Request, response::Response, error::SpiderError};
+```rust,no_run
 use async_trait::async_trait;
+use spider_downloader::Downloader;
+use spider_util::{error::SpiderError, request::Request, response::Response};
 
 struct MyDownloader {
     client: reqwest::Client,
@@ -30,8 +30,7 @@ struct MyDownloader {
 impl Downloader for MyDownloader {
     type Client = reqwest::Client;
 
-    async fn download(&self, request: Request) -> Result<Response, SpiderError> {
-        // Implementation for downloading web pages
+    async fn download(&self, _request: Request) -> Result<Response, SpiderError> {
         todo!()
     }
 
@@ -43,4 +42,4 @@ impl Downloader for MyDownloader {
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+MIT. See [LICENSE](./LICENSE).
