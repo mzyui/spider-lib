@@ -27,3 +27,4 @@ output/
 
 .gemini/
 gha-creds-*.json
+AGENTS.md
