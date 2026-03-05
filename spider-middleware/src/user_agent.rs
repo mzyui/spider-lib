@@ -100,7 +100,7 @@ impl Default for UserAgentSource {
     }
 }
 
-/// Custom serializer for Arc<String>
+/// Serializes `Arc<String>` as a string.
 fn serialize_arc_string<S>(x: &Arc<String>, s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -108,7 +108,7 @@ where
     s.serialize_str(x.as_str())
 }
 
-/// Custom deserializer for Arc<String>
+/// Deserializes a string into `Arc<String>`.
 fn deserialize_arc_string<'de, D>(deserializer: D) -> Result<Arc<String>, D::Error>
 where
     D: Deserializer<'de>,
@@ -149,7 +149,7 @@ impl From<&str> for UserAgentProfile {
     }
 }
 
-/// Builder for creating a `UserAgentMiddleware`.
+/// Builder for creating a [`UserAgentMiddleware`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserAgentMiddlewareBuilder {
     source: UserAgentSource,
@@ -198,7 +198,10 @@ impl UserAgentMiddlewareBuilder {
     }
 
     /// Builds the `UserAgentMiddleware`.
-    /// This can fail if a User-Agent source file is specified but cannot be read.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a configured source file cannot be read.
     pub fn build(self) -> Result<UserAgentMiddleware, SpiderError> {
         let default_pool = Arc::new(UserAgentMiddleware::load_user_agents(&self.source)?);
 
@@ -237,6 +240,7 @@ impl UserAgentMiddlewareBuilder {
     }
 }
 
+/// Middleware that sets and rotates `User-Agent` headers for outgoing requests.
 pub struct UserAgentMiddleware {
     strategy: UserAgentRotationStrategy,
     fallback_user_agent: Option<String>,

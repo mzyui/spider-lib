@@ -164,6 +164,10 @@ pub struct TokenBucketLimiter {
 
 impl TokenBucketLimiter {
     /// Creates a new `TokenBucketLimiter` with the specified rate (requests per second).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `requests_per_second` is `0`.
     pub fn new(requests_per_second: u32) -> Self {
         let quota = Quota::per_second(
             NonZeroU32::new(requests_per_second).expect("requests_per_second must be non-zero"),
@@ -184,14 +188,9 @@ impl RateLimiter for TokenBucketLimiter {
     }
 
     /// A fixed-rate limiter does not adjust based on responses.
-    async fn adjust(&self, _response: &Response) {
-        // No-op for a fixed-rate limiter
-    }
+    async fn adjust(&self, _response: &Response) {}
 
     async fn current_delay(&self) -> Duration {
-        // Token bucket doesn't directly expose a "current delay", but rather
-        // manages when the next request is allowed.
-        // Returning Duration::ZERO is a simplification, as delay is handled by `acquire`.
         Duration::ZERO
     }
 }

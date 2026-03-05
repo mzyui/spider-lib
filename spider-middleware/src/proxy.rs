@@ -48,7 +48,7 @@ impl Default for ProxySource {
     }
 }
 
-/// Builder for creating an `ProxyMiddleware`.
+/// Builder for creating a [`ProxyMiddleware`].
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProxyMiddlewareBuilder {
     source: ProxySource,
@@ -77,7 +77,10 @@ impl ProxyMiddlewareBuilder {
     }
 
     /// Builds the `ProxyMiddleware`.
-    /// This can fail if a proxy source file is specified but cannot be read.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configured source file cannot be read.
     pub fn build(self) -> Result<ProxyMiddleware, SpiderError> {
         let proxies = Arc::new(ProxyMiddleware::load_proxies(&self.source)?);
 
@@ -100,6 +103,7 @@ impl ProxyMiddlewareBuilder {
     }
 }
 
+/// Middleware that assigns proxies to outgoing requests and rotates them based on strategy.
 pub struct ProxyMiddleware {
     strategy: ProxyRotationStrategy,
     proxies: Arc<Vec<String>>,
@@ -217,13 +221,10 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
         let mut rotate = false;
         let status = response.status;
 
-        // Check for bad status codes
         if status.is_client_error() || status.is_server_error() {
-            // e.g., 403 Forbidden, 429 Too Many Requests, 5xx errors
             rotate = true;
         }
 
-        // Check for block texts in body if status is OK
         if status.is_success()
             && let Some(texts) = &self.block_detection_texts
         {
@@ -253,7 +254,6 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
             self.rotate_proxy();
         }
 
-        // Pass the error along for other middlewares (like Retry) to handle.
         Err(error.clone())
     }
 }

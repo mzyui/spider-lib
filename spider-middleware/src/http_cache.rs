@@ -147,7 +147,10 @@ impl HttpCacheMiddlewareBuilder {
     }
 
     /// Builds the `HttpCacheMiddleware`.
-    /// This can fail if the cache directory cannot be created or determined.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the cache directory cannot be resolved or created.
     pub fn build(self) -> Result<HttpCacheMiddleware, SpiderError> {
         let cache_dir = if let Some(path) = self.cache_dir {
             path
@@ -175,6 +178,7 @@ impl HttpCacheMiddlewareBuilder {
 }
 
 #[derive(Debug)]
+/// Middleware that caches successful HTTP responses on disk.
 pub struct HttpCacheMiddleware {
     cache_dir: PathBuf,
 }
