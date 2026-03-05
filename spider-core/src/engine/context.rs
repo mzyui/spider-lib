@@ -11,7 +11,7 @@
 //! - **Better code organization**: Related state is grouped together
 //! - **Easier refactoring**: Adding new shared state only requires one change
 
-use crate::{Scheduler, stats::StatCollector, spider::Spider};
+use crate::{Scheduler, spider::Spider, stats::StatCollector};
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::item::ScrapedItem;
 use std::sync::Arc;

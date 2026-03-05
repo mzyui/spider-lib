@@ -109,11 +109,11 @@ where
             let state_clone = Arc::clone(&state);
             let scheduler_clone = Arc::clone(&scheduler);
             let stats_clone = Arc::clone(&stats);
+            let request_url_for_metrics = request.url.to_string();
             let _permit = permit.unwrap();
 
             tasks.spawn(async move {
                 let start_time = Instant::now();
-                let host = request.url.host_str().unwrap_or("unknown").to_string();
 
                 trace!("Processing request through middlewares: {}", request.url);
                 let response = process_request_through_middlewares::<S, C>(
@@ -127,7 +127,7 @@ where
 
                 // Record response time for statistics
                 let response_time = start_time.elapsed();
-                stats_clone.record_request_time(&host, response_time);
+                stats_clone.record_request_time(&request_url_for_metrics, response_time);
 
                 if let Ok(Some(final_response)) = response {
                     trace!("Sending response for URL: {}", final_response.url);
@@ -241,21 +241,11 @@ where
             trace!("Downloading request for URL: {}", request_url);
             stats.increment_requests_sent();
 
-            // Measure request time
-            let start_time = std::time::Instant::now();
-
             let download_result = downloader.download(request_for_download).await;
 
             match download_result {
                 Ok(resp) => {
-                    let duration = start_time.elapsed();
-                    trace!(
-                        "Download successful for URL: {}, took {:?}",
-                        resp.url, duration
-                    );
-
-                    // Record the request time
-                    stats.record_request_time(resp.url.as_ref(), duration);
+                    trace!("Download successful for URL: {}", resp.url);
 
                     stats.increment_requests_succeeded();
                     stats.increment_responses_received();
@@ -264,15 +254,6 @@ where
                     resp
                 }
                 Err(e) => {
-                    let duration = start_time.elapsed();
-                    trace!(
-                        "Download failed for URL: {}, took {:?}",
-                        request_url, duration
-                    );
-
-                    // Still record the time even for failed requests
-                    stats.record_request_time(request_url.as_ref(), duration);
-
                     error!("Download error for URL {}: {:?}", request_url, e);
                     stats.increment_requests_failed();
                     return Ok(None);

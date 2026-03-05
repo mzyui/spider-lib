@@ -16,6 +16,19 @@ use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
 use tokio::time::Instant;
 
+async fn record_pipeline_timing(
+    pipeline_stats: &Arc<RwLock<HashMap<String, (Duration, usize)>>>,
+    pipeline_name: &str,
+    elapsed: Duration,
+) {
+    let mut stats_map = pipeline_stats.write().await;
+    let (total_time, count) = stats_map
+        .entry(pipeline_name.to_string())
+        .or_insert((Duration::new(0, 0), 0));
+    *total_time += elapsed;
+    *count += 1;
+}
+
 pub fn spawn_item_processor_task<S>(
     state: Arc<CrawlerState>,
     item_rx: AsyncReceiver<S::Item>,
@@ -78,15 +91,12 @@ where
 
                                 // Record pipeline processing time
                                 let elapsed = start_time.elapsed();
-                                {
-                                    let mut stats_map = pipeline_stats_clone.write().await;
-                                    let pipeline_name = pipeline.name().to_string();
-                                    let (total_time, count) = stats_map
-                                        .entry(pipeline_name)
-                                        .or_insert((Duration::new(0, 0), 0));
-                                    *total_time += elapsed;
-                                    *count += 1;
-                                }
+                                record_pipeline_timing(
+                                    &pipeline_stats_clone,
+                                    pipeline.name(),
+                                    elapsed,
+                                )
+                                .await;
 
                                 item_to_process = Some(next_item);
                             }
@@ -96,15 +106,12 @@ where
 
                                 // Record pipeline processing time even for dropped items
                                 let elapsed = start_time.elapsed();
-                                {
-                                    let mut stats_map = pipeline_stats_clone.write().await;
-                                    let pipeline_name = pipeline.name().to_string();
-                                    let (total_time, count) = stats_map
-                                        .entry(pipeline_name)
-                                        .or_insert((Duration::new(0, 0), 0));
-                                    *total_time += elapsed;
-                                    *count += 1;
-                                }
+                                record_pipeline_timing(
+                                    &pipeline_stats_clone,
+                                    pipeline.name(),
+                                    elapsed,
+                                )
+                                .await;
 
                                 break;
                             }
@@ -113,15 +120,12 @@ where
                                 stats_clone.increment_items_dropped_by_pipeline();
 
                                 let elapsed = start_time.elapsed();
-                                {
-                                    let mut stats_map = pipeline_stats_clone.write().await;
-                                    let pipeline_name = pipeline.name().to_string();
-                                    let (total_time, count) = stats_map
-                                        .entry(pipeline_name)
-                                        .or_insert((Duration::new(0, 0), 0));
-                                    *total_time += elapsed;
-                                    *count += 1;
-                                }
+                                record_pipeline_timing(
+                                    &pipeline_stats_clone,
+                                    pipeline.name(),
+                                    elapsed,
+                                )
+                                .await;
 
                                 break;
                             }

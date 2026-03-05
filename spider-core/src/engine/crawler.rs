@@ -11,21 +11,21 @@
 //! processing scraped items.
 
 use crate::Downloader;
+use crate::config::CrawlerConfig;
+use crate::engine::CrawlerContext;
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
-use crate::config::CrawlerConfig;
-use crate::engine::CrawlerContext;
 use anyhow::Result;
 use futures_util::future::join_all;
 use kanal::{AsyncReceiver, bounded_async};
+use log::{debug, error, info, trace, warn};
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::error::SpiderError;
 use spider_util::item::ScrapedItem;
 use spider_util::request::Request;
-use log::{debug, error, info, trace, warn};
 
 #[cfg(feature = "checkpoint")]
 use crate::checkpoint::save_checkpoint;
@@ -97,7 +97,9 @@ where
     pub async fn start_crawl(self) -> Result<(), SpiderError> {
         info!(
             "Crawler starting crawl with configuration: max_concurrent_downloads={}, parser_workers={}, max_concurrent_pipelines={}",
-            self.config.max_concurrent_downloads, self.config.parser_workers, self.config.max_concurrent_pipelines
+            self.config.max_concurrent_downloads,
+            self.config.parser_workers,
+            self.config.max_concurrent_pipelines
         );
 
         let Crawler {
@@ -134,7 +136,10 @@ where
         )
         .max(config.channel_capacity);
 
-        trace!("Creating communication channels with capacity: {}", channel_capacity);
+        trace!(
+            "Creating communication channels with capacity: {}",
+            channel_capacity
+        );
         let (res_tx, res_rx) = bounded_async(channel_capacity);
         let (item_tx, item_rx) = bounded_async(channel_capacity);
 
@@ -179,7 +184,9 @@ where
 
         #[cfg(feature = "checkpoint")]
         {
-            if let (Some(path), Some(interval)) = (&checkpoint_config.path, checkpoint_config.interval) {
+            if let (Some(path), Some(interval)) =
+                (&checkpoint_config.path, checkpoint_config.interval)
+            {
                 let scheduler_cp = Arc::clone(&ctx.scheduler);
                 let pipelines_cp = Arc::clone(&ctx.pipelines);
                 let path_cp = path.clone();
@@ -190,7 +197,10 @@ where
                 #[cfg(not(feature = "cookie-store"))]
                 let _cookie_store_cp = ();
 
-                trace!("Starting periodic checkpoint task with interval: {:?}", interval);
+                trace!(
+                    "Starting periodic checkpoint task with interval: {:?}",
+                    interval
+                );
                 tokio::spawn(async move {
                     let mut interval_timer = tokio::time::interval(interval);
                     interval_timer.tick().await;
@@ -345,9 +355,7 @@ where
     }
 }
 
-fn spawn_init_task<S, I>(
-    ctx: CrawlerContext<S, I>,
-) -> tokio::task::JoinHandle<()>
+fn spawn_init_task<S, I>(ctx: CrawlerContext<S, I>) -> tokio::task::JoinHandle<()>
 where
     S: Spider<Item = I> + 'static,
     I: ScrapedItem,
