@@ -11,15 +11,15 @@
 
 use crate::Downloader;
 use async_trait::async_trait;
+use log::info;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
 use spider_util::request::{Body, Request};
 use spider_util::response::Response;
-use std::time::Duration;
-use log::info;
-use tokio::sync::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::RwLock;
 
 /// Concrete implementation of Downloader using reqwest client
 pub struct ReqwestClientDownloader {
@@ -123,7 +123,7 @@ impl ReqwestClientDownloader {
             .connect_timeout(Duration::from_secs(10))
             .build()
             .unwrap();
-            
+
         ReqwestClientDownloader {
             client: base_client.clone(),
             timeout,

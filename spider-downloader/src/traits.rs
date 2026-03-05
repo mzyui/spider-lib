@@ -18,6 +18,4 @@ pub trait Downloader: Send + Sync + 'static {
 
     /// Returns a reference to the underlying HTTP client.
     fn client(&self) -> &Self::Client;
-
 }
-
