@@ -55,6 +55,10 @@ pub struct CsvPipeline<I> {
 
 impl<I: ScrapedItem> CsvPipeline<I> {
     /// Creates a new `CsvPipeline`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output directory cannot be created.
     pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
         spider_util::util::validate_output_dir(&file_path)
             .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;
@@ -64,7 +68,6 @@ impl<I: ScrapedItem> CsvPipeline<I> {
         let (command_sender, command_receiver) = unbounded_async::<CsvCommand>();
         let path_clone = path_buf.clone();
 
-        // Spawn a task to handle the CSV writing
         tokio::task::spawn(async move {
             let mut writer_state: Option<(Writer<File>, Vec<String>)> = None;
 

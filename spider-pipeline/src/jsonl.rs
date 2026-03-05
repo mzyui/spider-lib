@@ -31,6 +31,11 @@ pub struct JsonlPipeline<I: ScrapedItem> {
 
 impl<I: ScrapedItem> JsonlPipeline<I> {
     /// Creates a new `JsonlPipeline` that writes to the specified file path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output file cannot be opened or the parent
+    /// directory cannot be created.
     pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
         spider_util::util::validate_output_dir(&file_path)
             .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;

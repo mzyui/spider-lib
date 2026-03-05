@@ -37,11 +37,19 @@ pub struct StreamJsonPipeline<I: ScrapedItem> {
 
 impl<I: ScrapedItem> StreamJsonPipeline<I> {
     /// Creates a new `StreamJsonPipeline` with default batch size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output directory cannot be created.
     pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
         Self::with_batch_size(file_path, DEFAULT_BATCH_SIZE)
     }
 
     /// Creates a new `StreamJsonPipeline` with a specified batch size.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output directory cannot be created.
     pub fn with_batch_size(
         file_path: impl AsRef<Path>,
         batch_size: usize,

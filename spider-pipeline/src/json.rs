@@ -51,6 +51,10 @@ pub struct JsonPipeline<I: ScrapedItem> {
 
 impl<I: ScrapedItem> JsonPipeline<I> {
     /// Creates a new `JsonPipeline`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the output directory cannot be created.
     pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
         spider_util::util::validate_output_dir(&file_path)
             .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;
