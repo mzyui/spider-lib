@@ -5,18 +5,18 @@
 //! rotation strategies.
 
 use async_trait::async_trait;
+use log::{info, warn};
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use log::{info, warn};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use spider_util::error::SpiderError;
 use crate::middleware::{Middleware, MiddlewareAction};
+use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
 
@@ -94,10 +94,7 @@ impl ProxyMiddlewareBuilder {
             block_detection_texts: block_texts,
         };
 
-        info!(
-            "Initializing ProxyMiddleware with config: {:?}",
-            middleware
-        );
+        info!("Initializing ProxyMiddleware with config: {:?}", middleware);
 
         Ok(middleware)
     }
@@ -227,7 +224,9 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
         }
 
         // Check for block texts in body if status is OK
-        if status.is_success() && let Some(texts) = &self.block_detection_texts {
+        if status.is_success()
+            && let Some(texts) = &self.block_detection_texts
+        {
             let body_str = String::from_utf8_lossy(&response.body);
             if texts.iter().any(|text| body_str.contains(text)) {
                 rotate = true;

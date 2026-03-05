@@ -14,6 +14,7 @@
 //! This flexibility allows for fine-tuned control over crawl speed and server interaction.
 
 use async_trait::async_trait;
+use log::{debug, info};
 use moka::future::Cache;
 use rand::distributions::{Distribution, Uniform};
 use std::hash::Hash;
@@ -21,7 +22,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::{Instant, sleep};
-use log::{debug, info};
 
 use governor::clock::DefaultClock;
 use governor::state::{InMemoryState, NotKeyed};

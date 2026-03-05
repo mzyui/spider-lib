@@ -6,6 +6,7 @@
 
 use async_trait::async_trait;
 use dashmap::DashMap;
+use log::{debug, info, warn};
 use moka::sync::Cache;
 use reqwest::header::{HeaderValue, USER_AGENT};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -16,7 +17,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
-use log::{debug, info, warn};
 use ua_generator::ua::*;
 
 use rand::seq::SliceRandom;
@@ -473,4 +473,3 @@ impl<C: Send + Sync> Middleware<C> for UserAgentMiddleware {
         Ok(MiddlewareAction::Continue(request))
     }
 }
-

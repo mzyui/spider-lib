@@ -18,10 +18,10 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::middleware::{Middleware, MiddlewareAction};
+use log::{debug, info};
 use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
-use log::{debug, info};
 
 /// Referer middleware that automatically sets Referer headers
 /// based on the navigation chain
@@ -201,4 +201,3 @@ impl<C: Send + Sync> Middleware<C> for RefererMiddleware {
         Ok(MiddlewareAction::Continue(response))
     }
 }
-

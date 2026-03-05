@@ -14,13 +14,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use http::header::USER_AGENT;
+use log::{debug, info, warn};
 use moka::future::Cache;
 use robotstxt::DefaultMatcher;
-use log::{debug, info, warn};
 
 use crate::middleware::{Middleware, MiddlewareAction};
-use spider_util::http_client::HttpClient;
 use spider_util::error::SpiderError;
+use spider_util::http_client::HttpClient;
 use spider_util::request::Request;
 
 /// Robots.txt middleware
@@ -89,11 +89,7 @@ impl RobotsTxtMiddleware {
             .build();
     }
 
-    async fn fetch_robots_content<C: HttpClient>(
-        &self,
-        client: &C,
-        origin: &str,
-    ) -> Arc<String> {
+    async fn fetch_robots_content<C: HttpClient>(&self, client: &C, origin: &str) -> Arc<String> {
         let robots_url = format!("{}/robots.txt", origin);
         debug!("Fetching robots.txt from: {}", robots_url);
 

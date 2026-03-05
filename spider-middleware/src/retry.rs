@@ -9,8 +9,8 @@
 //! the request for another attempt or to drop it if the retry limit is exceeded.
 
 use async_trait::async_trait;
-use std::time::Duration;
 use log::{info, trace, warn};
+use std::time::Duration;
 
 use crate::middleware::{Middleware, MiddlewareAction};
 use spider_util::error::SpiderError;
@@ -177,4 +177,3 @@ impl RetryMiddleware {
         delay.min(self.max_delay)
     }
 }
-

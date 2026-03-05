@@ -12,11 +12,11 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
+use log::{debug, info, trace, warn};
 use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use std::path::PathBuf;
 use tokio::fs;
-use log::{debug, info, trace, warn};
 
 use crate::middleware::{Middleware, MiddlewareAction};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
