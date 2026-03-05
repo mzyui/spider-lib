@@ -116,10 +116,6 @@ cookie-store = ["spider-core/cookie-store", "middleware-cookies"]
 # When using cookie-store, middleware-cookies functionality may be desired
 
 [[example]]
-name = "quotes"
-path = "examples/quotes.rs"
-
-[[example]]
 name = "books"
 path = "examples/books.rs"
 
