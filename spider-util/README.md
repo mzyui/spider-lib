@@ -6,7 +6,7 @@ Shared utility crate for `spider-lib` types and helpers.
 
 ```toml
 [dependencies]
-spider-util = "0.3.2"
+spider-util = "0.3.3"
 ```
 
 ## What It Provides
