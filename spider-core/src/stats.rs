@@ -575,67 +575,10 @@ impl StatCollector {
             status_codes_output
         )
     }
-}
 
-impl Default for StatCollector {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl std::fmt::Display for StatCollector {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    /// Exports current statistics to the text layout used for terminal output.
+    pub fn to_live_report_string(&self) -> String {
         let snapshot = self.snapshot();
-
-        writeln!(f, "\nCrawl Statistics")?;
-        writeln!(f, "----------------")?;
-        writeln!(f, "duration : {}", snapshot.formatted_duration())?;
-        writeln!(
-            f,
-            "speed    : req/s: {:.2}, resp/s: {:.2}, item/s: {:.2}",
-            snapshot.recent_requests_per_second,
-            snapshot.recent_responses_per_second,
-            snapshot.recent_items_per_second
-        )?;
-        writeln!(
-            f,
-            "requests : enqueued: {}, sent: {}, ok: {}, fail: {}, retry: {}, drop: {}",
-            snapshot.requests_enqueued,
-            snapshot.requests_sent,
-            snapshot.requests_succeeded,
-            snapshot.requests_failed,
-            snapshot.requests_retried,
-            snapshot.requests_dropped
-        )?;
-        writeln!(
-            f,
-            "response : received: {}, from_cache: {}, downloaded: {}",
-            snapshot.responses_received,
-            snapshot.responses_from_cache,
-            snapshot.formatted_bytes()
-        )?;
-        writeln!(
-            f,
-            "items    : scraped: {}, processed: {}, dropped: {}",
-            snapshot.items_scraped, snapshot.items_processed, snapshot.items_dropped_by_pipeline
-        )?;
-        writeln!(
-            f,
-            "req time : avg: {}, fastest: {}, slowest: {}, total: {}",
-            snapshot.formatted_request_time(snapshot.average_request_time),
-            snapshot.formatted_request_time(snapshot.fastest_request_time),
-            snapshot.formatted_request_time(snapshot.slowest_request_time),
-            snapshot.request_time_count
-        )?;
-        writeln!(
-            f,
-            "parsing  : avg: {}, fastest: {}, slowest: {}, total: {}",
-            snapshot.formatted_request_time(snapshot.average_parsing_time),
-            snapshot.formatted_request_time(snapshot.fastest_parsing_time),
-            snapshot.formatted_request_time(snapshot.slowest_parsing_time),
-            snapshot.parsing_time_count
-        )?;
-
         let status_string = if snapshot.response_status_counts.is_empty() {
             "none".to_string()
         } else {
@@ -647,6 +590,54 @@ impl std::fmt::Display for StatCollector {
                 .join(", ")
         };
 
-        writeln!(f, "status   : {}\n", status_string)
+        format!(
+            "Crawl Statistics\n\
+             ----------------\n\
+             duration : {}\n\
+             speed    : req/s: {:.2}, resp/s: {:.2}, item/s: {:.2}\n\
+             requests : enqueued: {}, sent: {}, ok: {}, fail: {}, retry: {}, drop: {}\n\
+             response : received: {}, from_cache: {}, downloaded: {}\n\
+             items    : scraped: {}, processed: {}, dropped: {}\n\
+             req time : avg: {}, fastest: {}, slowest: {}, total: {}\n\
+             parsing  : avg: {}, fastest: {}, slowest: {}, total: {}\n\
+             status   : {}",
+            snapshot.formatted_duration(),
+            snapshot.recent_requests_per_second,
+            snapshot.recent_responses_per_second,
+            snapshot.recent_items_per_second,
+            snapshot.requests_enqueued,
+            snapshot.requests_sent,
+            snapshot.requests_succeeded,
+            snapshot.requests_failed,
+            snapshot.requests_retried,
+            snapshot.requests_dropped,
+            snapshot.responses_received,
+            snapshot.responses_from_cache,
+            snapshot.formatted_bytes(),
+            snapshot.items_scraped,
+            snapshot.items_processed,
+            snapshot.items_dropped_by_pipeline,
+            snapshot.formatted_request_time(snapshot.average_request_time),
+            snapshot.formatted_request_time(snapshot.fastest_request_time),
+            snapshot.formatted_request_time(snapshot.slowest_request_time),
+            snapshot.request_time_count,
+            snapshot.formatted_request_time(snapshot.average_parsing_time),
+            snapshot.formatted_request_time(snapshot.fastest_parsing_time),
+            snapshot.formatted_request_time(snapshot.slowest_parsing_time),
+            snapshot.parsing_time_count,
+            status_string
+        )
+    }
+}
+
+impl Default for StatCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl std::fmt::Display for StatCollector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\n{}\n", self.to_live_report_string())
     }
 }

@@ -51,6 +51,10 @@ pub struct CrawlerConfig {
     pub max_concurrent_pipelines: usize,
     /// The capacity of communication channels between components.
     pub channel_capacity: usize,
+    /// Enables in-place live statistics updates on terminal stdout.
+    pub live_stats: bool,
+    /// Refresh interval for live statistics output.
+    pub live_stats_interval: Duration,
 }
 
 impl Default for CrawlerConfig {
@@ -60,6 +64,8 @@ impl Default for CrawlerConfig {
             parser_workers: num_cpus::get().clamp(4, 16),
             max_concurrent_pipelines: num_cpus::get().min(8),
             channel_capacity: 1000,
+            live_stats: false,
+            live_stats_interval: Duration::from_millis(50),
         }
     }
 }
@@ -94,6 +100,18 @@ impl CrawlerConfig {
         self
     }
 
+    /// Enables or disables in-place live stats updates on stdout.
+    pub fn with_live_stats(mut self, enabled: bool) -> Self {
+        self.live_stats = enabled;
+        self
+    }
+
+    /// Sets the refresh interval used by live stats mode.
+    pub fn with_live_stats_interval(mut self, interval: Duration) -> Self {
+        self.live_stats_interval = interval;
+        self
+    }
+
     /// Validates the configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.max_concurrent_downloads == 0 {
@@ -104,6 +122,9 @@ impl CrawlerConfig {
         }
         if self.max_concurrent_pipelines == 0 {
             return Err("max_concurrent_pipelines must be greater than 0".to_string());
+        }
+        if self.live_stats_interval.is_zero() {
+            return Err("live_stats_interval must be greater than 0".to_string());
         }
         Ok(())
     }

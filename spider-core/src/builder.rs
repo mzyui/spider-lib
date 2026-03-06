@@ -217,6 +217,21 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
+    /// Enables or disables live, in-place statistics updates on terminal stdout.
+    ///
+    /// When enabled, spider-* logs are forced to `LevelFilter::Off` during build
+    /// to avoid interleaving with the live terminal renderer.
+    pub fn live_stats(mut self, enabled: bool) -> Self {
+        self.config.live_stats = enabled;
+        self
+    }
+
+    /// Sets the refresh interval for live statistics updates.
+    pub fn live_stats_interval(mut self, interval: Duration) -> Self {
+        self.config.live_stats_interval = interval;
+        self
+    }
+
     /// Sets a custom downloader implementation.
     ///
     /// Use this method to provide a custom [`Downloader`] implementation
@@ -354,8 +369,16 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         let spider = self.take_spider()?;
         self.init_default_pipeline();
 
-        // Initialize logging for spider-* crates if log level is configured
-        if let Some(level) = self.log_level {
+        // Live stats redraw on stdout and should not interleave with spider-* logs.
+        // Force spider-* logs to Off when live stats mode is enabled.
+        let effective_log_level = if self.config.live_stats {
+            Some(LevelFilter::Off)
+        } else {
+            self.log_level
+        };
+
+        // Initialize logging for spider-* crates if an effective log level is configured.
+        if let Some(level) = effective_log_level {
             self.init_logging(level);
         }
 

@@ -58,9 +58,9 @@ use spider_util::constants::{
 };
 use spider_util::error::SpiderError;
 use spider_util::request::Request;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::collections::HashSet;
 
 /// Internal messages sent to the scheduler's event loop.
 enum SchedulerMessage {
@@ -448,8 +448,8 @@ impl Scheduler {
                     request_arc.url
                 );
             }
-            let salvaged_request = Arc::try_unwrap(request_arc)
-                .unwrap_or_else(|shared| shared.as_ref().clone());
+            let salvaged_request =
+                Arc::try_unwrap(request_arc).unwrap_or_else(|shared| shared.as_ref().clone());
             self.salvaged.push(salvaged_request);
             return Err(SpiderError::GeneralError(
                 "Scheduler internal channel closed, request salvaged.".into(),
