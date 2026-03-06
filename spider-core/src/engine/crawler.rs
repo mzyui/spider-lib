@@ -34,9 +34,11 @@ use crate::config::CheckpointConfig;
 
 use std::sync::Arc;
 use std::time::Duration;
+use std::{io::IsTerminal, io::Write};
 
 #[cfg(feature = "cookie-store")]
 use tokio::sync::RwLock;
+use tokio::sync::oneshot;
 
 #[cfg(feature = "cookie-store")]
 use cookie_store::CookieStore;
@@ -182,6 +184,19 @@ where
             Arc::clone(&ctx.stats),
         );
 
+        let mut live_stats_task: Option<(oneshot::Sender<()>, tokio::task::JoinHandle<()>)> =
+            if config.live_stats && std::io::stdout().is_terminal() {
+                let (stop_tx, stop_rx) = oneshot::channel();
+                let stats_for_live = Arc::clone(&ctx.stats);
+                let interval = config.live_stats_interval;
+                let handle = tokio::spawn(async move {
+                    run_live_stats(stats_for_live, interval, stop_rx).await;
+                });
+                Some((stop_tx, handle))
+            } else {
+                None
+            };
+
         #[cfg(feature = "checkpoint")]
         {
             if let (Some(path), Some(interval)) =
@@ -304,6 +319,11 @@ where
             }
         }
 
+        if let Some((stop_tx, handle)) = live_stats_task.take() {
+            let _ = stop_tx.send(());
+            let _ = handle.await;
+        }
+
         #[cfg(feature = "checkpoint")]
         {
             if let Some(path) = &checkpoint_config.path {
@@ -336,7 +356,11 @@ where
         join_all(futures).await;
         debug!("All item pipelines closed");
 
-        info!("Crawl finished successfully\n{}", stats);
+        if config.live_stats {
+            println!("{}\n", stats.to_live_report_string());
+        } else {
+            info!("Crawl finished successfully\n{}", stats);
+        }
         Ok(())
     }
 
@@ -379,4 +403,75 @@ where
             Err(e) => error!("Failed to create start requests: {}", e),
         }
     })
+}
+
+struct LiveStatsRenderer {
+    previous_lines: usize,
+}
+
+impl LiveStatsRenderer {
+    fn new() -> Self {
+        let mut out = std::io::stdout();
+        let _ = write!(out, "\x1b[?25l");
+        let _ = out.flush();
+        Self { previous_lines: 0 }
+    }
+
+    fn render(&mut self, content: &str) {
+        let mut out = std::io::stdout();
+        self.clear_previous(&mut out);
+        let rendered = format!("\n{}\n", content);
+        let _ = write!(out, "{}", rendered);
+        let _ = out.flush();
+        self.previous_lines = rendered.split('\n').count().max(1);
+    }
+
+    fn finish(self) {
+        let mut out = std::io::stdout();
+        self.clear_previous(&mut out);
+        let _ = write!(out, "\r\x1b[2K\x1b[?25h");
+        let _ = writeln!(out);
+        let _ = out.flush();
+    }
+
+    fn clear_previous(&self, out: &mut std::io::Stdout) {
+        if self.previous_lines == 0 {
+            return;
+        }
+        let _ = write!(out, "\r");
+        if self.previous_lines > 1 {
+            let _ = write!(out, "\x1b[{}A", self.previous_lines - 1);
+        }
+        for line_idx in 0..self.previous_lines {
+            let _ = write!(out, "\r\x1b[2K");
+            if line_idx + 1 < self.previous_lines {
+                let _ = write!(out, "\x1b[1B");
+            }
+        }
+        if self.previous_lines > 1 {
+            let _ = write!(out, "\x1b[{}A", self.previous_lines - 1);
+        }
+    }
+}
+
+async fn run_live_stats(
+    stats: Arc<StatCollector>,
+    interval: Duration,
+    mut stop_rx: oneshot::Receiver<()>,
+) {
+    let mut ticker = tokio::time::interval(interval);
+    let mut renderer = LiveStatsRenderer::new();
+
+    loop {
+        tokio::select! {
+            _ = ticker.tick() => {
+                renderer.render(&stats.to_live_report_string());
+            }
+            _ = &mut stop_rx => {
+                break;
+            }
+        }
+    }
+
+    renderer.finish();
 }
