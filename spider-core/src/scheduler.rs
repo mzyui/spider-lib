@@ -60,6 +60,7 @@ use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::collections::HashSet;
 
 /// Internal messages sent to the scheduler's event loop.
 enum SchedulerMessage {
@@ -107,7 +108,7 @@ pub struct Scheduler {
     /// Bloom filter for fast preliminary duplicate detection.
     bloom: std::sync::Arc<parking_lot::RwLock<BloomFilter>>,
     /// Buffer for batching Bloom filter updates.
-    buffer: Arc<Mutex<Vec<String>>>,
+    buffer: Arc<Mutex<HashSet<String>>>,
     /// Notifier for triggering buffer flushes.
     notify: Arc<Notify>,
     /// Sender for internal scheduler messages.
@@ -214,7 +215,7 @@ impl Scheduler {
             salvaged = SegQueue::new();
         }
 
-        let buffer = Arc::new(Mutex::new(Vec::new()));
+        let buffer = Arc::new(Mutex::new(HashSet::new()));
         let notify = Arc::new(Notify::new());
 
         let scheduler = Arc::new(Scheduler {
@@ -325,7 +326,7 @@ impl Scheduler {
                 // Then move fingerprint into buffer (no clone needed)
                 {
                     let mut buffer = self.buffer.lock();
-                    buffer.push(fingerprint);
+                    buffer.insert(fingerprint);
                     if buffer.len() >= BLOOM_BUFFER_FLUSH_SIZE {
                         self.notify.notify_one();
                     }
@@ -333,7 +334,7 @@ impl Scheduler {
 
                 true
             }
-            Ok(SchedulerMessage::MarkAsVisitedBatch(mut fingerprints)) => {
+            Ok(SchedulerMessage::MarkAsVisitedBatch(fingerprints)) => {
                 let count = fingerprints.len();
                 trace!("Marking {} URL fingerprints as visited in batch", count);
 
@@ -345,7 +346,7 @@ impl Scheduler {
                 // Then extend buffer with the fingerprints (no clone needed)
                 {
                     let mut buffer = self.buffer.lock();
-                    buffer.append(&mut fingerprints);
+                    buffer.extend(fingerprints);
                     if buffer.len() >= BLOOM_BUFFER_FLUSH_SIZE {
                         self.notify.notify_one();
                     }
@@ -542,7 +543,7 @@ impl Scheduler {
 
         {
             let buffer = self.buffer.lock();
-            if buffer.iter().any(|item| item == fingerprint) {
+            if buffer.contains(fingerprint) {
                 return true;
             }
         }
@@ -553,7 +554,7 @@ impl Scheduler {
     fn flush_buffer_now(&self) {
         let mut buffer = self.buffer.lock();
         if !buffer.is_empty() {
-            let items: Vec<String> = buffer.drain(..).collect();
+            let items: Vec<String> = buffer.drain().collect();
             drop(buffer);
 
             let mut bloom = self.bloom.write();
