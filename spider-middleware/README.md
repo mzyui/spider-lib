@@ -6,7 +6,7 @@ Built-in middleware implementations for `spider-lib` crawlers.
 
 ```toml
 [dependencies]
-spider-middleware = "0.3.3"
+spider-middleware = "0.3.4"
 ```
 
 ## Built-in Middleware
@@ -50,7 +50,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-middleware = { version = "0.3.3", features = ["middleware-robots", "middleware-user-agent"] }
+spider-middleware = { version = "0.3.4", features = ["middleware-robots", "middleware-user-agent"] }
 ```
 
 When using via `spider-lib`, enable root features with the same names.
