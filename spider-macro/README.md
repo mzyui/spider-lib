@@ -6,7 +6,7 @@ Procedural macros for `spider-lib`.
 
 ```toml
 [dependencies]
-spider-macro = "0.1.9"
+spider-macro = "0.1.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
