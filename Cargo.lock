@@ -2096,6 +2096,7 @@ dependencies = [
  "async-trait",
  "dashmap 6.1.0",
  "log",
+ "moka",
  "reqwest",
  "spider-util",
  "tokio",

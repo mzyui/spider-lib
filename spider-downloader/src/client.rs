@@ -13,6 +13,7 @@ use crate::Downloader;
 use async_trait::async_trait;
 use dashmap::DashMap;
 use log::debug;
+use moka::sync::Cache;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
 use spider_util::request::{Body, Request};
@@ -26,8 +27,8 @@ pub struct ReqwestClientDownloader {
     timeout: Duration,
     /// Per-host connection pools for better resource management
     host_clients: Arc<DashMap<String, Client>>,
-    /// Per-proxy clients to avoid rebuilding client/pool for every proxied request.
-    proxy_clients: Arc<DashMap<String, Client>>,
+    /// Per-proxy clients with TTL/capacity bounds to avoid unbounded growth.
+    proxy_clients: Cache<String, Client>,
 }
 
 #[async_trait]
@@ -97,6 +98,9 @@ impl Downloader for ReqwestClientDownloader {
 }
 
 impl ReqwestClientDownloader {
+    const PROXY_CLIENT_CACHE_MAX_CAPACITY: u64 = 512;
+    const PROXY_CLIENT_CACHE_TTL_SECS: u64 = 30 * 60;
+
     /// Creates a new `ReqwestClientDownloader` with a default timeout of 30 seconds.
     pub fn new() -> Self {
         Self::new_with_timeout(Duration::from_secs(30))
@@ -117,7 +121,10 @@ impl ReqwestClientDownloader {
             client: base_client.clone(),
             timeout,
             host_clients: Arc::new(DashMap::new()),
-            proxy_clients: Arc::new(DashMap::new()),
+            proxy_clients: Cache::builder()
+                .max_capacity(Self::PROXY_CLIENT_CACHE_MAX_CAPACITY)
+                .time_to_idle(Duration::from_secs(Self::PROXY_CLIENT_CACHE_TTL_SECS))
+                .build(),
         }
     }
 
@@ -149,7 +156,7 @@ impl ReqwestClientDownloader {
     /// Gets or creates a proxy-specific client to preserve connection pooling per proxy endpoint.
     async fn get_or_create_proxy_client(&self, proxy_url: &str) -> Result<Client, SpiderError> {
         if let Some(client) = self.proxy_clients.get(proxy_url) {
-            return Ok(client.clone());
+            return Ok(client);
         }
 
         let proxy = Proxy::all(proxy_url).map_err(|e| SpiderError::ReqwestError(e.into()))?;
@@ -164,7 +171,7 @@ impl ReqwestClientDownloader {
             .map_err(|e| SpiderError::ReqwestError(e.into()))?;
 
         if let Some(client) = self.proxy_clients.get(proxy_url) {
-            return Ok(client.clone());
+            return Ok(client);
         }
         self.proxy_clients
             .insert(proxy_url.to_string(), proxy_client.clone());
