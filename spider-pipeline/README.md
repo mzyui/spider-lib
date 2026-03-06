@@ -6,7 +6,7 @@ Item pipelines for processing, filtering, and exporting scraped data in `spider-
 
 ```toml
 [dependencies]
-spider-pipeline = "0.3.3"
+spider-pipeline = "0.3.4"
 ```
 
 ## Built-in Pipelines
@@ -47,7 +47,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-pipeline = { version = "0.3.3", features = ["pipeline-jsonl", "pipeline-csv"] }
+spider-pipeline = { version = "0.3.4", features = ["pipeline-jsonl", "pipeline-csv"] }
 ```
 
 When using via `spider-lib`, enable root features with the same names.
