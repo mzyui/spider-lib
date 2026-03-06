@@ -149,8 +149,19 @@ fn flush_items(
         let item_str = serde_json::to_string(&item)
             .map_err(|e| PipelineError::SerializationError(e.to_string()))?;
 
+        if !prefix.is_empty() {
+            writer
+                .write_all(prefix.as_bytes())
+                .map_err(|e| PipelineError::IoError(e.to_string()))?;
+        }
         writer
-            .write_all(format!("{}  {}\n", prefix, item_str).as_bytes())
+            .write_all(b"  ")
+            .map_err(|e| PipelineError::IoError(e.to_string()))?;
+        writer
+            .write_all(item_str.as_bytes())
+            .map_err(|e| PipelineError::IoError(e.to_string()))?;
+        writer
+            .write_all(b"\n")
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
     }
 

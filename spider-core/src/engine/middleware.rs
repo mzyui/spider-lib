@@ -68,13 +68,16 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 /// Uses Mutex because all operations require mutable access (write-heavy workload).
 pub struct SharedMiddlewareManager<C> {
     manager: Arc<Mutex<MiddlewareManager<C>>>,
+    has_middlewares: bool,
 }
 
 impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
     /// Creates a new `SharedMiddlewareManager` with the given middlewares.
     pub fn new(middlewares: Vec<Box<dyn Middleware<C> + Send + Sync>>) -> Self {
+        let has_middlewares = !middlewares.is_empty();
         Self {
             manager: Arc::new(Mutex::new(MiddlewareManager::new(middlewares))),
+            has_middlewares,
         }
     }
 
@@ -84,6 +87,9 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
         client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        if !self.has_middlewares {
+            return Ok(MiddlewareAction::Continue(request));
+        }
         self.manager
             .lock()
             .await
@@ -96,6 +102,9 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
         &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
+        if !self.has_middlewares {
+            return Ok(MiddlewareAction::Continue(response));
+        }
         self.manager.lock().await.process_response(response).await
     }
 }
@@ -104,6 +113,7 @@ impl<C: Send + Sync + Clone + 'static> Clone for SharedMiddlewareManager<C> {
     fn clone(&self) -> Self {
         Self {
             manager: Arc::clone(&self.manager),
+            has_middlewares: self.has_middlewares,
         }
     }
 }
