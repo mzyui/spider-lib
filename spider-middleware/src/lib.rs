@@ -27,6 +27,9 @@ pub use spider_util::response::Response;
 
 pub mod prelude;
 
+#[cfg(feature = "middleware-autothrottle")]
+pub mod autothrottle;
+
 #[cfg(feature = "middleware-user-agent")]
 pub mod user_agent;
 

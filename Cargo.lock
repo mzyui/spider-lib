@@ -2144,6 +2144,7 @@ dependencies = [
  "robotstxt",
  "seahash",
  "serde",
+ "serde_json",
  "spider-util",
  "time",
  "tokio",

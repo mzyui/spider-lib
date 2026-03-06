@@ -12,6 +12,9 @@ pub use crate::referer::RefererMiddleware;
 pub use crate::retry::RetryMiddleware;
 
 // Optional middleware (available when features are enabled)
+#[cfg(feature = "middleware-autothrottle")]
+pub use crate::autothrottle::AutoThrottleMiddleware;
+
 #[cfg(feature = "middleware-user-agent")]
 pub use crate::user_agent::UserAgentMiddleware;
 

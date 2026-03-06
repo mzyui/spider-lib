@@ -96,6 +96,7 @@ default = ["core"]
 core = ["spider-middleware/core", "spider-pipeline/core"]
 
 middleware-cache = ["spider-middleware/middleware-cache"]
+middleware-autothrottle = ["spider-middleware/middleware-autothrottle"]
 middleware-proxy = ["spider-middleware/middleware-proxy"]
 middleware-user-agent = ["spider-middleware/middleware-user-agent"]
 middleware-robots = ["spider-middleware/middleware-robots"]

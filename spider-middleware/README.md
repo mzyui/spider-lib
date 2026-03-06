@@ -20,6 +20,7 @@ Core (always available):
 Optional (feature-gated):
 
 - `middleware-cache` -> `HttpCacheMiddleware`
+- `middleware-autothrottle` -> `AutoThrottleMiddleware`
 - `middleware-proxy` -> `ProxyMiddleware`
 - `middleware-user-agent` -> `UserAgentMiddleware`
 - `middleware-robots` -> `RobotsTxtMiddleware`
@@ -41,6 +42,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 - `core` (default)
 - `middleware-cache`
+- `middleware-autothrottle`
 - `middleware-proxy`
 - `middleware-user-agent`
 - `middleware-robots`

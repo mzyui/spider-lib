@@ -53,6 +53,9 @@ pub use spider_middleware::{
 #[cfg(feature = "middleware-cache")]
 pub use spider_middleware::http_cache::HttpCacheMiddleware;
 
+#[cfg(feature = "middleware-autothrottle")]
+pub use spider_middleware::autothrottle::AutoThrottleMiddleware;
+
 #[cfg(feature = "middleware-proxy")]
 pub use spider_middleware::proxy::ProxyMiddleware;
 

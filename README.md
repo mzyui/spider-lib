@@ -77,6 +77,7 @@ Default feature: `core`.
 Middleware features:
 
 - `middleware-cache`
+- `middleware-autothrottle`
 - `middleware-proxy`
 - `middleware-user-agent`
 - `middleware-robots`

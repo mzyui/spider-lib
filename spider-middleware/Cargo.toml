@@ -19,6 +19,7 @@ moka.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 tokio.workspace = true
 log.workspace = true
 url.workspace = true
@@ -38,6 +39,7 @@ spider-util = { version = "0.3.2", path = "../spider-util" }
 default = ["core"]
 core = []
 middleware-cache = ["dep:bincode", "dep:dirs"]
+middleware-autothrottle = []
 middleware-proxy = []
 middleware-user-agent = ["dep:ua_generator"]
 middleware-robots = ["dep:robotstxt"]
