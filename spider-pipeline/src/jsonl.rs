@@ -15,21 +15,31 @@ use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use log::{debug, info};
 use spider_util::{error::PipelineError, item::ScrapedItem};
-use std::fs::{File, OpenOptions};
+use std::fs::OpenOptions;
 use std::io::Write;
 use std::marker::PhantomData;
 use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, oneshot};
+
+enum JsonlCommand {
+    Write {
+        serialized_item: String,
+        responder: oneshot::Sender<Result<(), PipelineError>>,
+    },
+    Shutdown(oneshot::Sender<Result<(), PipelineError>>),
+}
 
 /// A pipeline that writes each scraped item to a JSON Lines (.jsonl) file.
 /// Each item is written as a JSON object on a new line.
 pub struct JsonlPipeline<I: ScrapedItem> {
-    file: Arc<Mutex<File>>,
+    command_sender: mpsc::Sender<JsonlCommand>,
     _phantom: PhantomData<I>,
 }
 
 impl<I: ScrapedItem> JsonlPipeline<I> {
+    const COMMAND_CHANNEL_CAPACITY: usize = 1024;
+    const FLUSH_EVERY_WRITES: usize = 100;
+
     /// Creates a new `JsonlPipeline` that writes to the specified file path.
     ///
     /// # Errors
@@ -42,13 +52,59 @@ impl<I: ScrapedItem> JsonlPipeline<I> {
         let path_buf = file_path.as_ref().to_path_buf();
         info!("Initializing JsonlPipeline for file: {:?}", path_buf);
 
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path_buf)?;
+        let (command_sender, mut command_receiver) =
+            mpsc::channel::<JsonlCommand>(Self::COMMAND_CHANNEL_CAPACITY);
+
+        tokio::task::spawn_blocking(move || {
+            let file_result = OpenOptions::new().create(true).append(true).open(&path_buf);
+            let mut file = match file_result {
+                Ok(file) => file,
+                Err(e) => {
+                    while let Some(command) = command_receiver.blocking_recv() {
+                        match command {
+                            JsonlCommand::Write { responder, .. } => {
+                                let _ = responder.send(Err(PipelineError::IoError(e.to_string())));
+                            }
+                            JsonlCommand::Shutdown(responder) => {
+                                let _ = responder.send(Err(PipelineError::IoError(e.to_string())));
+                                break;
+                            }
+                        }
+                    }
+                    return;
+                }
+            };
+
+            let mut pending_writes = 0usize;
+            while let Some(command) = command_receiver.blocking_recv() {
+                match command {
+                    JsonlCommand::Write {
+                        serialized_item,
+                        responder,
+                    } => {
+                        let result = (|| -> Result<(), PipelineError> {
+                            file.write_all(serialized_item.as_bytes())?;
+                            file.write_all(b"\n")?;
+                            pending_writes += 1;
+                            if pending_writes >= Self::FLUSH_EVERY_WRITES {
+                                file.flush()?;
+                                pending_writes = 0;
+                            }
+                            Ok(())
+                        })();
+                        let _ = responder.send(result);
+                    }
+                    JsonlCommand::Shutdown(responder) => {
+                        let result = file.flush().map_err(PipelineError::from);
+                        let _ = responder.send(result);
+                        break;
+                    }
+                }
+            }
+        });
 
         Ok(JsonlPipeline {
-            file: Arc::new(Mutex::new(file)),
+            command_sender,
             _phantom: PhantomData,
         })
     }
@@ -65,15 +121,28 @@ impl<I: ScrapedItem> Pipeline<I> for JsonlPipeline<I> {
         let json_value = item.to_json_value();
         let serialized_item = serde_json::to_string(&json_value)?;
 
-        let file_clone = Arc::clone(&self.file);
-
-        tokio::task::spawn_blocking(move || {
-            let mut file_lock = file_clone.blocking_lock();
-            writeln!(file_lock, "{}", serialized_item)
-        })
-        .await
-        .map_err(|e| PipelineError::Other(format!("spawn_blocking failed: {}", e)))??;
+        let (tx, rx) = oneshot::channel();
+        self.command_sender
+            .send(JsonlCommand::Write {
+                serialized_item,
+                responder: tx,
+            })
+            .await
+            .map_err(|e| PipelineError::Other(format!("Failed to send Write command: {}", e)))?;
+        rx.await
+            .map_err(|e| PipelineError::Other(format!("Failed to receive Write response: {}", e)))??;
 
         Ok(Some(item))
+    }
+
+    async fn close(&self) -> Result<(), PipelineError> {
+        let (tx, rx) = oneshot::channel();
+        self.command_sender
+            .send(JsonlCommand::Shutdown(tx))
+            .await
+            .map_err(|e| PipelineError::Other(format!("Failed to send Shutdown command: {}", e)))?;
+        rx.await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive shutdown response: {}", e))
+        })?
     }
 }

@@ -11,24 +11,23 @@
 
 use crate::Downloader;
 use async_trait::async_trait;
+use dashmap::DashMap;
 use log::debug;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
 use spider_util::request::{Body, Request};
 use spider_util::response::Response;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::RwLock;
 
 /// Concrete implementation of Downloader using reqwest client
 pub struct ReqwestClientDownloader {
     client: Client,
     timeout: Duration,
     /// Per-host connection pools for better resource management
-    host_clients: Arc<RwLock<HashMap<String, Client>>>,
+    host_clients: Arc<DashMap<String, Client>>,
     /// Per-proxy clients to avoid rebuilding client/pool for every proxied request.
-    proxy_clients: Arc<RwLock<HashMap<String, Client>>>,
+    proxy_clients: Arc<DashMap<String, Client>>,
 }
 
 #[async_trait]
@@ -117,18 +116,15 @@ impl ReqwestClientDownloader {
         ReqwestClientDownloader {
             client: base_client.clone(),
             timeout,
-            host_clients: Arc::new(RwLock::new(HashMap::new())),
-            proxy_clients: Arc::new(RwLock::new(HashMap::new())),
+            host_clients: Arc::new(DashMap::new()),
+            proxy_clients: Arc::new(DashMap::new()),
         }
     }
 
     /// Gets or creates a host-specific client with optimized settings for that host
     async fn get_or_create_host_client(&self, host: &str) -> Client {
-        {
-            let clients = self.host_clients.read().await;
-            if let Some(client) = clients.get(host) {
-                return client.clone();
-            }
+        if let Some(client) = self.host_clients.get(host) {
+            return client.clone();
         }
 
         // Create a new client for this host with optimized settings
@@ -141,25 +137,19 @@ impl ReqwestClientDownloader {
             .build()
             .unwrap();
 
-        {
-            let mut clients = self.host_clients.write().await;
-            // Double-check pattern to avoid race condition
-            if let Some(client) = clients.get(host) {
-                return client.clone();
-            }
-            clients.insert(host.to_string(), host_specific_client.clone());
+        if let Some(existing) = self.host_clients.get(host) {
+            return existing.clone();
         }
+        self.host_clients
+            .insert(host.to_string(), host_specific_client.clone());
 
         host_specific_client
     }
 
     /// Gets or creates a proxy-specific client to preserve connection pooling per proxy endpoint.
     async fn get_or_create_proxy_client(&self, proxy_url: &str) -> Result<Client, SpiderError> {
-        {
-            let clients = self.proxy_clients.read().await;
-            if let Some(client) = clients.get(proxy_url) {
-                return Ok(client.clone());
-            }
+        if let Some(client) = self.proxy_clients.get(proxy_url) {
+            return Ok(client.clone());
         }
 
         let proxy = Proxy::all(proxy_url).map_err(|e| SpiderError::ReqwestError(e.into()))?;
@@ -173,11 +163,11 @@ impl ReqwestClientDownloader {
             .build()
             .map_err(|e| SpiderError::ReqwestError(e.into()))?;
 
-        let mut clients = self.proxy_clients.write().await;
-        if let Some(client) = clients.get(proxy_url) {
+        if let Some(client) = self.proxy_clients.get(proxy_url) {
             return Ok(client.clone());
         }
-        clients.insert(proxy_url.to_string(), proxy_client.clone());
+        self.proxy_clients
+            .insert(proxy_url.to_string(), proxy_client.clone());
         Ok(proxy_client)
     }
 }

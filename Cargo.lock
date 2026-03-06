@@ -2094,6 +2094,7 @@ name = "spider-downloader"
 version = "0.4.3"
 dependencies = [
  "async-trait",
+ "dashmap 6.1.0",
  "log",
  "reqwest",
  "spider-util",

@@ -48,7 +48,7 @@ use crate::SchedulerCheckpoint;
 use spider_util::constants::DEFAULT_VISITED_CACHE_SIZE;
 
 use crossbeam::queue::SegQueue;
-use kanal::{AsyncReceiver, AsyncSender, bounded_async, unbounded_async};
+use kanal::{AsyncReceiver, AsyncSender, bounded_async};
 use log::{debug, error, info, trace, warn};
 use moka::sync::Cache;
 use spider_util::constants::{
@@ -155,7 +155,7 @@ impl Scheduler {
         #[cfg(feature = "checkpoint")] initial_state: Option<SchedulerCheckpoint>,
         #[cfg(not(feature = "checkpoint"))] _initial_state: Option<()>,
     ) -> (Arc<Self>, AsyncReceiver<Request>) {
-        let (tx, rx_internal) = unbounded_async();
+        let (tx, rx_internal) = bounded_async(MAX_PENDING_REQUESTS * 2);
         let (tx_out, rx_out) = bounded_async(100);
 
         let queue: SegQueue<Request>;

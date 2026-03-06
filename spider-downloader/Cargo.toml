@@ -15,5 +15,6 @@ reqwest.workspace = true
 spider-util = { version = "0.3.2", path = "../spider-util" }
 tokio.workspace = true
 log.workspace = true
+dashmap.workspace = true
 
 [features]
