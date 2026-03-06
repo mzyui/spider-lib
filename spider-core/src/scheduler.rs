@@ -434,25 +434,28 @@ impl Scheduler {
         }
 
         trace!("Enqueuing request: {}", request.url);
+        let request_arc = Arc::new(request);
         if self
             .tx
-            .send(SchedulerMessage::Enqueue(Arc::new(request.clone())))
+            .send(SchedulerMessage::Enqueue(Arc::clone(&request_arc)))
             .await
             .is_err()
         {
             if !self.is_shutting_down.load(Ordering::SeqCst) {
                 error!(
                     "Scheduler internal message channel is closed. Salvaging request: {}",
-                    request.url
+                    request_arc.url
                 );
             }
-            self.salvaged.push(request);
+            let salvaged_request = Arc::try_unwrap(request_arc)
+                .unwrap_or_else(|shared| shared.as_ref().clone());
+            self.salvaged.push(salvaged_request);
             return Err(SpiderError::GeneralError(
                 "Scheduler internal channel closed, request salvaged.".into(),
             ));
         }
 
-        trace!("Successfully enqueued request: {}", request.url);
+        trace!("Successfully enqueued request: {}", request_arc.url);
         Ok(())
     }
 
@@ -570,8 +573,6 @@ impl Scheduler {
                     self.flush_buffer_now();
                 }
             }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         }
     }
 

@@ -16,7 +16,7 @@
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
-use kanal::unbounded_async;
+use kanal::bounded_async;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -50,6 +50,8 @@ pub struct JsonPipeline<I: ScrapedItem> {
 }
 
 impl<I: ScrapedItem> JsonPipeline<I> {
+    const COMMAND_CHANNEL_CAPACITY: usize = 1024;
+
     /// Creates a new `JsonPipeline`.
     ///
     /// # Errors
@@ -58,7 +60,8 @@ impl<I: ScrapedItem> JsonPipeline<I> {
     pub fn new(file_path: impl AsRef<Path>) -> Result<Self, PipelineError> {
         spider_util::util::validate_output_dir(&file_path)
             .map_err(|e: spider_util::error::SpiderError| PipelineError::Other(e.to_string()))?;
-        let (command_sender, command_receiver) = unbounded_async::<JsonCommand>();
+        let (command_sender, command_receiver) =
+            bounded_async::<JsonCommand>(Self::COMMAND_CHANNEL_CAPACITY);
         let path_buf = file_path.as_ref().to_path_buf();
 
         tokio::task::spawn(async move {
@@ -140,7 +143,7 @@ impl<I: ScrapedItem> Pipeline<I> for JsonPipeline<I> {
 
     async fn close(&self) -> Result<(), PipelineError> {
         info!("Closing JsonPipeline.");
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(JsonCommand::Shutdown(tx))
             .await
@@ -151,7 +154,7 @@ impl<I: ScrapedItem> Pipeline<I> for JsonPipeline<I> {
     }
 
     async fn get_state(&self) -> Result<Option<Value>, PipelineError> {
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(JsonCommand::GetState(tx))
             .await
@@ -162,7 +165,7 @@ impl<I: ScrapedItem> Pipeline<I> for JsonPipeline<I> {
     }
 
     async fn restore_state(&self, state: Value) -> Result<(), PipelineError> {
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(JsonCommand::RestoreState {
                 state,

@@ -12,7 +12,7 @@
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
-use kanal::unbounded_async;
+use kanal::bounded_async;
 use log::{debug, error, info};
 use serde_json::Value;
 use spider_util::error::PipelineError;
@@ -36,6 +36,8 @@ pub struct StreamJsonPipeline<I: ScrapedItem> {
 }
 
 impl<I: ScrapedItem> StreamJsonPipeline<I> {
+    const COMMAND_CHANNEL_CAPACITY: usize = 1024;
+
     /// Creates a new `StreamJsonPipeline` with default batch size.
     ///
     /// # Errors
@@ -59,7 +61,8 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
         let path_buf = file_path.as_ref().to_path_buf();
         info!("Initializing StreamJsonPipeline for file: {:?}", path_buf);
 
-        let (command_sender, command_receiver) = unbounded_async::<StreamJsonCommand>();
+        let (command_sender, command_receiver) =
+            bounded_async::<StreamJsonCommand>(Self::COMMAND_CHANNEL_CAPACITY);
 
         tokio::task::spawn(async move {
             let file = OpenOptions::new()
@@ -151,9 +154,7 @@ fn flush_items(
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
     }
 
-    writer
-        .flush()
-        .map_err(|e| PipelineError::IoError(e.to_string()))
+    Ok(())
 }
 
 #[async_trait]
@@ -176,7 +177,7 @@ impl<I: ScrapedItem> Pipeline<I> for StreamJsonPipeline<I> {
 
     async fn close(&self) -> Result<(), PipelineError> {
         info!("Closing StreamJsonPipeline.");
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(StreamJsonCommand::Shutdown(tx))
             .await

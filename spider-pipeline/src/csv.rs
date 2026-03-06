@@ -18,7 +18,7 @@
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use csv::Writer;
-use kanal::unbounded_async;
+use kanal::bounded_async;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -54,6 +54,9 @@ pub struct CsvPipeline<I> {
 }
 
 impl<I: ScrapedItem> CsvPipeline<I> {
+    const COMMAND_CHANNEL_CAPACITY: usize = 1024;
+    const FLUSH_EVERY_WRITES: usize = 100;
+
     /// Creates a new `CsvPipeline`.
     ///
     /// # Errors
@@ -65,11 +68,13 @@ impl<I: ScrapedItem> CsvPipeline<I> {
         let path_buf = file_path.as_ref().to_path_buf();
         info!("Initializing CsvPipeline for file: {:?}", path_buf);
 
-        let (command_sender, command_receiver) = unbounded_async::<CsvCommand>();
+        let (command_sender, command_receiver) =
+            bounded_async::<CsvCommand>(Self::COMMAND_CHANNEL_CAPACITY);
         let path_clone = path_buf.clone();
 
         tokio::task::spawn(async move {
             let mut writer_state: Option<(Writer<File>, Vec<String>)> = None;
+            let mut pending_writes = 0usize;
 
             info!("CSV async task started for file: {:?}", path_clone);
 
@@ -130,7 +135,11 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                             };
 
                             writer.write_record(&record)?;
-                            writer.flush()?;
+                            pending_writes += 1;
+                            if pending_writes >= Self::FLUSH_EVERY_WRITES {
+                                writer.flush()?;
+                                pending_writes = 0;
+                            }
                             Ok(())
                         })();
 
@@ -172,6 +181,11 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                     }
                     CsvCommand::Shutdown(responder) => {
                         info!("CSV async task received shutdown command.");
+                        if let Some((writer, _)) = writer_state.as_mut()
+                            && let Err(e) = writer.flush()
+                        {
+                            error!("Failed to flush CSV writer on shutdown: {}", e);
+                        }
                         let _ = responder.send(()).await;
                         break;
                     }
@@ -197,7 +211,7 @@ impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
         debug!("CsvPipeline processing item.");
         let item_value = item.to_json_value();
 
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(CsvCommand::Write {
                 item_value,
@@ -216,7 +230,7 @@ impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
 
     async fn close(&self) -> Result<(), PipelineError> {
         info!("Closing CsvPipeline.");
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(CsvCommand::Shutdown(tx))
             .await
@@ -228,7 +242,7 @@ impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
     }
 
     async fn get_state(&self) -> Result<Option<Value>, PipelineError> {
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(CsvCommand::GetState(tx))
             .await
@@ -240,7 +254,7 @@ impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
     }
 
     async fn restore_state(&self, state: Value) -> Result<(), PipelineError> {
-        let (tx, rx) = kanal::unbounded_async();
+        let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
             .send(CsvCommand::RestoreState {
                 state,

@@ -171,10 +171,15 @@ where
     let original_request_url = request.url.clone();
     let mut early_returned_response: Option<Response> = None;
 
-    let mut processed_request_opt = Some(request.clone());
+    let mut processed_request_opt = Some(request);
 
     match middlewares
-        .process_request(downloader.client(), request)
+        .process_request(
+            downloader.client(),
+            processed_request_opt
+                .take()
+                .expect("Request must be present before middleware processing"),
+        )
         .await
     {
         Ok(MiddlewareAction::Continue(req)) => {
