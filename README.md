@@ -17,7 +17,7 @@ A Rust web scraping framework inspired by Scrapy, built as a modular workspace.
 
 ```toml
 [dependencies]
-spider-lib = "2.0.3"
+spider-lib = "2.0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -93,6 +93,7 @@ Pipeline features:
 
 Core features:
 
+- `live-stats`: enables in-place live stats terminal updates.
 - `checkpoint`
 - `cookie-store` (also enables `middleware-cookies`)
 
@@ -100,7 +101,7 @@ Example:
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.3", features = ["middleware-robots", "pipeline-jsonl"] }
+spider-lib = { version = "2.0.4", features = ["middleware-robots", "pipeline-jsonl"] }
 ```
 
 ## Development
