@@ -129,8 +129,9 @@ impl<I: ScrapedItem> Pipeline<I> for JsonlPipeline<I> {
             })
             .await
             .map_err(|e| PipelineError::Other(format!("Failed to send Write command: {}", e)))?;
-        rx.await
-            .map_err(|e| PipelineError::Other(format!("Failed to receive Write response: {}", e)))??;
+        rx.await.map_err(|e| {
+            PipelineError::Other(format!("Failed to receive Write response: {}", e))
+        })??;
 
         Ok(Some(item))
     }
