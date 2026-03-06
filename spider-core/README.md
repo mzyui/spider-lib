@@ -57,12 +57,13 @@ impl Spider for MySpider {
 ## Feature Flags
 
 - `core` (default)
+- `live-stats`: enables in-place live stats terminal updates.
 - `checkpoint`: enables checkpoint/resume support.
 - `cookie-store`: enables `cookie_store` integration.
 
 ```toml
 [dependencies]
-spider-core = { version = "1.0.3", features = ["checkpoint"] }
+spider-core = { version = "1.0.4", features = ["checkpoint"] }
 ```
 
 ## Related Crates

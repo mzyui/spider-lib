@@ -18,6 +18,12 @@ use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use anyhow::Result;
+#[cfg(feature = "live-stats")]
+use crossterm::{
+    cursor::{Hide, MoveToColumn, MoveUp, Show},
+    execute, queue,
+    terminal::{Clear, ClearType},
+};
 use futures_util::future::join_all;
 use kanal::{AsyncReceiver, bounded_async};
 use log::{debug, error, info, trace, warn};
@@ -32,12 +38,14 @@ use crate::checkpoint::save_checkpoint;
 #[cfg(feature = "checkpoint")]
 use crate::config::CheckpointConfig;
 
+#[cfg(feature = "live-stats")]
+use std::io::{IsTerminal, Write};
 use std::sync::Arc;
 use std::time::Duration;
-use std::{io::IsTerminal, io::Write};
 
 #[cfg(feature = "cookie-store")]
 use tokio::sync::RwLock;
+#[cfg(feature = "live-stats")]
 use tokio::sync::oneshot;
 
 #[cfg(feature = "cookie-store")]
@@ -184,18 +192,23 @@ where
             Arc::clone(&ctx.stats),
         );
 
-        let mut live_stats_task: Option<(oneshot::Sender<()>, tokio::task::JoinHandle<()>)> =
-            if config.live_stats && std::io::stdout().is_terminal() {
-                let (stop_tx, stop_rx) = oneshot::channel();
-                let stats_for_live = Arc::clone(&ctx.stats);
-                let interval = config.live_stats_interval;
-                let handle = tokio::spawn(async move {
-                    run_live_stats(stats_for_live, interval, stop_rx).await;
-                });
-                Some((stop_tx, handle))
-            } else {
-                None
-            };
+        #[cfg(feature = "live-stats")]
+        let mut live_stats_task: Option<(
+            oneshot::Sender<()>,
+            tokio::task::JoinHandle<()>,
+        )> = if config.live_stats && std::io::stdout().is_terminal() {
+            let (stop_tx, stop_rx) = oneshot::channel();
+            let stats_for_live = Arc::clone(&ctx.stats);
+            let interval = config.live_stats_interval;
+            let handle = tokio::spawn(async move {
+                run_live_stats(stats_for_live, interval, stop_rx).await;
+            });
+            Some((stop_tx, handle))
+        } else {
+            None
+        };
+        #[cfg(not(feature = "live-stats"))]
+        let mut live_stats_task: Option<((), ())> = None;
 
         #[cfg(feature = "checkpoint")]
         {
@@ -319,10 +332,13 @@ where
             }
         }
 
+        #[cfg(feature = "live-stats")]
         if let Some((stop_tx, handle)) = live_stats_task.take() {
             let _ = stop_tx.send(());
             let _ = handle.await;
         }
+        #[cfg(not(feature = "live-stats"))]
+        let _ = live_stats_task.take();
 
         #[cfg(feature = "checkpoint")]
         {
@@ -405,14 +421,16 @@ where
     })
 }
 
+#[cfg(feature = "live-stats")]
 struct LiveStatsRenderer {
     previous_lines: usize,
 }
 
+#[cfg(feature = "live-stats")]
 impl LiveStatsRenderer {
     fn new() -> Self {
         let mut out = std::io::stdout();
-        let _ = write!(out, "\x1b[?25l");
+        let _ = execute!(out, Hide);
         let _ = out.flush();
         Self { previous_lines: 0 }
     }
@@ -429,7 +447,7 @@ impl LiveStatsRenderer {
     fn finish(self) {
         let mut out = std::io::stdout();
         self.clear_previous(&mut out);
-        let _ = write!(out, "\r\x1b[2K\x1b[?25h");
+        let _ = execute!(out, MoveToColumn(0), Clear(ClearType::CurrentLine), Show);
         let _ = writeln!(out);
         let _ = out.flush();
     }
@@ -438,22 +456,23 @@ impl LiveStatsRenderer {
         if self.previous_lines == 0 {
             return;
         }
-        let _ = write!(out, "\r");
+        let _ = queue!(out, MoveToColumn(0));
         if self.previous_lines > 1 {
-            let _ = write!(out, "\x1b[{}A", self.previous_lines - 1);
+            let _ = queue!(out, MoveUp((self.previous_lines - 1) as u16));
         }
         for line_idx in 0..self.previous_lines {
-            let _ = write!(out, "\r\x1b[2K");
+            let _ = queue!(out, MoveToColumn(0), Clear(ClearType::CurrentLine));
             if line_idx + 1 < self.previous_lines {
-                let _ = write!(out, "\x1b[1B");
+                let _ = write!(out, "\n");
             }
         }
         if self.previous_lines > 1 {
-            let _ = write!(out, "\x1b[{}A", self.previous_lines - 1);
+            let _ = queue!(out, MoveUp((self.previous_lines - 1) as u16));
         }
     }
 }
 
+#[cfg(feature = "live-stats")]
 async fn run_live_stats(
     stats: Arc<StatCollector>,
     interval: Duration,

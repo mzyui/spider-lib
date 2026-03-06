@@ -1,6 +1,6 @@
 [package]
 name = "spider-core"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "Core functionality for the spider-lib web scraping framework."
@@ -30,9 +30,10 @@ tokio.workspace = true
 log.workspace = true
 env_logger.workspace = true
 url.workspace = true
+crossterm = { workspace = true, optional = true }
 
 spider-macro = { version = "0.1.9", path = "../spider-macro" }
-spider-util = { version = "0.3.2", path = "../spider-util" }
+spider-util = { version = "0.3.3", path = "../spider-util" }
 spider-middleware = { version = "0.3.3", path = "../spider-middleware" }
 spider-pipeline = { version = "0.3.3", path = "../spider-pipeline" }
 spider-downloader = { version = "0.4.3", path = "../spider-downloader" }
@@ -42,3 +43,4 @@ default = ["core"]
 core = []
 checkpoint = ["dep:rmp-serde", "dep:time"]
 cookie-store = ["dep:cookie_store"]
+live-stats = ["dep:crossterm"]
