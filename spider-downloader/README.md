@@ -6,7 +6,7 @@ Downloader traits and reqwest-based downloader implementation for `spider-lib`.
 
 ```toml
 [dependencies]
-spider-downloader = "0.4.3"
+spider-downloader = "0.4.4"
 ```
 
 ## Exports
