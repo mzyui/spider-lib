@@ -47,6 +47,8 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 #[cfg(feature = "live-stats")]
 use tokio::sync::oneshot;
+#[cfg(feature = "live-stats")]
+use tokio::time::MissedTickBehavior;
 
 #[cfg(feature = "cookie-store")]
 use cookie_store::CookieStore;
@@ -423,7 +425,7 @@ where
 
 #[cfg(feature = "live-stats")]
 struct LiveStatsRenderer {
-    previous_lines: usize,
+    previous_lines: Vec<String>,
 }
 
 #[cfg(feature = "live-stats")]
@@ -431,43 +433,65 @@ impl LiveStatsRenderer {
     fn new() -> Self {
         let mut out = std::io::stdout();
         let _ = execute!(out, Hide);
+        let _ = writeln!(out);
         let _ = out.flush();
-        Self { previous_lines: 0 }
+        Self {
+            previous_lines: Vec::new(),
+        }
     }
 
     fn render(&mut self, content: &str) {
         let mut out = std::io::stdout();
-        self.clear_previous(&mut out);
-        let rendered = format!("\n{}\n", content);
-        let _ = write!(out, "{}", rendered);
+        let next_lines: Vec<String> = content.lines().map(ToOwned::to_owned).collect();
+        let previous_len = self.previous_lines.len();
+        let next_len = next_lines.len();
+        let max_len = previous_len.max(next_len);
+
+        if previous_len > 1 {
+            let _ = queue!(out, MoveUp((previous_len - 1) as u16));
+        }
+        let _ = queue!(out, MoveToColumn(0));
+
+        for line_idx in 0..max_len {
+            let _ = queue!(out, MoveToColumn(0), Clear(ClearType::CurrentLine));
+
+            if let Some(line) = next_lines.get(line_idx) {
+                let _ = write!(out, "{}", line);
+            }
+
+            if line_idx + 1 < max_len {
+                let _ = write!(out, "\n");
+            }
+        }
+
         let _ = out.flush();
-        self.previous_lines = rendered.split('\n').count().max(1);
+        self.previous_lines = next_lines;
     }
 
     fn finish(self) {
         let mut out = std::io::stdout();
         self.clear_previous(&mut out);
         let _ = execute!(out, MoveToColumn(0), Clear(ClearType::CurrentLine), Show);
-        let _ = writeln!(out);
         let _ = out.flush();
     }
 
     fn clear_previous(&self, out: &mut std::io::Stdout) {
-        if self.previous_lines == 0 {
+        if self.previous_lines.is_empty() {
             return;
         }
+        let lines = self.previous_lines.len();
         let _ = queue!(out, MoveToColumn(0));
-        if self.previous_lines > 1 {
-            let _ = queue!(out, MoveUp((self.previous_lines - 1) as u16));
+        if lines > 1 {
+            let _ = queue!(out, MoveUp((lines - 1) as u16));
         }
-        for line_idx in 0..self.previous_lines {
+        for line_idx in 0..lines {
             let _ = queue!(out, MoveToColumn(0), Clear(ClearType::CurrentLine));
-            if line_idx + 1 < self.previous_lines {
+            if line_idx + 1 < lines {
                 let _ = write!(out, "\n");
             }
         }
-        if self.previous_lines > 1 {
-            let _ = queue!(out, MoveUp((self.previous_lines - 1) as u16));
+        if lines > 1 {
+            let _ = queue!(out, MoveUp((lines - 1) as u16));
         }
     }
 }
@@ -479,6 +503,7 @@ async fn run_live_stats(
     mut stop_rx: oneshot::Receiver<()>,
 ) {
     let mut ticker = tokio::time::interval(interval);
+    ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let mut renderer = LiveStatsRenderer::new();
 
     loop {
