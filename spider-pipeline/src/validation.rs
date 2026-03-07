@@ -292,8 +292,8 @@ mod tests {
 
     #[tokio::test]
     async fn drops_missing_required_field() {
-        let pipeline = ValidationPipeline::<TestItem>::new()
-            .with_rule("missing", ValidationRule::Required);
+        let pipeline =
+            ValidationPipeline::<TestItem>::new().with_rule("missing", ValidationRule::Required);
         let item = TestItem {
             title: "Book".to_string(),
             price: 20.0,
@@ -308,10 +308,12 @@ mod tests {
 
     #[tokio::test]
     async fn drops_on_custom_validator_error() {
-        let pipeline = ValidationPipeline::<TestItem>::new()
-            .with_validator(|_item, json| match json.get("title").and_then(Value::as_str) {
-                Some("Book") => Ok(()),
-                _ => Err("title mismatch".to_string()),
+        let pipeline =
+            ValidationPipeline::<TestItem>::new().with_validator(|_item, json| {
+                match json.get("title").and_then(Value::as_str) {
+                    Some("Book") => Ok(()),
+                    _ => Err("title mismatch".to_string()),
+                }
             });
 
         let item = TestItem {
@@ -356,6 +358,9 @@ mod tests {
             .process_item(item)
             .await
             .expect("pipeline should not fail");
-        assert_eq!(out.expect("item should pass").to_json_value(), json!({"title":"ok","price":5.0}));
+        assert_eq!(
+            out.expect("item should pass").to_json_value(),
+            json!({"title":"ok","price":5.0})
+        );
     }
 }

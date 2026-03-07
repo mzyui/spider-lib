@@ -162,7 +162,10 @@ where
         match serde_json::from_value::<I>(json) {
             Ok(transformed) => Ok(Some(transformed)),
             Err(err) => {
-                warn!("Failed to deserialize transformed item, dropping item: {}", err);
+                warn!(
+                    "Failed to deserialize transformed item, dropping item: {}",
+                    err
+                );
                 Ok(None)
             }
         }
@@ -318,11 +321,10 @@ mod tests {
 
     #[tokio::test]
     async fn missing_field_operation_is_noop() {
-        let pipeline = TransformPipeline::<ProductItem>::new().with_operation(
-            TransformOperation::Uppercase {
+        let pipeline =
+            TransformPipeline::<ProductItem>::new().with_operation(TransformOperation::Uppercase {
                 field: "missing".to_string(),
-            },
-        );
+            });
 
         let out = pipeline
             .process_item(ProductItem {
