@@ -86,7 +86,7 @@ quote = "1.0"
 [dependencies]
 
 spider-util = { version = "0.3.3", path = "spider-util" }
-spider-macro = { version = "0.1.9", path = "spider-macro" }
+spider-macro = { version = "0.1.10", path = "spider-macro" }
 spider-middleware = { version = "0.3.4", path = "spider-middleware", features = ["core"] }
 spider-core = { version = "2.0.0", path = "spider-core", default-features = false }
 spider-pipeline = { version = "0.3.4", path = "spider-pipeline" }

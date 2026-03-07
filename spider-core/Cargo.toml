@@ -32,10 +32,10 @@ env_logger.workspace = true
 url.workspace = true
 crossterm = { workspace = true, optional = true }
 
-spider-macro = { version = "0.1.9", path = "../spider-macro" }
+spider-macro = { version = "0.1.10", path = "../spider-macro" }
 spider-util = { version = "0.3.3", path = "../spider-util" }
-spider-middleware = { version = "0.3.3", path = "../spider-middleware" }
-spider-pipeline = { version = "0.3.3", path = "../spider-pipeline" }
+spider-middleware = { version = "0.3.4", path = "../spider-middleware" }
+spider-pipeline = { version = "0.3.4", path = "../spider-pipeline" }
 spider-downloader = { version = "1.0.0", path = "../spider-downloader" }
 
 [features]
