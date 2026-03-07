@@ -44,7 +44,7 @@ Spider::start_urls
 
 ```toml
 [dependencies]
-spider-lib = "2.0.4"
+spider-lib = "3.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -340,42 +340,42 @@ See full per-feature pipeline examples in [`spider-pipeline`](./spider-pipeline/
 
 ```toml
 [dependencies]
-spider-lib = "2.0.4"
+spider-lib = "3.0.0"
 ```
 
 ### Robots + JSONL export
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-robots", "pipeline-jsonl"] }
+spider-lib = { version = "3.0.0", features = ["middleware-robots", "pipeline-jsonl"] }
 ```
 
 ### Proxy + user-agent rotation + CSV output
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-proxy", "middleware-user-agent", "pipeline-csv"] }
+spider-lib = { version = "3.0.0", features = ["middleware-proxy", "middleware-user-agent", "pipeline-csv"] }
 ```
 
 ### Cache + autothrottle + SQLite output
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-cache", "middleware-autothrottle", "pipeline-sqlite"] }
+spider-lib = { version = "3.0.0", features = ["middleware-cache", "middleware-autothrottle", "pipeline-sqlite"] }
 ```
 
 ### Live stats and resume support
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["live-stats", "checkpoint"] }
+spider-lib = { version = "3.0.0", features = ["live-stats", "checkpoint"] }
 ```
 
 ### Cookie-aware crawling
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["cookie-store"] }
+spider-lib = { version = "3.0.0", features = ["cookie-store"] }
 ```
 
 `cookie-store` enables `middleware-cookies` transitively.

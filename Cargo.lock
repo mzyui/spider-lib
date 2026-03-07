@@ -2172,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "spider-core"
-version = "1.0.4"
+version = "2.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "spider-downloader"
-version = "0.4.4"
+version = "1.0.0"
 dependencies = [
  "async-trait",
  "dashmap 6.1.0",
@@ -2215,7 +2215,7 @@ dependencies = [
 
 [[package]]
 name = "spider-lib"
-version = "2.0.4"
+version = "3.0.0"
 dependencies = [
  "dashmap 6.1.0",
  "env_logger",

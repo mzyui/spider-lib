@@ -8,7 +8,7 @@ Most users should start with `spider-lib`. Use `spider-core` directly when you w
 
 ```toml
 [dependencies]
-spider-core = "1.0.4"
+spider-core = "2.0.0"
 ```
 
 ## Main Components
@@ -65,7 +65,7 @@ impl Spider for MySpider {
 
 ```toml
 [dependencies]
-spider-core = { version = "1.0.4", features = ["checkpoint"] }
+spider-core = { version = "2.0.0", features = ["checkpoint"] }
 ```
 
 ## Custom Extension Guides

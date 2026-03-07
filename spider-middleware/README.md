@@ -91,7 +91,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-cache"] }
+spider-lib = { version = "3.0.0", features = ["middleware-cache"] }
 ```
 
 ```rust,ignore
@@ -107,7 +107,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-autothrottle"] }
+spider-lib = { version = "3.0.0", features = ["middleware-autothrottle"] }
 ```
 
 ```rust,ignore
@@ -123,7 +123,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-proxy"] }
+spider-lib = { version = "3.0.0", features = ["middleware-proxy"] }
 ```
 
 ```rust,ignore
@@ -139,7 +139,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-user-agent"] }
+spider-lib = { version = "3.0.0", features = ["middleware-user-agent"] }
 ```
 
 ```rust,ignore
@@ -155,7 +155,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-robots"] }
+spider-lib = { version = "3.0.0", features = ["middleware-robots"] }
 ```
 
 ```rust,ignore
@@ -171,7 +171,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["middleware-cookies"] }
+spider-lib = { version = "3.0.0", features = ["middleware-cookies"] }
 ```
 
 ```rust,ignore

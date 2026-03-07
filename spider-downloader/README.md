@@ -8,7 +8,7 @@ Use this crate directly when you need downloader-level control while staying com
 
 ```toml
 [dependencies]
-spider-downloader = "0.4.4"
+spider-downloader = "1.0.0"
 ```
 
 ## When to Use This Crate Directly

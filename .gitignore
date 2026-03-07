@@ -23,7 +23,6 @@ target
 GEMINI.md
 GUIDE.md
 SCRAPY_COMPARISON.md
-output/
 
 .gemini/
 gha-creds-*.json
