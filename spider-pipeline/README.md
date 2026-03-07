@@ -2,7 +2,7 @@
 
 Item pipelines for processing, filtering, and exporting scraped data in `spider-lib`.
 
-Use this crate directly when you want pipeline features without bringing the full facade crate.
+Use this crate directly when you need pipeline functionality without taking the full facade crate.
 
 ## Installation
 
@@ -11,16 +11,16 @@ Use this crate directly when you want pipeline features without bringing the ful
 spider-pipeline = "0.3.4"
 ```
 
-## Built-in Pipelines
+## Pipeline Catalog
 
-Core (always available):
+### Core (always available)
 
-- `ConsolePipeline`
-- `DeduplicationPipeline`
-- `ValidationPipeline`
-- `TransformPipeline`
+- `TransformPipeline`: normalize/transform item fields.
+- `ValidationPipeline`: enforce field and type rules.
+- `DeduplicationPipeline`: drop duplicate items by key fields.
+- `ConsolePipeline`: print processed items for visibility/debugging.
 
-Optional (feature-gated):
+### Optional output pipelines (feature-gated)
 
 - `pipeline-json` -> `JsonPipeline`
 - `pipeline-jsonl` -> `JsonlPipeline`
@@ -28,7 +28,7 @@ Optional (feature-gated):
 - `pipeline-sqlite` -> `SqlitePipeline`
 - `pipeline-stream-json` -> `StreamJsonPipeline`
 
-## Usage
+## Core Composition Example
 
 ```rust,ignore
 use spider_pipeline::{
@@ -41,18 +41,109 @@ use spider_pipeline::{
 let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .add_pipeline(
         TransformPipeline::new()
-            .with_operation(TransformOperation::Trim { field: "title".into() })
+            .with_operation(TransformOperation::Trim { field: "title".into() }),
     )
     .add_pipeline(
         ValidationPipeline::new()
             .with_rule("title", ValidationRule::Required)
-            .with_rule("title", ValidationRule::NonEmptyString)
+            .with_rule("title", ValidationRule::NonEmptyString),
     )
     .add_pipeline(DeduplicationPipeline::new(&["url"]))
     .add_pipeline(ConsolePipeline::new())
     .build()
     .await?;
 ```
+
+## Optional Output Pipelines (One by One)
+
+### `pipeline-json` (`JsonPipeline`)
+
+```toml
+[dependencies]
+spider-lib = { version = "2.0.4", features = ["pipeline-json"] }
+```
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(JsonPipeline::new("output/items.json"))
+    .build()
+    .await?;
+```
+
+### `pipeline-jsonl` (`JsonlPipeline`)
+
+```toml
+[dependencies]
+spider-lib = { version = "2.0.4", features = ["pipeline-jsonl"] }
+```
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(JsonlPipeline::new("output/items.jsonl"))
+    .build()
+    .await?;
+```
+
+### `pipeline-csv` (`CsvPipeline`)
+
+```toml
+[dependencies]
+spider-lib = { version = "2.0.4", features = ["pipeline-csv"] }
+```
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(CsvPipeline::new("output/items.csv"))
+    .build()
+    .await?;
+```
+
+### `pipeline-sqlite` (`SqlitePipeline`)
+
+```toml
+[dependencies]
+spider-lib = { version = "2.0.4", features = ["pipeline-sqlite"] }
+```
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(SqlitePipeline::new("output/items.db", "items"))
+    .build()
+    .await?;
+```
+
+### `pipeline-stream-json` (`StreamJsonPipeline`)
+
+```toml
+[dependencies]
+spider-lib = { version = "2.0.4", features = ["pipeline-stream-json"] }
+```
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(StreamJsonPipeline::new("output/items-stream.json"))
+    .build()
+    .await?;
+```
+
+## Pipeline Strategy
+
+A common production sequence:
+
+1. `TransformPipeline` for cleanup.
+2. `ValidationPipeline` for schema checks.
+3. `DeduplicationPipeline` to control duplicates.
+4. One or more output pipelines (`JsonlPipeline`, `CsvPipeline`, etc.).
 
 ## Feature Flags
 

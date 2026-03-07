@@ -2,7 +2,7 @@
 
 Downloader traits and reqwest-based downloader implementation for `spider-lib`.
 
-Use this crate directly when you want custom request execution while keeping compatibility with the spider runtime interfaces.
+Use this crate directly when you need downloader-level control while staying compatible with the crawler runtime interfaces.
 
 ## Installation
 
@@ -11,13 +11,35 @@ Use this crate directly when you want custom request execution while keeping com
 spider-downloader = "0.4.4"
 ```
 
+## When to Use This Crate Directly
+
+Use `spider-downloader` directly if you need one or more of these:
+
+- Custom authentication/signing logic.
+- Transport customization beyond default reqwest behavior.
+- Request/response instrumentation at downloader boundary.
+- Integration with external HTTP infrastructure while preserving `spider-*` types.
+
+If you want the integrated framework surface, prefer `spider-lib`.
+
 ## Key Exports
 
 - `Downloader`: trait for request execution.
 - `HttpClient`: lightweight HTTP client trait re-export.
 - `ReqwestClientDownloader`: default reqwest-based downloader.
 
-## Usage
+## Downloader Contract
+
+`Downloader` implementors should:
+
+- Accept a `spider_util::request::Request`.
+- Execute an HTTP transaction with your client.
+- Return a `spider_util::response::Response` on success.
+- Return `SpiderError` for network/protocol/serialization failures.
+
+The crawler runtime depends on this contract to keep middleware and parser behavior predictable.
+
+## Custom Downloader Example
 
 ```rust,ignore
 use async_trait::async_trait;
@@ -32,7 +54,13 @@ struct MyDownloader {
 impl Downloader for MyDownloader {
     type Client = reqwest::Client;
 
-    async fn download(&self, _request: Request) -> Result<Response, SpiderError> {
+    async fn download(&self, request: Request) -> Result<Response, SpiderError> {
+        let _req = request;
+
+        // 1) map spider Request to HTTP request
+        // 2) execute with self.client
+        // 3) map HTTP response back into spider Response
+        // 4) map transport and parsing errors into SpiderError
         todo!()
     }
 
@@ -40,6 +68,19 @@ impl Downloader for MyDownloader {
         &self.client
     }
 }
+```
+
+## Runtime Integration Pattern
+
+In full crawler setups, this trait implementation is consumed by the runtime path that executes scheduled requests before parser callbacks run.
+
+```rust,ignore
+use spider_core::CrawlerBuilder;
+
+let _crawler = CrawlerBuilder::new(MySpider)
+    // use downloader-compatible runtime composition
+    .build()
+    .await?;
 ```
 
 ## Related Crates
