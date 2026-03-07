@@ -11,22 +11,18 @@
 
 use crate::Downloader;
 use async_trait::async_trait;
-use dashmap::DashMap;
 use log::{debug, warn};
 use moka::sync::Cache;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
 use spider_util::request::{Body, Request};
 use spider_util::response::Response;
-use std::sync::Arc;
 use std::time::Duration;
 
 /// Concrete implementation of Downloader using reqwest client
 pub struct ReqwestClientDownloader {
     client: Client,
     timeout: Duration,
-    /// Per-host connection pools for better resource management
-    host_clients: Arc<DashMap<String, Client>>,
     /// Per-proxy clients with TTL/capacity bounds to avoid unbounded growth.
     proxy_clients: Cache<String, Client>,
 }
@@ -49,18 +45,7 @@ impl Downloader for ReqwestClientDownloader {
 
         let url = request.url.clone();
         let body = request.body.clone();
-
-        // Get host-specific client if available, otherwise use default
-        let host = url.host_str().unwrap_or("").to_string();
-        let mut client_to_use = self.get_or_create_host_client(&host).await;
-
-        // Check for proxy in metadata
-        if let Some(meta_map) = request.meta_inner().as_ref()
-            && let Some(proxy_val) = meta_map.get("proxy")
-            && let Some(proxy_str) = proxy_val.as_str()
-        {
-            client_to_use = self.get_or_create_proxy_client(proxy_str).await?;
-        }
+        let client_to_use = self.select_client_for_request(&request);
 
         let mut req_builder = client_to_use.request(request.method.clone(), url.clone());
 
@@ -100,6 +85,7 @@ impl Downloader for ReqwestClientDownloader {
 impl ReqwestClientDownloader {
     const PROXY_CLIENT_CACHE_MAX_CAPACITY: u64 = 512;
     const PROXY_CLIENT_CACHE_TTL_SECS: u64 = 30 * 60;
+    const PROXY_META_KEY: &str = "proxy";
 
     /// Creates a new `ReqwestClientDownloader` with a default timeout of 30 seconds.
     pub fn new() -> Self {
@@ -131,7 +117,6 @@ impl ReqwestClientDownloader {
         Ok(ReqwestClientDownloader {
             client: base_client.clone(),
             timeout,
-            host_clients: Arc::new(DashMap::new()),
             proxy_clients: Cache::builder()
                 .max_capacity(Self::PROXY_CLIENT_CACHE_MAX_CAPACITY)
                 .time_to_idle(Duration::from_secs(Self::PROXY_CLIENT_CACHE_TTL_SECS))
@@ -139,48 +124,42 @@ impl ReqwestClientDownloader {
         })
     }
 
-    /// Gets or creates a host-specific client with optimized settings for that host
-    async fn get_or_create_host_client(&self, host: &str) -> Client {
-        if let Some(client) = self.host_clients.get(host) {
-            return client.clone();
+    fn proxy_from_request(request: &Request) -> Option<String> {
+        request.meta_inner().as_ref().and_then(|meta_map| {
+            meta_map
+                .get(Self::PROXY_META_KEY)
+                .and_then(|proxy_val| proxy_val.as_str().map(str::to_owned))
+        })
+    }
+
+    fn select_client_for_request(&self, request: &Request) -> Client {
+        if let Some(proxy_url) = Self::proxy_from_request(request)
+            && let Some(proxy_client) = self.get_or_create_proxy_client(&proxy_url)
+        {
+            return proxy_client;
         }
 
-        // Create a new client for this host with optimized settings
-        let host_specific_client = Client::builder()
-            .timeout(self.timeout)
-            .pool_max_idle_per_host(50) // Smaller pool per host to distribute connections
-            .pool_idle_timeout(Duration::from_secs(90))
-            .tcp_keepalive(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(5))
-            .build();
-        let host_specific_client = match host_specific_client {
-            Ok(client) => client,
-            Err(err) => {
-                warn!(
-                    "Failed to build host-specific client for '{}': {}. Falling back to base client",
-                    host, err
-                );
-                return self.client.clone();
-            }
-        };
-
-        if let Some(existing) = self.host_clients.get(host) {
-            return existing.clone();
-        }
-        self.host_clients
-            .insert(host.to_string(), host_specific_client.clone());
-
-        host_specific_client
+        self.client.clone()
     }
 
     /// Gets or creates a proxy-specific client to preserve connection pooling per proxy endpoint.
-    async fn get_or_create_proxy_client(&self, proxy_url: &str) -> Result<Client, SpiderError> {
+    fn get_or_create_proxy_client(&self, proxy_url: &str) -> Option<Client> {
         if let Some(client) = self.proxy_clients.get(proxy_url) {
-            return Ok(client);
+            return Some(client);
         }
 
-        let proxy = Proxy::all(proxy_url).map_err(|e| SpiderError::ReqwestError(e.into()))?;
-        let proxy_client = Client::builder()
+        let proxy = match Proxy::all(proxy_url) {
+            Ok(proxy) => proxy,
+            Err(err) => {
+                warn!(
+                    "Invalid proxy URL '{}': {}. Falling back to base client",
+                    proxy_url, err
+                );
+                return None;
+            }
+        };
+
+        let proxy_client = match Client::builder()
             .timeout(self.timeout)
             .pool_max_idle_per_host(50)
             .pool_idle_timeout(Duration::from_secs(90))
@@ -188,19 +167,71 @@ impl ReqwestClientDownloader {
             .connect_timeout(Duration::from_secs(5))
             .proxy(proxy)
             .build()
-            .map_err(|e| SpiderError::ReqwestError(e.into()))?;
+        {
+            Ok(client) => client,
+            Err(err) => {
+                warn!(
+                    "Failed to build client for proxy '{}': {}. Falling back to base client",
+                    proxy_url, err
+                );
+                return None;
+            }
+        };
 
         if let Some(client) = self.proxy_clients.get(proxy_url) {
-            return Ok(client);
+            return Some(client);
         }
         self.proxy_clients
             .insert(proxy_url.to_string(), proxy_client.clone());
-        Ok(proxy_client)
+        Some(proxy_client)
     }
 }
 
 impl Default for ReqwestClientDownloader {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReqwestClientDownloader;
+    use spider_util::request::Request;
+
+    #[test]
+    fn proxy_meta_parsing_returns_none_when_missing() {
+        let request = Request::new(reqwest::Url::parse("https://example.com").expect("valid url"));
+        assert_eq!(ReqwestClientDownloader::proxy_from_request(&request), None);
+    }
+
+    #[test]
+    fn invalid_proxy_falls_back_without_error() {
+        let downloader = ReqwestClientDownloader::new();
+        let proxy_client = downloader.get_or_create_proxy_client("://invalid-proxy");
+        assert!(proxy_client.is_none());
+        assert_eq!(downloader.proxy_clients.entry_count(), 0);
+    }
+
+    #[test]
+    fn valid_proxy_client_is_cached_and_reused() {
+        let downloader = ReqwestClientDownloader::new();
+        let proxy = "http://127.0.0.1:8080";
+
+        let first = downloader.get_or_create_proxy_client(proxy);
+        assert!(first.is_some());
+        assert!(downloader.proxy_clients.get(proxy).is_some());
+
+        let second = downloader.get_or_create_proxy_client(proxy);
+        assert!(second.is_some());
+        assert!(downloader.proxy_clients.get(proxy).is_some());
+    }
+
+    #[test]
+    fn request_without_proxy_uses_base_client_path() {
+        let downloader = ReqwestClientDownloader::new();
+        let request = Request::new(reqwest::Url::parse("https://example.com").expect("valid url"));
+
+        let _ = downloader.select_client_for_request(&request);
+        assert_eq!(downloader.proxy_clients.entry_count(), 0);
     }
 }
