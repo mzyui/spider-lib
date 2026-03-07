@@ -100,7 +100,7 @@ spider-lib = { version = "2.0.4", features = ["pipeline-json"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(JsonPipeline::new("output/items.json"))
+    .add_pipeline(JsonPipeline::new("output/items.json")?)
     .build()
     .await?;
 ```
@@ -116,7 +116,7 @@ spider-lib = { version = "2.0.4", features = ["pipeline-jsonl"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(JsonlPipeline::new("output/items.jsonl"))
+    .add_pipeline(JsonlPipeline::new("output/items.jsonl")?)
     .build()
     .await?;
 ```
@@ -132,7 +132,7 @@ spider-lib = { version = "2.0.4", features = ["pipeline-csv"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(CsvPipeline::new("output/items.csv"))
+    .add_pipeline(CsvPipeline::new("output/items.csv")?)
     .build()
     .await?;
 ```
@@ -148,7 +148,7 @@ spider-lib = { version = "2.0.4", features = ["pipeline-sqlite"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(SqlitePipeline::new("output/items.db", "items"))
+    .add_pipeline(SqlitePipeline::new("output/items.db", "items")?)
     .build()
     .await?;
 ```
@@ -164,7 +164,7 @@ spider-lib = { version = "2.0.4", features = ["pipeline-stream-json"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(StreamJsonPipeline::new("output/items-stream.json"))
+    .add_pipeline(StreamJsonPipeline::new("output/items-stream.json")?)
     .build()
     .await?;
 ```

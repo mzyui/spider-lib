@@ -111,34 +111,9 @@ cargo run --example books_live --features live-stats
 
 `CrawlerBuilder` uses a reqwest-based downloader by default, so no extra setup is needed for most projects.
 
-### Custom downloader
+### Build a Custom Downloader
 
 Use a custom downloader when you need custom transport behavior (special auth, alternate HTTP stack, tracing, etc.).
-
-```rust,ignore
-use async_trait::async_trait;
-use spider_lib::prelude::*;
-
-struct MyDownloader {
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl Downloader for MyDownloader {
-    type Client = reqwest::Client;
-
-    async fn download(&self, request: Request) -> Result<Response, SpiderError> {
-        let _req = request;
-        todo!("Map Request -> HTTP call -> Response")
-    }
-
-    fn client(&self) -> &Self::Client {
-        &self.client
-    }
-}
-```
-
-### Build a custom downloader
 
 ```rust,ignore
 use async_trait::async_trait;
@@ -162,6 +137,17 @@ impl Downloader for SignedDownloader {
         &self.client
     }
 }
+```
+
+Runtime integration:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .downloader(SignedDownloader {
+        client: reqwest::Client::new(),
+    })
+    .build()
+    .await?;
 ```
 
 For trait details and lower-level integration, see [`spider-downloader`](./spider-downloader/README.md).
@@ -192,7 +178,7 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-### Build custom middleware
+### Build a Custom Middleware
 
 ```rust,ignore
 use spider_lib::prelude::*;
@@ -213,6 +199,15 @@ impl Middleware<reqwest::Client> for HeaderMiddleware {
         Ok(MiddlewareAction::Continue(request))
     }
 }
+```
+
+Runtime integration:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_middleware(HeaderMiddleware)
+    .build()
+    .await?;
 ```
 
 See full per-feature middleware examples in [`spider-middleware`](./spider-middleware/README.md).
@@ -251,7 +246,7 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-### Build a custom pipeline
+### Build a Custom Pipeline
 
 ```rust,ignore
 use spider_lib::prelude::*;
@@ -269,6 +264,15 @@ impl Pipeline<MyItem> for MetricsPipeline {
         Ok(Some(item))
     }
 }
+```
+
+Runtime integration:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .add_pipeline(MetricsPipeline)
+    .build()
+    .await?;
 ```
 
 See full per-feature pipeline examples in [`spider-pipeline`](./spider-pipeline/README.md).

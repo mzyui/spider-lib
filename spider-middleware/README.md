@@ -45,7 +45,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-## Build Custom Middleware
+## Build a Custom Middleware
 
 Use custom middleware to enforce project-specific request/response policy.
 
@@ -98,7 +98,7 @@ spider-lib = { version = "2.0.4", features = ["middleware-cache"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_middleware(HttpCacheMiddleware::new())
+    .add_middleware(HttpCacheMiddleware::builder().build()?)
     .build()
     .await?;
 ```
@@ -130,7 +130,7 @@ spider-lib = { version = "2.0.4", features = ["middleware-proxy"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_middleware(ProxyMiddleware::new())
+    .add_middleware(ProxyMiddleware::builder().build()?)
     .build()
     .await?;
 ```
@@ -146,7 +146,7 @@ spider-lib = { version = "2.0.4", features = ["middleware-user-agent"] }
 use spider_lib::prelude::*;
 
 let crawler = CrawlerBuilder::new(MySpider)
-    .add_middleware(UserAgentMiddleware::new())
+    .add_middleware(UserAgentMiddleware::builder().build()?)
     .build()
     .await?;
 ```

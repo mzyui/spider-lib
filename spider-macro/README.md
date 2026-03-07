@@ -35,6 +35,12 @@ Most users can access this macro via `spider-lib` prelude:
 use spider_lib::prelude::*;
 ```
 
+For custom downloader, middleware, and pipeline implementations, use:
+
+- [`spider-downloader`](../spider-downloader/README.md)
+- [`spider-middleware`](../spider-middleware/README.md)
+- [`spider-pipeline`](../spider-pipeline/README.md)
+
 ## Related Crates
 
 - [`spider-lib`](../README.md)

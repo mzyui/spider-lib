@@ -29,6 +29,14 @@ let mut output = ParseOutput::<String>::new();
 output.add_item("example".to_string());
 ```
 
+## Custom Extension Entry Points
+
+Build custom runtime components with:
+
+- [`spider-downloader`](../spider-downloader/README.md) for `Downloader`
+- [`spider-middleware`](../spider-middleware/README.md) for `Middleware`
+- [`spider-pipeline`](../spider-pipeline/README.md) for `Pipeline`
+
 ## Related Crates
 
 - [`spider-lib`](../README.md)

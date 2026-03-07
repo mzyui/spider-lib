@@ -68,9 +68,18 @@ impl Spider for MySpider {
 spider-core = { version = "1.0.4", features = ["checkpoint"] }
 ```
 
+## Custom Extension Guides
+
+For extension points built around crawler composition, see:
+
+- Custom downloader guide: [`spider-downloader`](../spider-downloader/README.md)
+- Custom middleware guide: [`spider-middleware`](../spider-middleware/README.md)
+- Custom pipeline guide: [`spider-pipeline`](../spider-pipeline/README.md)
+
 ## Related Crates
 
 - [`spider-lib`](../README.md)
+- [`spider-downloader`](../spider-downloader/README.md)
 - [`spider-middleware`](../spider-middleware/README.md)
 - [`spider-pipeline`](../spider-pipeline/README.md)
 - [`spider-util`](../spider-util/README.md)
