@@ -35,8 +35,8 @@ crossterm = { workspace = true, optional = true }
 spider-macro = { version = "0.1.10", path = "../spider-macro" }
 spider-util = { version = "0.3.3", path = "../spider-util" }
 spider-middleware = { version = "0.3.4", path = "../spider-middleware" }
-spider-pipeline = { version = "0.3.4", path = "../spider-pipeline" }
-spider-downloader = { version = "1.0.0", path = "../spider-downloader" }
+spider-pipeline = { version = "0.3.5", path = "../spider-pipeline" }
+spider-downloader = { version = "1.0.1", path = "../spider-downloader" }
 
 [features]
 default = ["core"]
