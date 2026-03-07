@@ -21,6 +21,8 @@
 pub mod console;
 pub mod dedup;
 pub mod pipeline;
+pub mod transform;
+pub mod validation;
 
 // Optional pipelines (feature-gated)
 #[cfg(feature = "pipeline-csv")]

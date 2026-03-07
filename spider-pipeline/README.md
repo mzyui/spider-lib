@@ -17,6 +17,8 @@ Core (always available):
 
 - `ConsolePipeline`
 - `DeduplicationPipeline`
+- `ValidationPipeline`
+- `TransformPipeline`
 
 Optional (feature-gated):
 
@@ -29,9 +31,23 @@ Optional (feature-gated):
 ## Usage
 
 ```rust,ignore
-use spider_pipeline::{console::ConsolePipeline, dedup::DeduplicationPipeline};
+use spider_pipeline::{
+    console::ConsolePipeline,
+    dedup::DeduplicationPipeline,
+    transform::{TransformOperation, TransformPipeline},
+    validation::{ValidationPipeline, ValidationRule},
+};
 
 let crawler = spider_core::CrawlerBuilder::new(MySpider)
+    .add_pipeline(
+        TransformPipeline::new()
+            .with_operation(TransformOperation::Trim { field: "title".into() })
+    )
+    .add_pipeline(
+        ValidationPipeline::new()
+            .with_rule("title", ValidationRule::Required)
+            .with_rule("title", ValidationRule::NonEmptyString)
+    )
     .add_pipeline(DeduplicationPipeline::new(&["url"]))
     .add_pipeline(ConsolePipeline::new())
     .build()

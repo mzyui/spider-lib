@@ -68,7 +68,12 @@ pub use spider_middleware::robots::RobotsTxtMiddleware;
 #[cfg(feature = "middleware-cookies")]
 pub use spider_middleware::cookies::CookieMiddleware;
 
-pub use spider_pipeline::{console::ConsolePipeline, dedup::DeduplicationPipeline};
+pub use spider_pipeline::{
+    console::ConsolePipeline,
+    dedup::DeduplicationPipeline,
+    transform::{TransformOperation, TransformPipeline},
+    validation::{JsonType, ValidationPipeline, ValidationRule},
+};
 
 #[cfg(feature = "pipeline-csv")]
 pub use spider_pipeline::csv::CsvPipeline;
