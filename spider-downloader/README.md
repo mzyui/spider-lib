@@ -2,22 +2,24 @@
 
 Downloader traits and reqwest-based downloader implementation for `spider-lib`.
 
-## Install
+Use this crate directly when you want custom request execution while keeping compatibility with the spider runtime interfaces.
+
+## Installation
 
 ```toml
 [dependencies]
 spider-downloader = "0.4.4"
 ```
 
-## Exports
+## Key Exports
 
 - `Downloader`: trait for request execution.
 - `HttpClient`: lightweight HTTP client trait re-export.
-- `ReqwestClientDownloader`: default reqwest implementation.
+- `ReqwestClientDownloader`: default reqwest-based downloader.
 
 ## Usage
 
-```rust,no_run
+```rust,ignore
 use async_trait::async_trait;
 use spider_downloader::Downloader;
 use spider_util::{error::SpiderError, request::Request, response::Response};
@@ -40,6 +42,12 @@ impl Downloader for MyDownloader {
 }
 ```
 
+## Related Crates
+
+- [`spider-lib`](../README.md)
+- [`spider-core`](../spider-core/README.md)
+- [`spider-util`](../spider-util/README.md)
+
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](../LICENSE).

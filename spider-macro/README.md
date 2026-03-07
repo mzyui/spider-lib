@@ -2,7 +2,7 @@
 
 Procedural macros for `spider-lib`.
 
-## Install
+## Installation
 
 ```toml
 [dependencies]
@@ -13,7 +13,7 @@ serde_json = "1.0"
 
 `serde` and `serde_json` must be direct dependencies when using `#[scraped_item]`.
 
-## Macro
+## Macros
 
 - `#[scraped_item]`: derives `Serialize`, `Deserialize`, `Clone`, `Debug`, and implements `ScrapedItem`.
 
@@ -29,12 +29,18 @@ struct Product {
 }
 ```
 
-Most users can access this macro from `spider-lib` prelude:
+Most users can access this macro via `spider-lib` prelude:
 
 ```rust
 use spider_lib::prelude::*;
 ```
 
+## Related Crates
+
+- [`spider-lib`](../README.md)
+- [`spider-core`](../spider-core/README.md)
+- [`spider-util`](../spider-util/README.md)
+
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](../LICENSE).

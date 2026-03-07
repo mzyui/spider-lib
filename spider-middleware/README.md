@@ -2,7 +2,9 @@
 
 Built-in middleware implementations for `spider-lib` crawlers.
 
-## Install
+Most users enable middleware features from `spider-lib`. Use this crate directly when composing middleware in a custom runtime setup.
+
+## Installation
 
 ```toml
 [dependencies]
@@ -28,7 +30,7 @@ Optional (feature-gated):
 
 ## Usage
 
-```rust,no_run
+```rust,ignore
 use spider_middleware::{rate_limit::RateLimitMiddleware, retry::RetryMiddleware};
 
 let crawler = spider_core::CrawlerBuilder::new(MySpider)
@@ -55,6 +57,12 @@ spider-middleware = { version = "0.3.4", features = ["middleware-robots", "middl
 
 When using via `spider-lib`, enable root features with the same names.
 
+## Related Crates
+
+- [`spider-lib`](../README.md)
+- [`spider-core`](../spider-core/README.md)
+- [`spider-util`](../spider-util/README.md)
+
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](../LICENSE).

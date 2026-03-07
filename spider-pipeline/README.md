@@ -2,7 +2,9 @@
 
 Item pipelines for processing, filtering, and exporting scraped data in `spider-lib`.
 
-## Install
+Use this crate directly when you want pipeline features without bringing the full facade crate.
+
+## Installation
 
 ```toml
 [dependencies]
@@ -26,7 +28,7 @@ Optional (feature-gated):
 
 ## Usage
 
-```rust,no_run
+```rust,ignore
 use spider_pipeline::{console::ConsolePipeline, dedup::DeduplicationPipeline};
 
 let crawler = spider_core::CrawlerBuilder::new(MySpider)
@@ -52,6 +54,12 @@ spider-pipeline = { version = "0.3.4", features = ["pipeline-jsonl", "pipeline-c
 
 When using via `spider-lib`, enable root features with the same names.
 
+## Related Crates
+
+- [`spider-lib`](../README.md)
+- [`spider-core`](../spider-core/README.md)
+- [`spider-util`](../spider-util/README.md)
+
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](../LICENSE).

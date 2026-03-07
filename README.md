@@ -1,19 +1,19 @@
 # spider-lib
 
-A Rust web scraping framework inspired by Scrapy, built as a modular workspace.
+A modular Rust web scraping framework inspired by Scrapy.
 
-`spider-lib` is the facade crate that re-exports the core engine, downloader, middleware, pipelines, utilities, and macros so you can start with one dependency and enable only the features you need.
+`spider-lib` is the facade crate for the workspace. It re-exports core crawling, downloader, middleware, pipeline, utility, and macro APIs so you can start with one dependency and enable only the features you need.
 
 ## Workspace Crates
 
-- [`spider-core`](./spider-core/README.md): crawler engine, scheduler, spider trait, builder, state, stats.
-- [`spider-downloader`](./spider-downloader/README.md): downloader traits and reqwest-based downloader.
-- [`spider-macro`](./spider-macro/README.md): procedural macros like `#[scraped_item]`.
-- [`spider-middleware`](./spider-middleware/README.md): retry, rate limit, robots, cookies, proxy, cache, user-agent.
-- [`spider-pipeline`](./spider-pipeline/README.md): output and post-processing pipelines.
-- [`spider-util`](./spider-util/README.md): shared request/response/error/item/types and helpers.
+- [`spider-core`](./spider-core/README.md): crawler runtime, spider trait, scheduler, builder, state, and stats.
+- [`spider-downloader`](./spider-downloader/README.md): downloader traits and reqwest-based downloader implementation.
+- [`spider-macro`](./spider-macro/README.md): procedural macros such as `#[scraped_item]`.
+- [`spider-middleware`](./spider-middleware/README.md): retry, rate limiting, robots, cookies, proxy, cache, and user-agent middleware.
+- [`spider-pipeline`](./spider-pipeline/README.md): item processing and output pipelines (JSON, JSONL, CSV, SQLite, stream JSON).
+- [`spider-util`](./spider-util/README.md): shared request/response/item/error types and helper utilities.
 
-## Install
+## Installation
 
 ```toml
 [dependencies]
@@ -64,10 +64,11 @@ async fn main() -> Result<(), SpiderError> {
 }
 ```
 
-Run the included example:
+Try the maintained examples:
 
 ```bash
 cargo run --example books
+cargo run --example books_live --features live-stats
 ```
 
 ## Feature Flags
@@ -93,9 +94,9 @@ Pipeline features:
 
 Core features:
 
-- `live-stats`: enables in-place live stats terminal updates.
-- `checkpoint`
-- `cookie-store` (also enables `middleware-cookies`)
+- `live-stats`: enables in-place terminal stat updates.
+- `checkpoint`: enables checkpoint/resume support.
+- `cookie-store`: enables cookie store integration (also enables `middleware-cookies`).
 
 Example:
 
@@ -103,6 +104,12 @@ Example:
 [dependencies]
 spider-lib = { version = "2.0.4", features = ["middleware-robots", "pipeline-jsonl"] }
 ```
+
+## Using Workspace Crates Directly
+
+Use `spider-lib` when you want the integrated API surface.
+
+Use sub-crates directly if you need tighter dependency control or only one subsystem (for example, custom downloader integration with `spider-downloader`, or utility types from `spider-util`).
 
 ## Development
 
@@ -117,7 +124,7 @@ make check-all-features
 ## Documentation
 
 - API docs: <https://docs.rs/spider-lib>
-- Contributing: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- Contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## License
 
