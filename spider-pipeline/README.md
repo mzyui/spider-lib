@@ -93,7 +93,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["pipeline-json"] }
+spider-lib = { version = "3.0.0", features = ["pipeline-json"] }
 ```
 
 ```rust,ignore
@@ -109,7 +109,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["pipeline-jsonl"] }
+spider-lib = { version = "3.0.0", features = ["pipeline-jsonl"] }
 ```
 
 ```rust,ignore
@@ -125,7 +125,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["pipeline-csv"] }
+spider-lib = { version = "3.0.0", features = ["pipeline-csv"] }
 ```
 
 ```rust,ignore
@@ -141,7 +141,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["pipeline-sqlite"] }
+spider-lib = { version = "3.0.0", features = ["pipeline-sqlite"] }
 ```
 
 ```rust,ignore
@@ -157,7 +157,7 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ```toml
 [dependencies]
-spider-lib = { version = "2.0.4", features = ["pipeline-stream-json"] }
+spider-lib = { version = "3.0.0", features = ["pipeline-stream-json"] }
 ```
 
 ```rust,ignore
