@@ -54,6 +54,39 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
+## Build a Custom Pipeline
+
+Use a custom pipeline when your processing logic is domain-specific (custom scoring, external API enrichment, bespoke filtering, etc.).
+
+```rust,ignore
+use async_trait::async_trait;
+use spider_pipeline::pipeline::Pipeline;
+use spider_util::{error::PipelineError, item::ScrapedItem};
+
+struct EnrichPipeline;
+
+#[async_trait]
+impl<I: ScrapedItem> Pipeline<I> for EnrichPipeline {
+    fn name(&self) -> &str {
+        "enrich_pipeline"
+    }
+
+    async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
+        // Enrich, validate, or drop item by returning Ok(None).
+        Ok(Some(item))
+    }
+}
+```
+
+Runtime integration:
+
+```rust,ignore
+let crawler = spider_core::CrawlerBuilder::new(MySpider)
+    .add_pipeline(EnrichPipeline)
+    .build()
+    .await?;
+```
+
 ## Optional Output Pipelines (One by One)
 
 ### `pipeline-json` (`JsonPipeline`)

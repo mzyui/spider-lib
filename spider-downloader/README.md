@@ -39,7 +39,9 @@ If you want the integrated framework surface, prefer `spider-lib`.
 
 The crawler runtime depends on this contract to keep middleware and parser behavior predictable.
 
-## Custom Downloader Example
+## Build a Custom Downloader
+
+Use custom downloader implementations for transport-level extension.
 
 ```rust,ignore
 use async_trait::async_trait;

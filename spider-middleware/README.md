@@ -45,6 +45,46 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
+## Build Custom Middleware
+
+Use custom middleware to enforce project-specific request/response policy.
+
+```rust,ignore
+use async_trait::async_trait;
+use spider_middleware::middleware::{Middleware, MiddlewareAction};
+use spider_util::{error::SpiderError, request::Request};
+
+struct BlocklistMiddleware;
+
+#[async_trait]
+impl Middleware<reqwest::Client> for BlocklistMiddleware {
+    fn name(&self) -> &str {
+        "blocklist"
+    }
+
+    async fn process_request(
+        &mut self,
+        _client: &reqwest::Client,
+        request: Request,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        if request.url.domain() == Some("blocked.example") {
+            return Ok(MiddlewareAction::Drop);
+        }
+
+        Ok(MiddlewareAction::Continue(request))
+    }
+}
+```
+
+Runtime integration:
+
+```rust,ignore
+let crawler = spider_core::CrawlerBuilder::new(MySpider)
+    .add_middleware(BlocklistMiddleware)
+    .build()
+    .await?;
+```
+
 ## Optional Middleware Usage (One by One)
 
 ### `middleware-cache` (`HttpCacheMiddleware`)

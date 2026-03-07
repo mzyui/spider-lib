@@ -138,6 +138,32 @@ impl Downloader for MyDownloader {
 }
 ```
 
+### Build a custom downloader
+
+```rust,ignore
+use async_trait::async_trait;
+use spider_lib::prelude::*;
+
+struct SignedDownloader {
+    client: reqwest::Client,
+}
+
+#[async_trait]
+impl Downloader for SignedDownloader {
+    type Client = reqwest::Client;
+
+    async fn download(&self, request: Request) -> Result<Response, SpiderError> {
+        let _req = request;
+        // Sign request, execute HTTP call, map response.
+        todo!()
+    }
+
+    fn client(&self) -> &Self::Client {
+        &self.client
+    }
+}
+```
+
 For trait details and lower-level integration, see [`spider-downloader`](./spider-downloader/README.md).
 
 ## Middleware Usage
@@ -164,6 +190,29 @@ let crawler = CrawlerBuilder::new(MySpider)
     .add_middleware(RefererMiddleware::new())
     .build()
     .await?;
+```
+
+### Build custom middleware
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+struct HeaderMiddleware;
+
+#[async_trait]
+impl Middleware<reqwest::Client> for HeaderMiddleware {
+    fn name(&self) -> &str {
+        "header_middleware"
+    }
+
+    async fn process_request(
+        &mut self,
+        _client: &reqwest::Client,
+        request: Request,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        Ok(MiddlewareAction::Continue(request))
+    }
+}
 ```
 
 See full per-feature middleware examples in [`spider-middleware`](./spider-middleware/README.md).
@@ -200,6 +249,26 @@ let crawler = CrawlerBuilder::new(MySpider)
     .add_pipeline(ConsolePipeline::new())
     .build()
     .await?;
+```
+
+### Build a custom pipeline
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+struct MetricsPipeline;
+
+#[async_trait]
+impl Pipeline<MyItem> for MetricsPipeline {
+    fn name(&self) -> &str {
+        "metrics_pipeline"
+    }
+
+    async fn process_item(&self, item: MyItem) -> Result<Option<MyItem>, PipelineError> {
+        // Record metrics, enrich, or filter items.
+        Ok(Some(item))
+    }
+}
 ```
 
 See full per-feature pipeline examples in [`spider-pipeline`](./spider-pipeline/README.md).
