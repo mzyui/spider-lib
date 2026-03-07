@@ -22,7 +22,7 @@ use anyhow::Result;
 use crossterm::{
     cursor::{Hide, MoveToColumn, MoveUp, Show},
     execute, queue,
-    terminal::{Clear, ClearType},
+    terminal::{Clear, ClearType, size},
 };
 use futures_util::future::join_all;
 use kanal::{AsyncReceiver, bounded_async};
@@ -442,7 +442,11 @@ impl LiveStatsRenderer {
 
     fn render(&mut self, content: &str) {
         let mut out = std::io::stdout();
-        let next_lines: Vec<String> = content.lines().map(ToOwned::to_owned).collect();
+        let terminal_width = Self::terminal_width();
+        let next_lines: Vec<String> = content
+            .lines()
+            .map(|line| Self::trim_to_width(line, terminal_width))
+            .collect();
         let previous_len = self.previous_lines.len();
         let next_len = next_lines.len();
         let max_len = previous_len.max(next_len);
@@ -466,6 +470,19 @@ impl LiveStatsRenderer {
 
         let _ = out.flush();
         self.previous_lines = next_lines;
+    }
+
+    fn terminal_width() -> usize {
+        size()
+            .map(|(width, _)| usize::from(width.max(1)))
+            .unwrap_or(usize::MAX)
+    }
+
+    fn trim_to_width(line: &str, width: usize) -> String {
+        if width == usize::MAX {
+            return line.to_owned();
+        }
+        line.chars().take(width).collect()
     }
 
     fn finish(self) {
