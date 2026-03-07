@@ -464,7 +464,7 @@ impl LiveStatsRenderer {
             }
 
             if line_idx + 1 < max_len {
-                let _ = write!(out, "\n");
+                let _ = writeln!(out);
             }
         }
 
@@ -504,7 +504,7 @@ impl LiveStatsRenderer {
         for line_idx in 0..lines {
             let _ = queue!(out, MoveToColumn(0), Clear(ClearType::CurrentLine));
             if line_idx + 1 < lines {
-                let _ = write!(out, "\n");
+                let _ = writeln!(out);
             }
         }
         if lines > 1 {

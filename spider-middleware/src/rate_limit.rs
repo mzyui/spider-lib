@@ -169,9 +169,11 @@ impl TokenBucketLimiter {
     ///
     /// Panics if `requests_per_second` is `0`.
     pub fn new(requests_per_second: u32) -> Self {
-        let quota = Quota::per_second(
-            NonZeroU32::new(requests_per_second).expect("requests_per_second must be non-zero"),
-        );
+        let requests_per_second = match NonZeroU32::new(requests_per_second) {
+            Some(rps) => rps,
+            None => panic!("requests_per_second must be non-zero"),
+        };
+        let quota = Quota::per_second(requests_per_second);
         TokenBucketLimiter {
             limiter: Arc::new(GovernorRateLimiter::direct_with_clock(
                 quota,

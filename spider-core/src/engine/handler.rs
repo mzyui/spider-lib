@@ -96,11 +96,13 @@ where
             };
 
             // Acquire permit from semaphore for concurrency control
-            let permit = semaphore.clone().acquire_owned().await;
-            if permit.is_err() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                continue;
-            }
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(permit) => permit,
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    continue;
+                }
+            };
 
             state.in_flight_requests.fetch_add(1, Ordering::AcqRel);
             let downloader_clone = Arc::clone(&downloader);
@@ -110,7 +112,7 @@ where
             let scheduler_clone = Arc::clone(&scheduler);
             let stats_clone = Arc::clone(&stats);
             let request_url_for_metrics = request.url.to_string();
-            let _permit = permit.unwrap();
+            let _permit = permit;
 
             tasks.spawn(async move {
                 let start_time = Instant::now();
@@ -176,9 +178,16 @@ where
     match middlewares
         .process_request(
             downloader.client(),
-            processed_request_opt
-                .take()
-                .expect("Request must be present before middleware processing"),
+            match processed_request_opt.take() {
+                Some(req) => req,
+                None => {
+                    error!(
+                        "Internal state error: request missing before middleware processing for URL {}",
+                        original_request_url
+                    );
+                    return Ok(None);
+                }
+            },
         )
         .await
     {
@@ -241,7 +250,16 @@ where
             resp
         }
         None => {
-            let request_for_download = processed_request_opt.expect("Request must be available for download if not handled by middleware or early returned response");
+            let request_for_download = match processed_request_opt {
+                Some(req) => req,
+                None => {
+                    error!(
+                        "Internal state error: request missing before download for URL {}",
+                        original_request_url
+                    );
+                    return Ok(None);
+                }
+            };
             let request_url = request_for_download.url.clone();
             trace!("Downloading request for URL: {}", request_url);
             stats.increment_requests_sent();

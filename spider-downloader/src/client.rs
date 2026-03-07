@@ -12,7 +12,7 @@
 use crate::Downloader;
 use async_trait::async_trait;
 use dashmap::DashMap;
-use log::debug;
+use log::{debug, warn};
 use moka::sync::Cache;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
@@ -108,6 +108,17 @@ impl ReqwestClientDownloader {
 
     /// Creates a new `ReqwestClientDownloader` with a specified request timeout.
     pub fn new_with_timeout(timeout: Duration) -> Self {
+        match Self::try_new_with_timeout(timeout) {
+            Ok(downloader) => downloader,
+            Err(err) => panic!(
+                "failed to create reqwest downloader with timeout {:?}: {}",
+                timeout, err
+            ),
+        }
+    }
+
+    /// Tries to create a new `ReqwestClientDownloader` with a specified request timeout.
+    pub fn try_new_with_timeout(timeout: Duration) -> Result<Self, SpiderError> {
         let base_client = Client::builder()
             .timeout(timeout)
             .pool_max_idle_per_host(200)
@@ -115,9 +126,9 @@ impl ReqwestClientDownloader {
             .tcp_keepalive(Duration::from_secs(60))
             .connect_timeout(Duration::from_secs(10))
             .build()
-            .unwrap();
+            .map_err(|e| SpiderError::ReqwestError(e.into()))?;
 
-        ReqwestClientDownloader {
+        Ok(ReqwestClientDownloader {
             client: base_client.clone(),
             timeout,
             host_clients: Arc::new(DashMap::new()),
@@ -125,7 +136,7 @@ impl ReqwestClientDownloader {
                 .max_capacity(Self::PROXY_CLIENT_CACHE_MAX_CAPACITY)
                 .time_to_idle(Duration::from_secs(Self::PROXY_CLIENT_CACHE_TTL_SECS))
                 .build(),
-        }
+        })
     }
 
     /// Gets or creates a host-specific client with optimized settings for that host
@@ -141,8 +152,17 @@ impl ReqwestClientDownloader {
             .pool_idle_timeout(Duration::from_secs(90))
             .tcp_keepalive(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(5))
-            .build()
-            .unwrap();
+            .build();
+        let host_specific_client = match host_specific_client {
+            Ok(client) => client,
+            Err(err) => {
+                warn!(
+                    "Failed to build host-specific client for '{}': {}. Falling back to base client",
+                    host, err
+                );
+                return self.client.clone();
+            }
+        };
 
         if let Some(existing) = self.host_clients.get(host) {
             return existing.clone();

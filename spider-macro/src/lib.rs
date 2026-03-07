@@ -100,7 +100,10 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
             }
 
             fn to_json_value(&self) -> ::serde_json::Value {
-                ::serde_json::to_value(self).unwrap()
+                match ::serde_json::to_value(self) {
+                    Ok(value) => value,
+                    Err(err) => panic!("failed to serialize ScrapedItem '{}': {}", stringify!(#name), err),
+                }
             }
         }
     };

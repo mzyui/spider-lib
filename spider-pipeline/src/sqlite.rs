@@ -207,25 +207,37 @@ fn insert_item_sync(
 
         let mut rusqlite_params_vec: Vec<rusqlite::types::Value> = Vec::new();
         for key in keys.iter() {
-            let v = map.get(*key).unwrap();
+            let v = map.get(*key).ok_or_else(|| {
+                PipelineError::ItemError(format!("Missing key '{}' in item map.", key))
+            })?;
             match v {
                 Value::Null => rusqlite_params_vec.push(rusqlite::types::Value::Null),
                 Value::Bool(b) => rusqlite_params_vec
                     .push(rusqlite::types::Value::Integer(if *b { 1 } else { 0 })),
                 Value::Number(n) => {
                     if n.is_f64() {
-                        rusqlite_params_vec.push(rusqlite::types::Value::Real(n.as_f64().unwrap()));
+                        let float_val = n.as_f64().ok_or_else(|| {
+                            PipelineError::ItemError(format!(
+                                "Invalid floating-point value for key '{}'.",
+                                key
+                            ))
+                        })?;
+                        rusqlite_params_vec.push(rusqlite::types::Value::Real(float_val));
                     } else {
-                        rusqlite_params_vec
-                            .push(rusqlite::types::Value::Integer(n.as_i64().unwrap()));
+                        let int_val = n.as_i64().ok_or_else(|| {
+                            PipelineError::ItemError(format!(
+                                "Invalid integer value for key '{}'.",
+                                key
+                            ))
+                        })?;
+                        rusqlite_params_vec.push(rusqlite::types::Value::Integer(int_val));
                     }
                 }
                 Value::String(s) => {
                     rusqlite_params_vec.push(rusqlite::types::Value::Text(s.clone()))
                 }
-                Value::Array(_) | Value::Object(_) => rusqlite_params_vec.push(
-                    rusqlite::types::Value::Text(serde_json::to_string(v).unwrap()),
-                ),
+                Value::Array(_) | Value::Object(_) => rusqlite_params_vec
+                    .push(rusqlite::types::Value::Text(serde_json::to_string(v)?)),
             }
         }
 

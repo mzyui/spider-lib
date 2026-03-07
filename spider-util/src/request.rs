@@ -355,8 +355,12 @@ impl<'de> Deserialize<'de> for Request {
 
 impl Default for Request {
     fn default() -> Self {
+        let default_url = match Url::parse("http://default.invalid") {
+            Ok(url) => url,
+            Err(err) => panic!("invalid hardcoded default URL: {}", err),
+        };
         Self {
-            url: Url::parse("http://default.invalid").unwrap(),
+            url: default_url,
             method: reqwest::Method::GET,
             headers: http::header::HeaderMap::new(),
             body: None,

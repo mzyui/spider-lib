@@ -398,10 +398,10 @@ impl StatCollector {
     pub fn record_parsing_time(&self, duration: Duration) {
         let id = format!(
             "parse_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_nanos()
+            match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+                Ok(duration) => duration.as_nanos(),
+                Err(err) => err.duration().as_nanos(),
+            }
         );
         self.parsing_times.insert(id, duration);
     }

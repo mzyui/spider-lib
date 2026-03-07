@@ -112,7 +112,14 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                                 writer_state = Some((writer, headers));
                             }
 
-                            let (writer, headers) = writer_state.as_mut().unwrap();
+                            let (writer, headers) = match writer_state.as_mut() {
+                                Some(state) => state,
+                                None => {
+                                    return Err(PipelineError::Other(
+                                        "CSV writer state missing unexpectedly".to_string(),
+                                    ));
+                                }
+                            };
                             let record = if let Some(map) = item_value.as_object() {
                                 headers
                                     .iter()
