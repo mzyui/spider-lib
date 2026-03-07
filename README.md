@@ -115,6 +115,17 @@ cargo run --example books_live --features live-stats
 
 Use a custom downloader when you need custom transport behavior (special auth, alternate HTTP stack, tracing, etc.).
 
+Trait contract (`Downloader`):
+
+```rust,ignore
+#[async_trait]
+pub trait Downloader: Send + Sync + 'static {
+    type Client: Send + Sync;
+    async fn download(&self, request: Request) -> Result<Response, SpiderError>;
+    fn client(&self) -> &Self::Client;
+}
+```
+
 ```rust,ignore
 use async_trait::async_trait;
 use spider_lib::prelude::*;
@@ -180,13 +191,44 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ### Build a Custom Middleware
 
+Trait contract (`Middleware<C>`):
+
+```rust,ignore
+#[async_trait]
+pub trait Middleware<C: Send + Sync>: Any + Send + Sync + 'static {
+    fn name(&self) -> &str;
+    async fn process_request(
+        &mut self,
+        client: &C,
+        request: Request,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        Ok(MiddlewareAction::Continue(request))
+    }
+    async fn process_response(
+        &mut self,
+        response: Response,
+    ) -> Result<MiddlewareAction<Response>, SpiderError> {
+        Ok(MiddlewareAction::Continue(response))
+    }
+    async fn handle_error(
+        &mut self,
+        request: &Request,
+        error: &SpiderError,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        Err(error.clone())
+    }
+}
+```
+
+Minimal implementation (override only what you need):
+
 ```rust,ignore
 use spider_lib::prelude::*;
 
 struct HeaderMiddleware;
 
 #[async_trait]
-impl Middleware<reqwest::Client> for HeaderMiddleware {
+impl<C: Send + Sync> Middleware<C> for HeaderMiddleware {
     fn name(&self) -> &str {
         "header_middleware"
     }
@@ -248,13 +290,28 @@ let crawler = CrawlerBuilder::new(MySpider)
 
 ### Build a Custom Pipeline
 
+Trait contract (`Pipeline<I: ScrapedItem>`):
+
+```rust,ignore
+#[async_trait]
+pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
+    fn name(&self) -> &str;
+    async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError>;
+    async fn close(&self) -> Result<(), PipelineError> { Ok(()) }
+    async fn get_state(&self) -> Result<Option<serde_json::Value>, PipelineError> { Ok(None) }
+    async fn restore_state(&self, state: serde_json::Value) -> Result<(), PipelineError> { Ok(()) }
+}
+```
+
+Minimal implementation:
+
 ```rust,ignore
 use spider_lib::prelude::*;
 
 struct MetricsPipeline;
 
 #[async_trait]
-impl Pipeline<MyItem> for MetricsPipeline {
+impl<I: ScrapedItem> Pipeline<I> for MetricsPipeline {
     fn name(&self) -> &str {
         "metrics_pipeline"
     }

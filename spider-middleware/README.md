@@ -57,7 +57,7 @@ use spider_util::{error::SpiderError, request::Request};
 struct BlocklistMiddleware;
 
 #[async_trait]
-impl Middleware<reqwest::Client> for BlocklistMiddleware {
+impl<C: Send + Sync> Middleware<C> for BlocklistMiddleware {
     fn name(&self) -> &str {
         "blocklist"
     }
