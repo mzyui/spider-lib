@@ -177,6 +177,7 @@ impl Spider for BooksSpider {
 async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(BooksSpider)
         .live_stats(true)
+        .add_pipeline(CsvPipeline::new("output/books_live.csv")?)
         .build()
         .await?;
 

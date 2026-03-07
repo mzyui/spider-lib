@@ -125,7 +125,7 @@ path = "examples/books.rs"
 [[example]]
 name = "books_live"
 path = "examples/books_live.rs"
-required-features = ["live-stats"]
+required-features = ["live-stats", "pipeline-csv"]
 
 [dev-dependencies]
 env_logger.workspace = true
