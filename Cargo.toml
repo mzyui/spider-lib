@@ -133,6 +133,12 @@ serde.workspace = true
 serde_json.workspace = true
 log.workspace = true
 dashmap.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+url.workspace = true
+kanal.workspace = true
+spider-core = { version = "2.0.0", path = "spider-core", default-features = false, features = ["test-support"] }
+spider-downloader = { version = "1.0.1", path = "spider-downloader", features = ["test-support"] }
 
 [profile.release]
 # Full link-time optimization for maximum performance

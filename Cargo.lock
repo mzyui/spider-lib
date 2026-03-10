@@ -2217,16 +2217,21 @@ dependencies = [
 name = "spider-lib"
 version = "3.0.0"
 dependencies = [
+ "async-trait",
  "dashmap 6.1.0",
  "env_logger",
+ "kanal",
  "log",
  "serde",
  "serde_json",
  "spider-core",
+ "spider-downloader",
  "spider-macro",
  "spider-middleware",
  "spider-pipeline",
  "spider-util",
+ "tokio",
+ "url",
 ]
 
 [[package]]
