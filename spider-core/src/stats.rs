@@ -192,7 +192,18 @@ pub struct StatCollector {
 
 impl StatCollector {
     /// Creates a new `StatCollector` with all counters initialized to zero.
+    #[cfg(feature = "test-support")]
+    pub fn new() -> Self {
+        Self::build()
+    }
+
+    /// Creates a new `StatCollector` with all counters initialized to zero.
+    #[cfg(not(feature = "test-support"))]
     pub(crate) fn new() -> Self {
+        Self::build()
+    }
+
+    fn build() -> Self {
         StatCollector {
             start_time: Instant::now(),
             requests_enqueued: AtomicUsize::new(0),

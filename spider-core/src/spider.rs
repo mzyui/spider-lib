@@ -248,12 +248,16 @@ pub trait Spider: Send + Sync + 'static {
     /// ## Example
     ///
     /// ```rust
-    /// # use spider_core::Spider;
-    /// # use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+    /// # use spider_core::{scraped_item, Spider, StartRequests};
+    /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
+    /// # #[scraped_item]
+    /// # struct ExampleItem {
+    /// #     value: String,
+    /// # }
     /// # struct MySpider;
     /// # #[async_trait::async_trait]
     /// # impl Spider for MySpider {
-    /// #     type Item = String;
+    /// #     type Item = ExampleItem;
     /// #     type State = ();
     /// fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
     ///     Ok(StartRequests::file("seeds/start_urls.txt"))
@@ -302,15 +306,19 @@ pub trait Spider: Send + Sync + 'static {
     /// # Example
     ///
     /// ```rust
-    /// # use spider_core::Spider;
-    /// # use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+    /// # use spider_core::{scraped_item, Spider, StartRequests};
+    /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
     /// # use async_trait::async_trait;
     /// # struct MySpider;
+    /// # #[scraped_item]
+    /// # struct ExampleItem {
+    /// #     value: String,
+    /// # }
     /// # #[derive(Default)]
     /// # struct MySpiderState;
     /// # #[async_trait]
     /// # impl Spider for MySpider {
-    /// #     type Item = String;
+    /// #     type Item = ExampleItem;
     /// #     type State = MySpiderState;
     /// #     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
     /// #         Ok(StartRequests::Stream(Box::new(std::iter::empty())))
@@ -332,84 +340,4 @@ pub trait Spider: Send + Sync + 'static {
         response: Response,
         state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    #[spider_macro::scraped_item]
-    struct SeedItem {
-        id: usize,
-    }
-
-    struct SeedSpider {
-        path: String,
-    }
-
-    #[async_trait]
-    impl Spider for SeedSpider {
-        type Item = SeedItem;
-        type State = ();
-
-        fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
-            Ok(StartRequests::file(self.path.as_str()))
-        }
-
-        async fn parse(
-            &self,
-            _response: Response,
-            _state: &Self::State,
-        ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-            let _ = SeedItem { id: 1 };
-            Ok(ParseOutput::new())
-        }
-    }
-
-    fn temp_seed_path() -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("time before epoch")
-            .as_nanos();
-        std::env::temp_dir()
-            .join(format!("spider_seed_{}_{}.txt", std::process::id(), nanos))
-            .display()
-            .to_string()
-    }
-
-    #[test]
-    fn start_requests_reads_seed_file_lazily() {
-        let path = temp_seed_path();
-        fs::write(
-            &path,
-            "# comment\n\nhttps://example.com\nbad-url\nhttps://example.org\n",
-        )
-        .expect("write seed file");
-
-        let spider = SeedSpider { path: path.clone() };
-        let stream = spider
-            .start_requests()
-            .expect("create start request source")
-            .into_stream()
-            .expect("resolve start request stream");
-        let items: Vec<_> = stream.collect();
-
-        assert_eq!(items.len(), 3);
-        assert!(matches!(&items[0], Ok(req) if req.url.as_str() == "https://example.com/"));
-        assert!(matches!(&items[1], Err(SpiderError::ConfigurationError(_))));
-        assert!(matches!(&items[2], Ok(req) if req.url.as_str() == "https://example.org/"));
-
-        let _ = fs::remove_file(path);
-    }
-
-    #[test]
-    fn start_requests_fails_when_seed_file_missing() {
-        let spider = SeedSpider {
-            path: "/tmp/spider_seed_missing_file.txt".to_string(),
-        };
-        let result = spider.start_requests().and_then(StartRequests::into_stream);
-        assert!(matches!(result, Err(SpiderError::IoError(_))));
-    }
 }

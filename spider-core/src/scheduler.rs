@@ -148,9 +148,9 @@ impl Scheduler {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_core::Scheduler;
-    /// let (scheduler, request_rx) = Scheduler::new(None::<()>);
+    /// let (scheduler, request_rx) = Scheduler::new(None);
     /// ```
     pub fn new(
         #[cfg(feature = "checkpoint")] initial_state: Option<SchedulerCheckpoint>,

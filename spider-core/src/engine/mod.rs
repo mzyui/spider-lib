@@ -40,7 +40,15 @@ mod processor;
 
 pub use context::CrawlerContext;
 pub use crawler::Crawler;
+#[cfg(feature = "test-support")]
+pub use handler::test_process_request_through_middlewares as process_request_through_middlewares;
+#[cfg(feature = "test-support")]
+pub use middleware::SharedMiddlewareManager;
+#[cfg(feature = "test-support")]
+pub use parser::spawn_parser_task;
 pub(crate) use handler::spawn_downloader_task;
+#[cfg(not(feature = "test-support"))]
 pub(crate) use middleware::SharedMiddlewareManager;
+#[cfg(not(feature = "test-support"))]
 pub(crate) use parser::spawn_parser_task;
 pub(crate) use processor::spawn_item_processor_task;

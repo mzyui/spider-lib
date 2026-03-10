@@ -23,6 +23,7 @@ use crate::stats::StatCollector;
 use kanal::{AsyncReceiver, AsyncSender};
 use log::{debug, error, trace};
 use spider_middleware::middleware::MiddlewareAction;
+use spider_util::error::SpiderError;
 use spider_util::item::ScrapedItem;
 use spider_util::request::Request;
 use spider_util::response::Response;
@@ -264,7 +265,7 @@ where
             trace!("Downloading request for URL: {}", request_url);
             stats.increment_requests_sent();
 
-            let download_result = downloader.download(request_for_download).await;
+            let download_result = downloader.download(request_for_download.clone()).await;
 
             match download_result {
                 Ok(resp) => {
@@ -278,8 +279,14 @@ where
                 }
                 Err(e) => {
                     error!("Download error for URL {}: {:?}", request_url, e);
-                    stats.increment_requests_failed();
-                    return Ok(None);
+                    return handle_download_error(
+                        request_for_download,
+                        e,
+                        middlewares,
+                        scheduler,
+                        stats,
+                    )
+                    .await;
                 }
             }
         }
@@ -351,4 +358,96 @@ where
     }
 
     Ok(processed_response)
+}
+
+async fn handle_download_error<C>(
+    request: Request,
+    error: SpiderError,
+    middlewares: &SharedMiddlewareManager<C>,
+    scheduler: &Arc<Scheduler>,
+    stats: &Arc<StatCollector>,
+) -> Result<Option<Response>, ()>
+where
+    C: Send + Sync + Clone + 'static,
+{
+    match middlewares.handle_error(&request, &error).await {
+        Ok(MiddlewareAction::Continue(next_request)) => {
+            debug!(
+                "Error middleware continued request after download failure for URL: {}",
+                next_request.url
+            );
+            if scheduler.enqueue_request(next_request).await.is_err() {
+                error!("Failed to re-enqueue continued request after download failure.");
+                stats.increment_requests_failed();
+            }
+        }
+        Ok(MiddlewareAction::Retry(next_request, delay)) => {
+            let request_url = next_request.url.clone();
+            debug!(
+                "Error middleware scheduled retry for URL: {} after {:?}",
+                request_url, delay
+            );
+            stats.increment_requests_retried();
+            tokio::time::sleep(delay).await;
+            if scheduler.enqueue_request(*next_request).await.is_err() {
+                error!(
+                    "Failed to re-enqueue retried request after download failure for URL: {}",
+                    request_url
+                );
+                stats.increment_requests_failed();
+            }
+        }
+        Ok(MiddlewareAction::Drop) => {
+            debug!(
+                "Request dropped by error middleware after download failure for URL: {}",
+                request.url
+            );
+            stats.increment_requests_dropped();
+        }
+        Ok(MiddlewareAction::ReturnResponse(response)) => {
+            debug!(
+                "Error middleware returned a synthetic response for URL: {}",
+                response.url
+            );
+            if response.cached {
+                stats.increment_responses_from_cache();
+            }
+            stats.increment_requests_succeeded();
+            stats.increment_responses_received();
+            stats.record_response_status(response.status.as_u16());
+            return Ok(Some(response));
+        }
+        Err(next_error) => {
+            error!(
+                "Download failure remained unhandled for URL {}: {:?}",
+                request.url, next_error
+            );
+            stats.increment_requests_failed();
+        }
+    }
+
+    Ok(None)
+}
+
+#[cfg(feature = "test-support")]
+pub async fn test_process_request_through_middlewares<S, C>(
+    request: Request,
+    downloader: &Arc<dyn Downloader<Client = C> + Send + Sync>,
+    middlewares: &SharedMiddlewareManager<C>,
+    scheduler: &Arc<Scheduler>,
+    stats: &Arc<StatCollector>,
+) -> Result<Option<Response>, ()>
+where
+    S: crate::spider::Spider + 'static,
+    S::Item: ScrapedItem,
+    C: Send + Sync + Clone + 'static,
+{
+    process_request_through_middlewares::<S, C>(
+        request,
+        downloader,
+        middlewares,
+        scheduler,
+        stats,
+    )
+    .await
 }

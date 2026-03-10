@@ -25,7 +25,8 @@
 //! ## Example
 //!
 //! ```rust
-//! use spider_core::{Counter, VisitedUrls, CrawlerState};
+//! use spider_core::{Counter, VisitedUrls};
+//! use spider_core::state::CrawlerState;
 //! use std::sync::Arc;
 //!
 //! #[derive(Clone, Default)]

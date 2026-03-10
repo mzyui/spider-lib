@@ -62,6 +62,24 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 
         Ok(MiddlewareAction::Continue(current_response))
     }
+
+    /// Processes an error through all registered middlewares in reverse order.
+    pub async fn handle_error(
+        &mut self,
+        request: &Request,
+        error: &SpiderError,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        let mut current_error = error.clone();
+
+        for middleware in self.middlewares.iter_mut().rev() {
+            match middleware.handle_error(request, &current_error).await {
+                Ok(action) => return Ok(action),
+                Err(next_error) => current_error = next_error,
+            }
+        }
+
+        Err(current_error)
+    }
 }
 
 /// A shared middleware manager that can be safely accessed concurrently.
@@ -106,6 +124,18 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
             return Ok(MiddlewareAction::Continue(response));
         }
         self.manager.lock().await.process_response(response).await
+    }
+
+    /// Processes a downloader error through all registered middlewares in reverse order.
+    pub async fn handle_error(
+        &self,
+        request: &Request,
+        error: &SpiderError,
+    ) -> Result<MiddlewareAction<Request>, SpiderError> {
+        if !self.has_middlewares {
+            return Err(error.clone());
+        }
+        self.manager.lock().await.handle_error(request, error).await
     }
 }
 

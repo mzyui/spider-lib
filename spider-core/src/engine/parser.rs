@@ -78,7 +78,6 @@ fn spawn_parser_worker<S>(
     tokio::spawn(async move {
         while let Ok(response) = internal_parse_rx.recv().await {
             debug!("Parsing response from {}", response.url);
-            state.parsing_responses.fetch_add(1, Ordering::AcqRel);
 
             let start_time = Instant::now();
             let parse_output = spider.parse(response, &spider_state).await;
@@ -218,8 +217,8 @@ where
             state.parsing_responses.fetch_add(1, Ordering::AcqRel);
             if internal_parse_tx.send(response).await.is_err() {
                 error!("Internal parse channel closed, cannot send response to parser worker.");
+                state.parsing_responses.fetch_sub(1, Ordering::AcqRel);
             }
-            state.parsing_responses.fetch_sub(1, Ordering::AcqRel);
         }
 
         trace!("Closing internal parse channel");
