@@ -405,24 +405,34 @@ where
 {
     tokio::spawn(async move {
         match ctx.spider.start_requests() {
-            Ok(requests) => {
-                for mut req in requests {
-                    req.url.set_fragment(None);
-                    match ctx.scheduler.enqueue_request(req).await {
-                        Ok(_) => {
-                            ctx.stats.increment_requests_enqueued();
-                        }
-                        Err(e) => {
-                            error!("Failed to enqueue initial request: {}", e);
+            Ok(source) => match source.into_stream() {
+                Ok(requests) => {
+                    for req_res in requests {
+                        let mut req = match req_res {
+                            Ok(req) => req,
+                            Err(e) => {
+                                warn!("Skipping invalid start URL entry: {}", e);
+                                continue;
+                            }
+                        };
+
+                        req.url.set_fragment(None);
+                        match ctx.scheduler.enqueue_request(req).await {
+                            Ok(_) => {
+                                ctx.stats.increment_requests_enqueued();
+                            }
+                            Err(e) => {
+                                error!("Failed to enqueue initial request: {}", e);
+                            }
                         }
                     }
                 }
-            }
-            Err(e) => error!("Failed to create start requests: {}", e),
+                Err(e) => error!("Failed to resolve start request source: {}", e),
+            },
+            Err(e) => error!("Failed to create start request source: {}", e),
         }
     })
 }
-
 #[cfg(feature = "live-stats")]
 struct LiveStatsRenderer {
     previous_lines: Vec<String>,

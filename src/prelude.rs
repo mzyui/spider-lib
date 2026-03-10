@@ -17,6 +17,8 @@ pub use spider_core::{
     Downloader,
     ReqwestClientDownloader,
     Spider,
+    StartRequestStream,
+    StartRequests,
     // Essential re-exports for trait implementation
     async_trait,
     // Core modules

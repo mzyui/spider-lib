@@ -92,7 +92,9 @@ use std::fs;
 /// # impl Spider for MySpider {
 /// #     type Item = String;
 /// #     type State = ();
-/// #     fn start_urls(&self) -> Vec<&'static str> { vec![] }
+/// #     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
+/// #         Ok(spider_core::spider::StartRequests::Stream(Box::new(std::iter::empty())))
+/// #     }
 /// #     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> { todo!() }
 /// # }
 /// let builder = CrawlerBuilder::new(MySpider)

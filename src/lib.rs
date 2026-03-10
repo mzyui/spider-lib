@@ -50,8 +50,9 @@
 //!     type Item = Quote;
 //!     type State = QuotesSpiderState;
 //!
-//!     fn start_urls(&self) -> Vec<&'static str> {
-//!         vec!["http://quotes.toscrape.com/"]
+//!     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+//!         let req = Request::new("http://quotes.toscrape.com/".parse()?);
+//!         Ok(StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
 //!     }
 //!
 //!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {

@@ -15,6 +15,8 @@ pub use crate::{
     // Core traits
     Downloader,
     Spider,
+    StartRequestStream,
+    StartRequests,
     // Essential re-exports for trait implementation
     async_trait,
     // Procedural macro

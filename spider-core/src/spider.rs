@@ -18,7 +18,8 @@
 //! ## Implementation
 //!
 //! Implementors must define:
-//! - [`start_urls`](Spider::start_urls): The initial URLs to begin the crawl
+//! - [`start_urls`](Spider::start_urls): Optional static seed URLs
+//! - [`start_requests`](Spider::start_requests): Initial request source definition
 //! - [`parse`](Spider::parse): Logic for extracting data and discovering new URLs from responses
 //! - `Item`: The type of data structure to store scraped information
 //! - `State`: The type of state that the spider uses (must implement `Default`)
@@ -64,8 +65,9 @@
 //!     type Item = Article;
 //!     type State = ArticleSpiderState;
 //!
-//!     fn start_urls(&self) -> Vec<&'static str> {
-//!         vec!["https://example.com/articles"]
+//!     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+//!         let req = Request::new("https://example.com/articles".parse()?);
+//!         Ok(StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
 //!     }
 //!
 //!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
@@ -96,7 +98,85 @@ use spider_util::response::Response;
 
 use anyhow::Result;
 use async_trait::async_trait;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 use url::Url;
+
+/// A boxed iterator of start requests.
+pub type StartRequestStream<'a> =
+    Box<dyn Iterator<Item = Result<Request, SpiderError>> + Send + 'a>;
+
+/// Initial request source returned by [`Spider::start_requests`].
+pub enum StartRequests<'a> {
+    /// Fixed list of seed URLs.
+    Urls(Vec<&'a str>),
+    /// Direct request stream supplied by the spider.
+    Stream(StartRequestStream<'a>),
+    /// Path to a plain-text seed file (one URL per line).
+    File(&'a str),
+}
+
+impl<'a> StartRequests<'a> {
+    /// Creates a file-based source from a path string.
+    pub fn file(path: &'a str) -> Self {
+        StartRequests::File(path)
+    }
+
+    /// Resolves this source into a concrete request stream.
+    pub fn into_stream(self) -> Result<StartRequestStream<'a>, SpiderError> {
+        match self {
+            StartRequests::Urls(urls) => {
+                let requests = urls
+                    .into_iter()
+                    .map(|u| Url::parse(u).map(Request::new).map_err(SpiderError::from));
+                Ok(Box::new(requests))
+            }
+            StartRequests::Stream(stream) => Ok(stream),
+            StartRequests::File(path) => start_requests_from_file(path),
+        }
+    }
+}
+
+fn start_requests_from_file<P: AsRef<Path>>(
+    path: P,
+) -> Result<StartRequestStream<'static>, SpiderError> {
+    let path = path.as_ref();
+    let file = File::open(path)?;
+    let path_display = path.display().to_string();
+    let mut lines = BufReader::new(file).lines().enumerate();
+
+    let iter = std::iter::from_fn(move || {
+        loop {
+            let (line_idx, line_res) = lines.next()?;
+            let line_number = line_idx + 1;
+            match line_res {
+                Ok(line) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+
+                    return Some(match Url::parse(trimmed) {
+                        Ok(url) => Ok(Request::new(url)),
+                        Err(e) => Err(SpiderError::ConfigurationError(format!(
+                            "Invalid start URL in {} at line {}: {}",
+                            path_display, line_number, e
+                        ))),
+                    });
+                }
+                Err(e) => {
+                    return Some(Err(SpiderError::IoError(format!(
+                        "Failed reading {} at line {}: {}",
+                        path_display, line_number, e
+                    ))));
+                }
+            }
+        }
+    });
+
+    Ok(Box::new(iter))
+}
 
 /// Defines the contract for a web spider.
 ///
@@ -147,11 +227,23 @@ pub trait Spider: Send + Sync + 'static {
     /// ```
     type State: Default + Send + Sync;
 
-    /// Returns the initial URLs to start crawling from.
+    /// Returns static seed URLs.
     ///
-    /// The crawler calls this method once at the beginning of the crawl to
-    /// obtain the seed URLs. These URLs are converted into [`Request`] objects
-    /// and enqueued for processing.
+    /// This method is optional and useful for simple spiders. The default
+    /// [`start_requests`](Spider::start_requests) implementation converts these
+    /// URLs into a request stream.
+    fn start_urls(&self) -> Vec<&'static str> {
+        Vec::new()
+    }
+
+    /// Returns the initial request source used to start crawling.
+    ///
+    /// The default implementation converts [`start_urls`](Spider::start_urls)
+    /// into a stream.
+    ///
+    /// To load from seed file, return `StartRequests::file(path)`.
+    /// To use a fixed list of URL strings, return `StartRequests::Urls(...)`.
+    /// To use custom generation logic, return `StartRequests::Stream(...)`.
     ///
     /// ## Example
     ///
@@ -163,37 +255,21 @@ pub trait Spider: Send + Sync + 'static {
     /// # impl Spider for MySpider {
     /// #     type Item = String;
     /// #     type State = ();
-    /// fn start_urls(&self) -> Vec<&'static str> {
-    ///     vec!["https://example.com", "https://example.org"]
+    /// fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+    ///     Ok(StartRequests::file("seeds/start_urls.txt"))
     /// }
     /// # async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
     /// #     todo!()
     /// # }
     /// # }
     /// ```
-    fn start_urls(&self) -> Vec<&'static str> {
-        Vec::new()
-    }
-
-    /// Generates the initial requests to start crawling.
-    ///
-    /// This method converts the URLs from [`start_urls`](Spider::start_urls) into
-    /// [`Request`] objects. It is called once at the beginning of the crawl.
-    ///
-    /// Override this method if you need to customize the initial requests with
-    /// specific headers, methods, or metadata.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`SpiderError::UrlParseError`] if any of the URLs from
-    /// [`start_urls`](Spider::start_urls) cannot be parsed.
-    fn start_requests(&self) -> Result<Vec<Request>, SpiderError> {
-        let urls: Result<Vec<Url>, url::ParseError> =
-            self.start_urls().into_iter().map(Url::parse).collect();
-        Ok(urls?.into_iter().map(Request::new).collect())
+    fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+        Ok(StartRequests::Urls(self.start_urls()))
     }
 
     /// Parses a response and extracts scraped items and new requests.
+    ///
+    /// # Errors
     ///
     /// This is the primary method where scraping logic is implemented. It receives
     /// a [`Response`] object and should extract structured data (items) and/or
@@ -236,7 +312,9 @@ pub trait Spider: Send + Sync + 'static {
     /// # impl Spider for MySpider {
     /// #     type Item = String;
     /// #     type State = MySpiderState;
-    /// #     fn start_urls(&self) -> Vec<&'static str> { vec![] }
+    /// #     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+    /// #         Ok(StartRequests::Stream(Box::new(std::iter::empty())))
+    /// #     }
     /// async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
     ///     let mut output = ParseOutput::new();
     ///
@@ -254,4 +332,84 @@ pub trait Spider: Send + Sync + 'static {
         response: Response,
         state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[spider_macro::scraped_item]
+    struct SeedItem {
+        id: usize,
+    }
+
+    struct SeedSpider {
+        path: String,
+    }
+
+    #[async_trait]
+    impl Spider for SeedSpider {
+        type Item = SeedItem;
+        type State = ();
+
+        fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+            Ok(StartRequests::file(self.path.as_str()))
+        }
+
+        async fn parse(
+            &self,
+            _response: Response,
+            _state: &Self::State,
+        ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+            let _ = SeedItem { id: 1 };
+            Ok(ParseOutput::new())
+        }
+    }
+
+    fn temp_seed_path() -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time before epoch")
+            .as_nanos();
+        std::env::temp_dir()
+            .join(format!("spider_seed_{}_{}.txt", std::process::id(), nanos))
+            .display()
+            .to_string()
+    }
+
+    #[test]
+    fn start_requests_reads_seed_file_lazily() {
+        let path = temp_seed_path();
+        fs::write(
+            &path,
+            "# comment\n\nhttps://example.com\nbad-url\nhttps://example.org\n",
+        )
+        .expect("write seed file");
+
+        let spider = SeedSpider { path: path.clone() };
+        let stream = spider
+            .start_requests()
+            .expect("create start request source")
+            .into_stream()
+            .expect("resolve start request stream");
+        let items: Vec<_> = stream.collect();
+
+        assert_eq!(items.len(), 3);
+        assert!(matches!(&items[0], Ok(req) if req.url.as_str() == "https://example.com/"));
+        assert!(matches!(&items[1], Err(SpiderError::ConfigurationError(_))));
+        assert!(matches!(&items[2], Ok(req) if req.url.as_str() == "https://example.org/"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn start_requests_fails_when_seed_file_missing() {
+        let spider = SeedSpider {
+            path: "/tmp/spider_seed_missing_file.txt".to_string(),
+        };
+        let result = spider.start_requests().and_then(StartRequests::into_stream);
+        assert!(matches!(result, Err(SpiderError::IoError(_))));
+    }
 }

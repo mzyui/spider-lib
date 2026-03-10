@@ -32,7 +32,7 @@ A modular Rust web scraping framework inspired by Scrapy.
 `Spider` generates initial URLs and parses responses, while the crawler orchestrates request execution and data flow.
 
 ```text
-Spider::start_urls
+Spider::start_requests
   -> Scheduler
   -> Downloader (default: reqwest)
   -> Middleware chain (before/after download)
@@ -72,8 +72,9 @@ impl Spider for QuoteSpider {
     type Item = QuoteItem;
     type State = QuoteState;
 
-    fn start_urls(&self) -> Vec<&'static str> {
-        vec!["https://quotes.toscrape.com/"]
+    fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+        let req = Request::new("https://quotes.toscrape.com/".parse()?);
+        Ok(StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
     }
 
     async fn parse(

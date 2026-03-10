@@ -41,8 +41,9 @@ impl Spider for MySpider {
     type Item = Item;
     type State = State;
 
-    fn start_urls(&self) -> Vec<&'static str> {
-        vec!["https://example.com"]
+    fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
+        let req = spider_util::request::Request::new("https://example.com".parse()?);
+        Ok(spider_core::spider::StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
     }
 
     async fn parse(

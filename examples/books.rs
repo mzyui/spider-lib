@@ -59,8 +59,8 @@ impl Spider for BooksSpider {
     type Item = BookItem;
     type State = BooksSpiderState;
 
-    fn start_urls(&self) -> Vec<&'static str> {
-        vec!["https://books.toscrape.com/"]
+    fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
+        Ok(StartRequests::Urls(vec!["https://books.toscrape.com/"]))
     }
 
     async fn parse(
