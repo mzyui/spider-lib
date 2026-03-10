@@ -20,7 +20,7 @@
 //! use url::Url;
 //!
 //! // URL parsing error
-//! let result: Result<Url, SpiderError> = Url::parse("not-a-url");
+//! let result: Result<Url, SpiderError> = Url::parse("not-a-url").map_err(SpiderError::from);
 //! if let Err(e) = result {
 //!     println!("Error: {}", e);
 //! }
@@ -83,7 +83,7 @@ impl From<reqwest::Error> for ReqwestError {
 /// use url::Url;
 ///
 /// // Handle different error types
-/// match Url::parse("not-a-url") {
+/// match Url::parse("not-a-url").map_err(SpiderError::from) {
 ///     Ok(url) => println!("Valid URL: {}", url),
 ///     Err(SpiderError::UrlParseError(e)) => println!("Invalid URL: {}", e),
 ///     Err(e) => println!("Other error: {}", e),
