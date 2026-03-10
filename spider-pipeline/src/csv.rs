@@ -31,6 +31,14 @@ use std::path::Path;
 #[derive(Serialize, Deserialize)]
 struct CsvState {
     headers: Vec<String>,
+    #[serde(default)]
+    write_header_on_next_write: bool,
+}
+
+struct CsvWriterState {
+    writer: Writer<File>,
+    headers: Vec<String>,
+    write_header_on_next_write: bool,
 }
 
 enum CsvCommand {
@@ -73,7 +81,7 @@ impl<I: ScrapedItem> CsvPipeline<I> {
         let path_clone = path_buf.clone();
 
         tokio::task::spawn(async move {
-            let mut writer_state: Option<(Writer<File>, Vec<String>)> = None;
+            let mut writer_state: Option<CsvWriterState> = None;
             let mut pending_writes = 0usize;
 
             info!("CSV async task started for file: {:?}", path_clone);
@@ -86,16 +94,14 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                     } => {
                         let result = (|| {
                             if writer_state.is_none() {
-                                let file_exists = path_clone.exists();
-                                let should_write_header =
-                                    !file_exists || path_clone.metadata()?.len() == 0;
+                                let should_write_header = should_write_header(&path_clone)?;
 
                                 let file = OpenOptions::new()
                                     .create(true)
                                     .append(true)
                                     .open(&path_clone)?;
 
-                                let mut writer = Writer::from_writer(file);
+                                let writer = Writer::from_writer(file);
                                 let headers = if let Some(map) = item_value.as_object() {
                                     let mut h: Vec<String> = map.keys().cloned().collect();
                                     h.sort();
@@ -106,13 +112,14 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                                     ));
                                 };
 
-                                if should_write_header {
-                                    writer.write_record(&headers)?;
-                                }
-                                writer_state = Some((writer, headers));
+                                writer_state = Some(CsvWriterState {
+                                    writer,
+                                    headers,
+                                    write_header_on_next_write: should_write_header,
+                                });
                             }
 
-                            let (writer, headers) = match writer_state.as_mut() {
+                            let state = match writer_state.as_mut() {
                                 Some(state) => state,
                                 None => {
                                     return Err(PipelineError::Other(
@@ -120,8 +127,13 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                                     ));
                                 }
                             };
+                            if state.write_header_on_next_write {
+                                state.writer.write_record(&state.headers)?;
+                                state.write_header_on_next_write = false;
+                            }
                             let record = if let Some(map) = item_value.as_object() {
-                                headers
+                                state
+                                    .headers
                                     .iter()
                                     .map(|h| {
                                         map.get(h)
@@ -141,10 +153,10 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                                 ));
                             };
 
-                            writer.write_record(&record)?;
+                            state.writer.write_record(&record)?;
                             pending_writes += 1;
                             if pending_writes >= Self::FLUSH_EVERY_WRITES {
-                                writer.flush()?;
+                                state.writer.flush()?;
                                 pending_writes = 0;
                             }
                             Ok(())
@@ -156,9 +168,10 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                     }
                     CsvCommand::GetState(responder) => {
                         let result = (|| {
-                            if let Some((_, headers)) = &writer_state {
+                            if let Some(state) = &writer_state {
                                 let state = CsvState {
-                                    headers: headers.clone(),
+                                    headers: state.headers.clone(),
+                                    write_header_on_next_write: state.write_header_on_next_write,
                                 };
                                 let value = serde_json::to_value(state)?;
                                 Ok(Some(value))
@@ -178,7 +191,12 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                                 .append(true)
                                 .open(&path_clone)?;
                             let writer = Writer::from_writer(file);
-                            writer_state = Some((writer, state.headers));
+                            writer_state = Some(CsvWriterState {
+                                writer,
+                                headers: state.headers,
+                                write_header_on_next_write: state.write_header_on_next_write
+                                    || should_write_header(&path_clone)?,
+                            });
                             info!("CSV Exporter state restored.");
                             Ok(())
                         })();
@@ -188,8 +206,8 @@ impl<I: ScrapedItem> CsvPipeline<I> {
                     }
                     CsvCommand::Shutdown(responder) => {
                         info!("CSV async task received shutdown command.");
-                        if let Some((writer, _)) = writer_state.as_mut()
-                            && let Err(e) = writer.flush()
+                        if let Some(state) = writer_state.as_mut()
+                            && let Err(e) = state.writer.flush()
                         {
                             error!("Failed to flush CSV writer on shutdown: {}", e);
                         }
@@ -206,6 +224,10 @@ impl<I: ScrapedItem> CsvPipeline<I> {
             _phantom: PhantomData,
         })
     }
+}
+
+fn should_write_header(path: &Path) -> Result<bool, PipelineError> {
+    Ok(!path.exists() || path.metadata()?.len() == 0)
 }
 
 #[async_trait]
