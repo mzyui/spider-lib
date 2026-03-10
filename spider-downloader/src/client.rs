@@ -185,53 +185,35 @@ impl ReqwestClientDownloader {
             .insert(proxy_url.to_string(), proxy_client.clone());
         Some(proxy_client)
     }
+
+    #[cfg(feature = "test-support")]
+    pub fn test_proxy_from_request(request: &Request) -> Option<String> {
+        Self::proxy_from_request(request)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub fn test_select_client_for_request(&self, request: &Request) -> Client {
+        self.select_client_for_request(request)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub fn test_get_or_create_proxy_client(&self, proxy_url: &str) -> Option<Client> {
+        self.get_or_create_proxy_client(proxy_url)
+    }
+
+    #[cfg(feature = "test-support")]
+    pub fn test_proxy_client_count(&self) -> u64 {
+        self.proxy_clients.entry_count()
+    }
+
+    #[cfg(feature = "test-support")]
+    pub fn test_has_proxy_client(&self, proxy_url: &str) -> bool {
+        self.proxy_clients.get(proxy_url).is_some()
+    }
 }
 
 impl Default for ReqwestClientDownloader {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ReqwestClientDownloader;
-    use spider_util::request::Request;
-
-    #[test]
-    fn proxy_meta_parsing_returns_none_when_missing() {
-        let request = Request::new(reqwest::Url::parse("https://example.com").expect("valid url"));
-        assert_eq!(ReqwestClientDownloader::proxy_from_request(&request), None);
-    }
-
-    #[test]
-    fn invalid_proxy_falls_back_without_error() {
-        let downloader = ReqwestClientDownloader::new();
-        let proxy_client = downloader.get_or_create_proxy_client("://invalid-proxy");
-        assert!(proxy_client.is_none());
-        assert_eq!(downloader.proxy_clients.entry_count(), 0);
-    }
-
-    #[test]
-    fn valid_proxy_client_is_cached_and_reused() {
-        let downloader = ReqwestClientDownloader::new();
-        let proxy = "http://127.0.0.1:8080";
-
-        let first = downloader.get_or_create_proxy_client(proxy);
-        assert!(first.is_some());
-        assert!(downloader.proxy_clients.get(proxy).is_some());
-
-        let second = downloader.get_or_create_proxy_client(proxy);
-        assert!(second.is_some());
-        assert!(downloader.proxy_clients.get(proxy).is_some());
-    }
-
-    #[test]
-    fn request_without_proxy_uses_base_client_path() {
-        let downloader = ReqwestClientDownloader::new();
-        let request = Request::new(reqwest::Url::parse("https://example.com").expect("valid url"));
-
-        let _ = downloader.select_client_for_request(&request);
-        assert_eq!(downloader.proxy_clients.entry_count(), 0);
     }
 }
