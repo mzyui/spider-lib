@@ -43,7 +43,7 @@ use crate::util;
 use dashmap::{DashMap, DashSet};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::StatusCode;
-use scraper::Html;
+use scraper::{ElementRef, Html};
 use serde::de::DeserializeOwned;
 use serde_json;
 use std::{str::Utf8Error, str::from_utf8, sync::Arc};
@@ -100,6 +100,96 @@ pub struct Link {
     pub url: Url,
     /// The type of the discovered link.
     pub link_type: LinkType,
+}
+
+/// Defines an HTML source used for link extraction.
+///
+/// Each source pairs a CSS selector with the attribute that contains the URL.
+/// An optional [`LinkType`] can be provided to override the inferred type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkSource {
+    /// CSS selector used to find candidate elements.
+    pub selector: String,
+    /// Attribute name that contains the URL.
+    pub attribute: String,
+    /// Optional fixed link type for matches from this source.
+    pub link_type: Option<LinkType>,
+}
+
+impl LinkSource {
+    /// Creates a new source definition.
+    pub fn new(selector: impl Into<String>, attribute: impl Into<String>) -> Self {
+        Self {
+            selector: selector.into(),
+            attribute: attribute.into(),
+            link_type: None,
+        }
+    }
+
+    /// Overrides the inferred link type for this source.
+    pub fn with_link_type(mut self, link_type: LinkType) -> Self {
+        self.link_type = Some(link_type);
+        self
+    }
+}
+
+/// Options that control how links are extracted from a [`Response`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkExtractOptions {
+    /// Restrict discovered links to the same registered domain.
+    pub same_site_only: bool,
+    /// Include URLs found in text content.
+    pub include_text_links: bool,
+    /// HTML sources used to discover attribute-based links.
+    pub sources: Vec<LinkSource>,
+    /// Optional allow-list of link types to include.
+    pub allowed_link_types: Option<Vec<LinkType>>,
+}
+
+impl Default for LinkExtractOptions {
+    fn default() -> Self {
+        Self {
+            same_site_only: true,
+            include_text_links: true,
+            sources: default_link_sources(),
+            allowed_link_types: None,
+        }
+    }
+}
+
+impl LinkExtractOptions {
+    /// Sets whether only same-site URLs should be returned.
+    pub fn same_site_only(mut self, same_site_only: bool) -> Self {
+        self.same_site_only = same_site_only;
+        self
+    }
+
+    /// Sets whether URLs found in text content should be returned.
+    pub fn include_text_links(mut self, include_text_links: bool) -> Self {
+        self.include_text_links = include_text_links;
+        self
+    }
+
+    /// Replaces the configured HTML extraction sources.
+    pub fn with_sources(mut self, sources: impl IntoIterator<Item = LinkSource>) -> Self {
+        self.sources = sources.into_iter().collect();
+        self
+    }
+
+    /// Adds an HTML extraction source.
+    pub fn add_source(mut self, source: LinkSource) -> Self {
+        self.sources.push(source);
+        self
+    }
+
+    /// Restricts extraction to the provided link types.
+    pub fn with_allowed_link_types(
+        mut self,
+        allowed_link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.allowed_link_types = Some(allowed_link_types.into_iter().collect());
+        self
+    }
 }
 
 /// Represents an HTTP response received from a server.
@@ -288,6 +378,37 @@ impl Response {
         })
     }
 
+    /// Returns a customizable iterator of links discovered in the response body.
+    ///
+    /// Unlike [`Response::links`], this method does not deduplicate results.
+    /// Callers that need uniqueness can collect into a set or use [`Response::links`].
+    ///
+    /// ## Example
+    ///
+    /// ```rust
+    /// # use spider_util::response::{LinkExtractOptions, Response};
+    /// # use reqwest::StatusCode;
+    /// # use bytes::Bytes;
+    /// # use url::Url;
+    /// # let response = Response {
+    /// #     url: Url::parse("https://example.com").unwrap(),
+    /// #     status: StatusCode::OK,
+    /// #     headers: http::header::HeaderMap::new(),
+    /// #     body: Bytes::from(r#"<html><body><a href="/page">Link</a></body></html>"#),
+    /// #     request_url: Url::parse("https://example.com").unwrap(),
+    /// #     meta: None,
+    /// #     cached: false,
+    /// # };
+    /// let links: Vec<_> = response
+    ///     .links_iter(LinkExtractOptions::default())
+    ///     .collect();
+    /// assert!(!links.is_empty());
+    /// ```
+    pub fn links_iter(&self, options: LinkExtractOptions) -> impl Iterator<Item = Link> {
+        let links = self.parse_links(options).unwrap_or_default().into_iter();
+        links
+    }
+
     /// Extracts all unique, same-site links from the response body.
     ///
     /// This method discovers links from:
@@ -324,67 +445,92 @@ impl Response {
     pub fn links(&self) -> DashSet<Link> {
         let links = DashSet::new();
 
-        if let Ok(html_fn) = self.lazy_html()
-            && let Ok(html) = html_fn()
-        {
-            let selectors = vec![
-                ("a[href]", "href"),
-                ("link[href]", "href"),
-                ("script[src]", "src"),
-                ("img[src]", "src"),
-                ("audio[src]", "src"),
-                ("video[src]", "src"),
-                ("source[src]", "src"),
-            ];
-
-            for (selector_str, attr_name) in selectors {
-                if let Some(selector) = get_cached_selector(selector_str) {
-                    for element in html.select(&selector) {
-                        if let Some(attr_value) = element.value().attr(attr_name)
-                            && let Ok(url) = self.url.join(attr_value)
-                            && util::is_same_site(&url, &self.url)
-                        {
-                            let link_type = match element.value().name() {
-                                "a" => LinkType::Page,
-                                "link" => {
-                                    if let Some(rel) = element.value().attr("rel") {
-                                        if rel.eq_ignore_ascii_case("stylesheet") {
-                                            LinkType::Stylesheet
-                                        } else {
-                                            LinkType::Other(rel.to_string())
-                                        }
-                                    } else {
-                                        LinkType::Other("link".to_string())
-                                    }
-                                }
-                                "script" => LinkType::Script,
-                                "img" => LinkType::Image,
-                                "audio" | "video" | "source" => LinkType::Media,
-                                _ => LinkType::Other(element.value().name().to_string()),
-                            };
-                            links.insert(Link { url, link_type });
-                        }
-                    }
-                }
-            }
-
-            let finder = LinkFinder::new();
-            for text_node in html.tree.values().filter_map(|node| node.as_text()) {
-                for link in finder.links(text_node) {
-                    if link.kind() == &LinkKind::Url
-                        && let Ok(url) = self.url.join(link.as_str())
-                        && util::is_same_site(&url, &self.url)
-                    {
-                        links.insert(Link {
-                            url,
-                            link_type: LinkType::Page,
-                        });
-                    }
-                }
-            }
+        for link in self.links_iter(LinkExtractOptions::default()) {
+            links.insert(link);
         }
 
         links
+    }
+
+    fn parse_links(&self, options: LinkExtractOptions) -> Result<Vec<Link>, Utf8Error> {
+        let html_fn = self.lazy_html()?;
+        let html = html_fn()?;
+        let mut links = Vec::new();
+
+        self.collect_attribute_links(&html, &options, &mut links);
+
+        if options.include_text_links {
+            self.collect_text_links(&html, &options, &mut links);
+        }
+
+        Ok(links)
+    }
+
+    fn collect_attribute_links(
+        &self,
+        html: &Html,
+        options: &LinkExtractOptions,
+        links: &mut Vec<Link>,
+    ) {
+        for source in &options.sources {
+            let Some(selector) = get_cached_selector(&source.selector) else {
+                continue;
+            };
+
+            for element in html.select(&selector) {
+                let Some(attr_value) = element.value().attr(&source.attribute) else {
+                    continue;
+                };
+
+                let link_type = source
+                    .link_type
+                    .clone()
+                    .unwrap_or_else(|| infer_link_type(&element));
+
+                if let Some(link) = self.build_link(attr_value, link_type, options) {
+                    links.push(link);
+                }
+            }
+        }
+    }
+
+    fn collect_text_links(&self, html: &Html, options: &LinkExtractOptions, links: &mut Vec<Link>) {
+        let finder = LinkFinder::new();
+
+        for text_node in html.tree.values().filter_map(|node| node.as_text()) {
+            for link in finder.links(text_node) {
+                if link.kind() != &LinkKind::Url {
+                    continue;
+                }
+
+                if let Some(link) = self.build_link(link.as_str(), LinkType::Page, options) {
+                    links.push(link);
+                }
+            }
+        }
+    }
+
+    fn build_link(
+        &self,
+        raw_url: &str,
+        link_type: LinkType,
+        options: &LinkExtractOptions,
+    ) -> Option<Link> {
+        let url = self.url.join(raw_url).ok()?;
+
+        if options.same_site_only && !util::is_same_site(&url, &self.url) {
+            return None;
+        }
+
+        if !options
+            .allowed_link_types
+            .as_ref()
+            .is_none_or(|allowed| allowed.contains(&link_type))
+        {
+            return None;
+        }
+
+        Some(Link { url, link_type })
     }
 }
 
@@ -399,5 +545,160 @@ impl Clone for Response {
             meta: self.meta.clone(),
             cached: self.cached,
         }
+    }
+}
+
+fn default_link_sources() -> Vec<LinkSource> {
+    vec![
+        LinkSource::new("a[href]", "href"),
+        LinkSource::new("link[href]", "href"),
+        LinkSource::new("script[src]", "src"),
+        LinkSource::new("img[src]", "src"),
+        LinkSource::new("audio[src]", "src"),
+        LinkSource::new("video[src]", "src"),
+        LinkSource::new("source[src]", "src"),
+    ]
+}
+
+fn infer_link_type(element: &ElementRef<'_>) -> LinkType {
+    match element.value().name() {
+        "a" => LinkType::Page,
+        "link" => {
+            if let Some(rel) = element.value().attr("rel") {
+                if rel.eq_ignore_ascii_case("stylesheet") {
+                    LinkType::Stylesheet
+                } else {
+                    LinkType::Other(rel.to_string())
+                }
+            } else {
+                LinkType::Other("link".to_string())
+            }
+        }
+        "script" => LinkType::Script,
+        "img" => LinkType::Image,
+        "audio" | "video" | "source" => LinkType::Media,
+        _ => LinkType::Other(element.value().name().to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Link, LinkExtractOptions, LinkSource, LinkType, Response};
+    use bytes::Bytes;
+    use reqwest::StatusCode;
+    use url::Url;
+
+    fn response(body: &str) -> Response {
+        let url = Url::parse("https://example.com/base/").unwrap();
+
+        Response {
+            url: url.clone(),
+            status: StatusCode::OK,
+            headers: http::header::HeaderMap::new(),
+            body: Bytes::from(body.to_owned()),
+            request_url: url,
+            meta: None,
+            cached: false,
+        }
+    }
+
+    fn has_link(links: &[Link], url: &str, link_type: LinkType) -> bool {
+        let url = Url::parse(url).unwrap();
+        links
+            .iter()
+            .any(|link| link.url == url && link.link_type == link_type)
+    }
+
+    #[test]
+    fn links_keeps_default_same_site_behavior_and_deduplicates() {
+        let response = response(
+            r#"
+            <html>
+                <body>
+                    <a href="/page">Page</a>
+                    <a href="https://external.test/page">External</a>
+                    <a href="/page">Duplicate</a>
+                    <script src="/app.js"></script>
+                    Text URL https://example.com/page
+                </body>
+            </html>
+            "#,
+        );
+
+        let links = response.links();
+
+        assert_eq!(links.len(), 2);
+        assert!(links.contains(&Link {
+            url: Url::parse("https://example.com/page").unwrap(),
+            link_type: LinkType::Page,
+        }));
+        assert!(links.contains(&Link {
+            url: Url::parse("https://example.com/app.js").unwrap(),
+            link_type: LinkType::Script,
+        }));
+    }
+
+    #[test]
+    fn links_iter_can_include_external_links() {
+        let response = response(r#"<a href="https://external.test/page">External</a>"#);
+
+        let links: Vec<_> = response
+            .links_iter(LinkExtractOptions::default().same_site_only(false))
+            .collect();
+
+        assert!(has_link(
+            &links,
+            "https://external.test/page",
+            LinkType::Page
+        ));
+    }
+
+    #[test]
+    fn links_iter_can_disable_text_links() {
+        let response = response(r#"Text URL https://example.com/from-text"#);
+
+        let links: Vec<_> = response
+            .links_iter(LinkExtractOptions::default().include_text_links(false))
+            .collect();
+
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn links_iter_supports_custom_sources() {
+        let response = response(r#"<div data-href="/promo"></div>"#);
+        let options = LinkExtractOptions::default().with_sources([]).add_source(
+            LinkSource::new("div[data-href]", "data-href")
+                .with_link_type(LinkType::Other("promo".to_string())),
+        );
+
+        let links: Vec<_> = response.links_iter(options).collect();
+
+        assert!(has_link(
+            &links,
+            "https://example.com/promo",
+            LinkType::Other("promo".to_string())
+        ));
+    }
+
+    #[test]
+    fn links_iter_can_filter_by_link_type() {
+        let response = response(
+            r#"
+            <a href="/page">Page</a>
+            <img src="/image.png" />
+            "#,
+        );
+
+        let links: Vec<_> = response
+            .links_iter(LinkExtractOptions::default().with_allowed_link_types([LinkType::Image]))
+            .collect();
+
+        assert_eq!(links.len(), 1);
+        assert!(has_link(
+            &links,
+            "https://example.com/image.png",
+            LinkType::Image
+        ));
     }
 }
