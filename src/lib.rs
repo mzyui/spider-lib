@@ -52,7 +52,7 @@
 //!
 //!     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
 //!         let req = Request::new("http://quotes.toscrape.com/".parse()?);
-//!         Ok(StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
+//!         Ok(StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
 //!     }
 //!
 //!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
