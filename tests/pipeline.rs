@@ -1,10 +1,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use spider_pipeline::pipeline::Pipeline;
+#[cfg(feature = "pipeline-stream-json")]
+use spider_pipeline::stream_json::StreamJsonPipeline;
 use spider_pipeline::transform::{TransformOperation, TransformPipeline};
 use spider_pipeline::validation::{JsonType, ValidationPipeline, ValidationRule};
 use spider_util::item::ScrapedItem;
 use std::any::Any;
+#[cfg(feature = "pipeline-stream-json")]
+use std::fs;
+#[cfg(feature = "pipeline-stream-json")]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ProductItem {
@@ -167,11 +173,10 @@ async fn drops_on_deserialize_failure_after_transform() {
 
 #[tokio::test]
 async fn missing_field_operation_is_noop() {
-    let pipeline = TransformPipeline::<ProductItem>::new().with_operation(
-        TransformOperation::Uppercase {
+    let pipeline =
+        TransformPipeline::<ProductItem>::new().with_operation(TransformOperation::Uppercase {
             field: "missing".to_string(),
-        },
-    );
+        });
 
     let out = pipeline
         .process_item(ProductItem {
@@ -258,6 +263,70 @@ async fn drops_on_invalid_type_rule() {
         .await
         .expect("pipeline should not fail");
     assert!(out.is_none());
+}
+
+#[cfg(feature = "pipeline-stream-json")]
+fn temp_json_output_path() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time before epoch")
+        .as_nanos();
+    std::env::temp_dir()
+        .join(format!(
+            "spider_stream_pipeline_{}_{}.json",
+            std::process::id(),
+            nanos
+        ))
+        .display()
+        .to_string()
+}
+
+#[cfg(feature = "pipeline-stream-json")]
+#[tokio::test]
+async fn stream_json_pipeline_writes_valid_json_array() {
+    let path = temp_json_output_path();
+    let pipeline = StreamJsonPipeline::<ProductItem>::with_batch_size(&path, 2)
+        .expect("pipeline should initialize");
+
+    pipeline
+        .process_item(ProductItem {
+            title: "Book One".to_string(),
+            slug: "book-one".to_string(),
+            stock: 3,
+        })
+        .await
+        .expect("first item should be accepted");
+    pipeline
+        .process_item(ProductItem {
+            title: "Book Two".to_string(),
+            slug: "book-two".to_string(),
+            stock: 8,
+        })
+        .await
+        .expect("second item should be accepted");
+    pipeline
+        .process_item(ProductItem {
+            title: "Book Three".to_string(),
+            slug: "book-three".to_string(),
+            stock: 13,
+        })
+        .await
+        .expect("third item should be accepted");
+
+    pipeline
+        .close()
+        .await
+        .expect("pipeline should close cleanly");
+
+    let contents = fs::read_to_string(&path).expect("output file should exist");
+    let value: Value = serde_json::from_str(&contents).expect("output should be valid JSON");
+    let items = value.as_array().expect("output should be a JSON array");
+
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0]["title"], json!("Book One"));
+    assert_eq!(items[2]["slug"], json!("book-three"));
+
+    let _ = fs::remove_file(path);
 }
 
 #[tokio::test]
@@ -354,7 +423,10 @@ async fn restore_state_writes_header_for_empty_file() {
         })
         .await
         .expect("restored item should write");
-    restored.close().await.expect("restored close should succeed");
+    restored
+        .close()
+        .await
+        .expect("restored close should succeed");
 
     let written = fs::read_to_string(&path).expect("csv output should be readable");
     assert_eq!(written.lines().next(), Some("id,title"));

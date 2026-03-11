@@ -5,7 +5,10 @@ use url::Url;
 #[test]
 fn proxy_meta_parsing_returns_none_when_missing() {
     let request = Request::new(Url::parse("https://example.com").expect("valid url"));
-    assert_eq!(ReqwestClientDownloader::test_proxy_from_request(&request), None);
+    assert_eq!(
+        ReqwestClientDownloader::test_proxy_from_request(&request),
+        None
+    );
 }
 
 #[test]

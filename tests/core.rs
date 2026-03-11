@@ -70,12 +70,12 @@ fn start_requests_reads_seed_file_lazily() {
     .expect("write seed file");
 
     let spider = SeedSpider { path: path.clone() };
-    let stream = spider
+    let requests = spider
         .start_requests()
         .expect("create start request source")
-        .into_stream()
-        .expect("resolve start request stream");
-    let items: Vec<_> = stream.collect();
+        .into_iter()
+        .expect("resolve start request iterator");
+    let items: Vec<_> = requests.collect();
 
     assert_eq!(items.len(), 3);
     assert!(matches!(&items[0], Ok(req) if req.url.as_str() == "https://example.com/"));
@@ -90,7 +90,7 @@ fn start_requests_fails_when_seed_file_missing() {
     let spider = SeedSpider {
         path: "/tmp/spider_seed_missing_file.txt".to_string(),
     };
-    let result = spider.start_requests().and_then(StartRequests::into_stream);
+    let result = spider.start_requests().and_then(StartRequests::into_iter);
     assert!(matches!(result, Err(SpiderError::IoError(_))));
 }
 
@@ -98,6 +98,10 @@ fn start_requests_fails_when_seed_file_missing() {
 fn crawler_config_default() {
     let config = CrawlerConfig::default();
     assert!(config.max_concurrent_downloads > 0);
+    assert_eq!(
+        config.max_pending_requests,
+        config.max_concurrent_downloads * 2
+    );
     assert!(config.parser_workers > 0);
     assert!(config.max_concurrent_pipelines > 0);
     assert!(config.channel_capacity > 0);
@@ -107,11 +111,13 @@ fn crawler_config_default() {
 fn crawler_config_builder() {
     let config = CrawlerConfig::new()
         .with_max_concurrent_downloads(20)
+        .with_max_pending_requests(24)
         .with_parser_workers(8)
         .with_max_concurrent_pipelines(4)
         .with_channel_capacity(500);
 
     assert_eq!(config.max_concurrent_downloads, 20);
+    assert_eq!(config.max_pending_requests, 24);
     assert_eq!(config.parser_workers, 8);
     assert_eq!(config.max_concurrent_pipelines, 4);
     assert_eq!(config.channel_capacity, 500);
@@ -211,7 +217,7 @@ async fn queued_responses_keep_parser_state_non_idle() {
     });
     let state = CrawlerState::new();
     let stats = Arc::new(StatCollector::new());
-    let (scheduler, _req_rx) = Scheduler::new(None);
+    let (scheduler, _req_rx) = Scheduler::new(None, 32);
     let (res_tx, res_rx) = kanal::bounded_async(4);
     let (item_tx, item_rx) = kanal::bounded_async(4);
     drop(item_rx);
@@ -244,7 +250,9 @@ async fn queued_responses_keep_parser_state_non_idle() {
 
     release_first.notify_one();
     drop(res_tx);
-    parser_handle.await.expect("parser should shut down cleanly");
+    parser_handle
+        .await
+        .expect("parser should shut down cleanly");
     assert!(state.is_idle());
 }
 
@@ -307,11 +315,12 @@ impl Downloader for FailingDownloader {
 
 #[tokio::test]
 async fn download_timeout_triggers_retry_error_middleware() {
-    let (scheduler, request_rx) = Scheduler::new(None);
+    let (scheduler, request_rx) = Scheduler::new(None, 32);
     let stats = Arc::new(StatCollector::new());
     let middlewares = SharedMiddlewareManager::new(vec![Box::new(
         RetryMiddleware::new().max_retries(2).backoff_factor(0.0),
-    ) as Box<dyn Middleware<TestClient> + Send + Sync>]);
+    )
+        as Box<dyn Middleware<TestClient> + Send + Sync>]);
     let downloader: Arc<dyn Downloader<Client = TestClient> + Send + Sync> =
         Arc::new(FailingDownloader { client: TestClient });
     let request = Request::new(Url::parse("https://example.com/retry").expect("valid url"));
@@ -332,4 +341,53 @@ async fn download_timeout_triggers_retry_error_middleware() {
     assert_eq!(retried_request.get_retry_attempts(), 1);
     assert_eq!(stats.requests_retried.load(Ordering::Acquire), 1);
     assert_eq!(stats.requests_failed.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn scheduler_blocks_enqueue_until_outstanding_request_completes() {
+    let (scheduler, request_rx) = Scheduler::new(None, 2);
+
+    scheduler
+        .enqueue_request(Request::new(
+            Url::parse("https://example.com/one").expect("valid url"),
+        ))
+        .await
+        .expect("first request should enqueue");
+    scheduler
+        .enqueue_request(Request::new(
+            Url::parse("https://example.com/two").expect("valid url"),
+        ))
+        .await
+        .expect("second request should enqueue");
+
+    let first = request_rx.recv().await.expect("first dispatched request");
+    let second = request_rx.recv().await.expect("second dispatched request");
+    assert_eq!(first.url.as_str(), "https://example.com/one");
+    assert_eq!(second.url.as_str(), "https://example.com/two");
+    assert_eq!(scheduler.len(), 2);
+
+    let scheduler_clone = Arc::clone(&scheduler);
+    let third_url = Url::parse("https://example.com/three").expect("valid url");
+    let blocked_enqueue = tokio::spawn(async move {
+        scheduler_clone
+            .enqueue_request(Request::new(third_url))
+            .await
+            .expect("third request should enqueue after capacity frees");
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(!blocked_enqueue.is_finished());
+
+    scheduler.complete_request();
+    blocked_enqueue
+        .await
+        .expect("blocked enqueue task should finish cleanly");
+
+    let third = request_rx.recv().await.expect("third dispatched request");
+    assert_eq!(third.url.as_str(), "https://example.com/three");
+    assert_eq!(scheduler.len(), 2);
+
+    scheduler.complete_request();
+    scheduler.complete_request();
+    assert_eq!(scheduler.len(), 0);
 }

@@ -43,8 +43,7 @@ async fn sticky_failover_rotates_proxy_on_error() {
         is_connect: false,
         is_timeout: true,
     });
-    let _ = <ProxyMiddleware as Middleware<()>>::handle_error(&mut middleware, &first, &error)
-        .await;
+    let _ = <ProxyMiddleware as Middleware<()>>::handle_error(&middleware, &first, &error).await;
 
     let second = middleware
         .process_request(
