@@ -1,6 +1,6 @@
 [package]
 name = "spider-core"
-version = "2.0.0"
+version = "2.0.1"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "Core functionality for the spider-lib web scraping framework."
@@ -32,11 +32,11 @@ env_logger.workspace = true
 url.workspace = true
 crossterm = { workspace = true, optional = true }
 
-spider-macro = { version = "0.1.10", path = "../spider-macro" }
-spider-util = { version = "0.3.3", path = "../spider-util" }
-spider-middleware = { version = "0.3.4", path = "../spider-middleware" }
-spider-pipeline = { version = "0.3.5", path = "../spider-pipeline" }
-spider-downloader = { version = "1.0.1", path = "../spider-downloader" }
+spider-macro = { version = "0.1.11", path = "../spider-macro" }
+spider-util = { version = "0.3.4", path = "../spider-util" }
+spider-middleware = { version = "0.3.5", path = "../spider-middleware" }
+spider-pipeline = { version = "0.3.6", path = "../spider-pipeline" }
+spider-downloader = { version = "1.0.2", path = "../spider-downloader" }
 
 [features]
 default = ["core"]

@@ -42,7 +42,7 @@
 
 use moka::sync::Cache;
 use spider_util::error::SpiderError;
-use spider_util::metrics::ExpMovingAverage;
+use spider_util::metrics::{ExpMovingAverage, MetricsSnapshotProvider, format_plain_text_metrics};
 use std::{
     collections::HashMap,
     sync::{
@@ -131,6 +131,15 @@ impl StatsSnapshot {
         }
     }
 
+    fn bytes_per_second(&self) -> f64 {
+        let elapsed = self.elapsed_duration.as_secs_f64();
+        if elapsed > 0.0 {
+            self.total_bytes_downloaded as f64 / elapsed
+        } else {
+            0.0
+        }
+    }
+
     fn formatted_bytes(&self) -> String {
         const KB: usize = 1024;
         const MB: usize = 1024 * KB;
@@ -145,6 +154,173 @@ impl StatsSnapshot {
         } else {
             format!("{} B", self.total_bytes_downloaded)
         }
+    }
+
+    fn formatted_bytes_per_second(&self) -> String {
+        let bytes_per_second = self.bytes_per_second() as usize;
+        const KB: usize = 1024;
+        const MB: usize = 1024 * KB;
+        const GB: usize = 1024 * MB;
+
+        if bytes_per_second >= GB {
+            format!("{:.2} GB/s", bytes_per_second as f64 / GB as f64)
+        } else if bytes_per_second >= MB {
+            format!("{:.2} MB/s", bytes_per_second as f64 / MB as f64)
+        } else if bytes_per_second >= KB {
+            format!("{:.2} KB/s", bytes_per_second as f64 / KB as f64)
+        } else {
+            format!("{bytes_per_second} B/s")
+        }
+    }
+
+    fn pending_requests(&self) -> usize {
+        self.requests_enqueued.saturating_sub(self.requests_sent)
+    }
+
+    fn success_ratio(&self) -> f64 {
+        if self.requests_sent == 0 {
+            0.0
+        } else {
+            self.requests_succeeded as f64 / self.requests_sent as f64 * 100.0
+        }
+    }
+
+    fn failure_ratio(&self) -> f64 {
+        if self.requests_sent == 0 {
+            0.0
+        } else {
+            self.requests_failed as f64 / self.requests_sent as f64 * 100.0
+        }
+    }
+
+    fn cache_hit_ratio(&self) -> f64 {
+        if self.responses_received == 0 {
+            0.0
+        } else {
+            self.responses_from_cache as f64 / self.responses_received as f64 * 100.0
+        }
+    }
+}
+
+impl MetricsSnapshotProvider for StatsSnapshot {
+    fn get_requests_enqueued(&self) -> usize {
+        self.requests_enqueued
+    }
+
+    fn get_requests_sent(&self) -> usize {
+        self.requests_sent
+    }
+
+    fn get_requests_succeeded(&self) -> usize {
+        self.requests_succeeded
+    }
+
+    fn get_requests_failed(&self) -> usize {
+        self.requests_failed
+    }
+
+    fn get_requests_retried(&self) -> usize {
+        self.requests_retried
+    }
+
+    fn get_requests_scheduled_for_retry(&self) -> usize {
+        self.requests_scheduled_for_retry
+    }
+
+    fn get_requests_dropped(&self) -> usize {
+        self.requests_dropped
+    }
+
+    fn get_retry_delay_in_flight_ms(&self) -> u64 {
+        self.retry_delay_in_flight_ms
+    }
+
+    fn get_responses_received(&self) -> usize {
+        self.responses_received
+    }
+
+    fn get_responses_from_cache(&self) -> usize {
+        self.responses_from_cache
+    }
+
+    fn get_total_bytes_downloaded(&self) -> usize {
+        self.total_bytes_downloaded
+    }
+
+    fn get_items_scraped(&self) -> usize {
+        self.items_scraped
+    }
+
+    fn get_items_processed(&self) -> usize {
+        self.items_processed
+    }
+
+    fn get_items_dropped_by_pipeline(&self) -> usize {
+        self.items_dropped_by_pipeline
+    }
+
+    fn get_response_status_counts(&self) -> &HashMap<u16, usize> {
+        &self.response_status_counts
+    }
+
+    fn get_elapsed_duration(&self) -> Duration {
+        self.elapsed_duration
+    }
+
+    fn get_average_request_time(&self) -> Option<Duration> {
+        self.average_request_time
+    }
+
+    fn get_fastest_request_time(&self) -> Option<Duration> {
+        self.fastest_request_time
+    }
+
+    fn get_slowest_request_time(&self) -> Option<Duration> {
+        self.slowest_request_time
+    }
+
+    fn get_request_time_count(&self) -> usize {
+        self.request_time_count
+    }
+
+    fn get_average_parsing_time(&self) -> Option<Duration> {
+        self.average_parsing_time
+    }
+
+    fn get_fastest_parsing_time(&self) -> Option<Duration> {
+        self.fastest_parsing_time
+    }
+
+    fn get_slowest_parsing_time(&self) -> Option<Duration> {
+        self.slowest_parsing_time
+    }
+
+    fn get_parsing_time_count(&self) -> usize {
+        self.parsing_time_count
+    }
+
+    fn get_recent_requests_per_second(&self) -> f64 {
+        self.recent_requests_per_second
+    }
+
+    fn get_recent_responses_per_second(&self) -> f64 {
+        self.recent_responses_per_second
+    }
+
+    fn get_recent_items_per_second(&self) -> f64 {
+        self.recent_items_per_second
+    }
+
+    fn formatted_duration(&self) -> String {
+        self.formatted_duration()
+    }
+
+    fn formatted_request_time(&self, duration: Option<Duration>) -> String {
+        self.formatted_request_time(duration)
+    }
+
+    fn formatted_bytes(&self) -> String {
+        self.formatted_bytes()
     }
 }
 
@@ -575,12 +751,16 @@ impl StatCollector {
 - **Duration**: {}
 - **Current Rate** (last 10s): {:.2} req/s, {:.2} resp/s, {:.2} item/s
 - **Overall Rate** (total): {:.2} req/s, {:.2} resp/s, {:.2} item/s
+- **Bytes Per Second**: {}
+- **Request Ratios**: success {:.2}%, failure {:.2}%
+- **Cache Hit Ratio**: {:.2}%
 
 ## Requests
 | Metric     | Count |
 |------------|-------|
 | Enqueued   | {}     |
 | Sent       | {}     |
+| Pending    | {}     |
 | Succeeded  | {}     |
 | Failed     | {}     |
 | Retried    | {}     |
@@ -592,7 +772,7 @@ impl StatCollector {
 | Metric     | Count |
 |------------|-------|
 | Received   | {}     |
- From Cache | {}     |
+| From Cache | {}     |
 | Downloaded | {}     |
 
 ## Items
@@ -650,8 +830,13 @@ impl StatCollector {
                     0.0
                 }
             },
+            snapshot.formatted_bytes_per_second(),
+            snapshot.success_ratio(),
+            snapshot.failure_ratio(),
+            snapshot.cache_hit_ratio(),
             snapshot.requests_enqueued,
             snapshot.requests_sent,
+            snapshot.pending_requests(),
             snapshot.requests_succeeded,
             snapshot.requests_failed,
             snapshot.requests_retried,
@@ -679,54 +864,7 @@ impl StatCollector {
     /// Exports current statistics to the text layout used for terminal output.
     pub fn to_live_report_string(&self) -> String {
         let snapshot = self.snapshot();
-        let status_string = if snapshot.response_status_counts.is_empty() {
-            "none".to_string()
-        } else {
-            snapshot
-                .response_status_counts
-                .iter()
-                .map(|(code, count)| format!("{}: {}", code, count))
-                .collect::<Vec<String>>()
-                .join(", ")
-        };
-
-        format!(
-            "Crawl Statistics\n\
-             ----------------\n\
-             duration : {}\n\
-             speed    : req/s: {:.2}, resp/s: {:.2}, item/s: {:.2}\n\
-             requests : enqueued: {}, sent: {}, ok: {}, fail: {}, retry: {}, drop: {}\n\
-             response : received: {}, from_cache: {}, downloaded: {}\n\
-             items    : scraped: {}, processed: {}, dropped: {}\n\
-             req time : avg: {}, fastest: {}, slowest: {}, total: {}\n\
-             parsing  : avg: {}, fastest: {}, slowest: {}, total: {}\n\
-             status   : {}",
-            snapshot.formatted_duration(),
-            snapshot.recent_requests_per_second,
-            snapshot.recent_responses_per_second,
-            snapshot.recent_items_per_second,
-            snapshot.requests_enqueued,
-            snapshot.requests_sent,
-            snapshot.requests_succeeded,
-            snapshot.requests_failed,
-            snapshot.requests_retried,
-            snapshot.requests_dropped,
-            snapshot.responses_received,
-            snapshot.responses_from_cache,
-            snapshot.formatted_bytes(),
-            snapshot.items_scraped,
-            snapshot.items_processed,
-            snapshot.items_dropped_by_pipeline,
-            snapshot.formatted_request_time(snapshot.average_request_time),
-            snapshot.formatted_request_time(snapshot.fastest_request_time),
-            snapshot.formatted_request_time(snapshot.slowest_request_time),
-            snapshot.request_time_count,
-            snapshot.formatted_request_time(snapshot.average_parsing_time),
-            snapshot.formatted_request_time(snapshot.fastest_parsing_time),
-            snapshot.formatted_request_time(snapshot.slowest_parsing_time),
-            snapshot.parsing_time_count,
-            status_string
-        )
+        format_plain_text_metrics(&snapshot)
     }
 }
 
@@ -808,5 +946,111 @@ mod tests {
         assert_eq!(stats.slowest_request_time(), None);
         assert_eq!(stats.parsing_time_count(), 0);
         assert_eq!(stats.average_parsing_time(), None);
+    }
+
+    #[test]
+    fn live_report_uses_shared_colon_layout_and_sorted_statuses() {
+        let stats = StatCollector::default();
+
+        stats
+            .requests_enqueued
+            .store(1050, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_sent
+            .store(1050, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_succeeded
+            .store(1050, std::sync::atomic::Ordering::Release);
+        stats
+            .responses_received
+            .store(1050, std::sync::atomic::Ordering::Release);
+        stats
+            .total_bytes_downloaded
+            .store(20_910_000, std::sync::atomic::Ordering::Release);
+        stats
+            .items_scraped
+            .store(1000, std::sync::atomic::Ordering::Release);
+        stats
+            .items_processed
+            .store(1000, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_scheduled_for_retry
+            .store(7, std::sync::atomic::Ordering::Release);
+        stats
+            .retry_delay_in_flight_ms
+            .store(1234, std::sync::atomic::Ordering::Release);
+        stats.response_status_counts.insert(500, 3);
+        stats.response_status_counts.insert(200, 1050);
+        stats.response_status_counts.insert(404, 2);
+
+        stats.record_request_time("https://example.com/1", Duration::from_millis(508));
+        stats.record_request_time("https://example.com/2", Duration::from_millis(274));
+        stats.record_request_time("https://example.com/3", Duration::from_millis(1_850));
+        stats.record_parsing_time(Duration::from_millis(4));
+        stats.record_parsing_time(Duration::from_millis(0));
+        stats.record_parsing_time(Duration::from_millis(27));
+
+        let report = stats.to_live_report_string();
+
+        assert!(report.contains("Crawl Statistics\n----------------\nduration :"));
+        assert!(report.contains("speed    : req/s "));
+        assert!(report.contains("requests : enqueued 1050, sent 1050, pending 0, ok 1050, fail 0"));
+        assert!(report.contains("retry    : retry 0, scheduled 7, drop 0"));
+        assert!(report.contains("ratios   : success 100.00%, failure 0.00%, cache hit 0.00%"));
+        assert!(report.contains("response : received 1050, cache 0, downloaded "));
+        assert!(report.contains("delay    : retry in flight 1234 ms"));
+        assert!(report.contains("req time : avg 877 ms, fastest 274 ms, slowest 1.85 s, total 3"));
+        assert!(report.contains("parsing  : avg 10 ms, fastest 0 ms, slowest 27 ms, total 3"));
+        assert!(report.ends_with("status   : 200: 1050, 404: 2, 500: 3"));
+    }
+
+    #[test]
+    fn display_wraps_live_report_with_blank_lines() {
+        let stats = StatCollector::default();
+        let display = format!("{stats}");
+
+        assert!(display.starts_with("\nCrawl Statistics\n"));
+        assert!(display.ends_with('\n'));
+    }
+
+    #[test]
+    fn markdown_report_includes_derived_metrics() {
+        let stats = StatCollector::default();
+        stats
+            .requests_enqueued
+            .store(10, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_sent
+            .store(8, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_succeeded
+            .store(6, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_failed
+            .store(2, std::sync::atomic::Ordering::Release);
+        stats
+            .requests_scheduled_for_retry
+            .store(3, std::sync::atomic::Ordering::Release);
+        stats
+            .retry_delay_in_flight_ms
+            .store(450, std::sync::atomic::Ordering::Release);
+        stats
+            .responses_received
+            .store(5, std::sync::atomic::Ordering::Release);
+        stats
+            .responses_from_cache
+            .store(2, std::sync::atomic::Ordering::Release);
+        stats
+            .total_bytes_downloaded
+            .store(2048, std::sync::atomic::Ordering::Release);
+
+        let report = stats.to_markdown_string();
+
+        assert!(report.contains("**Bytes Per Second**:"));
+        assert!(report.contains("**Request Ratios**: success 75.00%, failure 25.00%"));
+        assert!(report.contains("**Cache Hit Ratio**: 40.00%"));
+        assert!(report.contains("| Pending    | 2"));
+        assert!(report.contains("| Retry Scheduled | 3 |"));
+        assert!(report.contains("| Retry Delay In Flight | 450 ms |"));
     }
 }
