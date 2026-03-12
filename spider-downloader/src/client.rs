@@ -89,6 +89,8 @@ impl ReqwestClientDownloader {
     const PROXY_CLIENT_CACHE_MAX_CAPACITY: u64 = 512;
     const PROXY_CLIENT_CACHE_TTL_SECS: u64 = 30 * 60;
     const PROXY_META_KEY: &str = "proxy";
+    const DEFAULT_USER_AGENT: &'static str =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
     /// Creates a new `ReqwestClientDownloader` with a default timeout of 30 seconds.
     pub fn new() -> Self {
@@ -156,7 +158,8 @@ impl ReqwestClientDownloader {
             .pool_max_idle_per_host(pool_max_idle_per_host)
             .pool_idle_timeout(pool_idle_timeout)
             .tcp_keepalive(tcp_keepalive)
-            .connect_timeout(connect_timeout);
+            .connect_timeout(connect_timeout)
+            .user_agent(Self::DEFAULT_USER_AGENT);
 
         if let Some(proxy) = proxy {
             builder = builder.proxy(proxy);
@@ -330,6 +333,9 @@ mod tests {
         let raw_request = server.join().unwrap();
         assert!(raw_request.starts_with("POST /submit HTTP/1.1"));
         assert!(raw_request.contains("content-type: application/x-www-form-urlencoded"));
+        assert!(raw_request.contains(
+            "user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        ));
 
         let body = raw_request.split("\r\n\r\n").nth(1).unwrap_or_default();
         assert!(body.contains("alpha=one"));
