@@ -17,10 +17,10 @@ use log::{debug, error, info};
 use serde_json::Value;
 use spider_util::error::PipelineError;
 use spider_util::item::ScrapedItem;
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
 use std::marker::PhantomData;
 use std::path::Path;
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 const DEFAULT_BATCH_SIZE: usize = 100;
 
@@ -70,6 +70,7 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
                 .write(true)
                 .truncate(true)
                 .open(&path_buf)
+                .await
                 .map_err(|e| {
                     error!("Failed to create/open file {:?}: {}", path_buf, e);
                 })
@@ -80,7 +81,7 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
                 let mut items_buffer = Vec::with_capacity(batch_size);
                 let mut first_item = true;
 
-                if writer.write_all(b"[\n").is_err() {
+                if writer.write_all(b"[\n").await.is_err() {
                     error!("Failed to write opening bracket to file: {:?}", path_buf);
                 }
 
@@ -95,21 +96,29 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
                             items_buffer.push(value);
 
                             if items_buffer.len() >= batch_size {
-                                flush_items(&mut writer, &mut items_buffer, &mut first_item).ok();
+                                flush_items(&mut writer, &mut items_buffer, &mut first_item)
+                                    .await
+                                    .ok();
                             }
                         }
                         StreamJsonCommand::Shutdown(responder) => {
                             if !items_buffer.is_empty() {
-                                flush_items(&mut writer, &mut items_buffer, &mut first_item).ok();
+                                flush_items(&mut writer, &mut items_buffer, &mut first_item)
+                                    .await
+                                    .ok();
                             }
 
-                            let result = writer
-                                .flush()
-                                .and_then(|_| {
-                                    let file_ref = writer.get_mut();
-                                    file_ref.write_all(b"\n]")
-                                })
-                                .map_err(|e| PipelineError::IoError(e.to_string()));
+                            let result = async {
+                                writer
+                                    .write_all(b"\n]")
+                                    .await
+                                    .map_err(|e| PipelineError::IoError(e.to_string()))?;
+                                writer
+                                    .flush()
+                                    .await
+                                    .map_err(|e| PipelineError::IoError(e.to_string()))
+                            }
+                            .await;
 
                             if responder.send(result).await.is_err() {
                                 error!("Failed to send shutdown response.");
@@ -133,8 +142,8 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
     }
 }
 
-fn flush_items(
-    writer: &mut BufWriter<std::fs::File>,
+async fn flush_items(
+    writer: &mut BufWriter<tokio::fs::File>,
     items_buffer: &mut Vec<Value>,
     first_item: &mut bool,
 ) -> Result<(), PipelineError> {
@@ -152,16 +161,20 @@ fn flush_items(
         if !prefix.is_empty() {
             writer
                 .write_all(prefix.as_bytes())
+                .await
                 .map_err(|e| PipelineError::IoError(e.to_string()))?;
         }
         writer
             .write_all(b"  ")
+            .await
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
         writer
             .write_all(item_str.as_bytes())
+            .await
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
         writer
             .write_all(b"\n")
+            .await
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
     }
 
