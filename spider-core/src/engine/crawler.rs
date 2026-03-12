@@ -266,9 +266,15 @@ where
             }
         }
 
-        tokio::select! {
+        let interrupted = tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, initiating graceful shutdown.");
+                if let Err(e) = scheduler.shutdown().await {
+                    error!("Error during scheduler shutdown: {}", e);
+                } else {
+                    debug!("Scheduler shutdown initiated successfully");
+                }
+                true
             }
             _ = async {
                 loop {
@@ -282,6 +288,7 @@ where
                 }
             } => {
                 info!("Crawl has become idle, initiating shutdown.");
+                false
             }
         };
 
@@ -289,46 +296,61 @@ where
         drop(res_tx);
         drop(item_tx);
 
-        if let Err(e) = scheduler.shutdown().await {
-            error!("Error during scheduler shutdown: {}", e);
-        } else {
-            debug!("Scheduler shutdown initiated successfully");
+        if !interrupted {
+            if let Err(e) = scheduler.shutdown().await {
+                error!("Error during scheduler shutdown: {}", e);
+            } else {
+                debug!("Scheduler shutdown initiated successfully");
+            }
         }
-
-        let timeout_duration = Duration::from_secs(30);
 
         let mut tasks = tokio::task::JoinSet::new();
         tasks.spawn(processor_handle);
         tasks.spawn(parser_handle);
         tasks.spawn(downloader_handle);
         tasks.spawn(init_task);
+        let mut results = Vec::new();
+        let mut remaining_tasks = 4usize;
 
-        let results = tokio::time::timeout(timeout_duration, async {
-            let mut results = Vec::new();
+        if interrupted {
+            let grace_period = config.shutdown_grace_period;
+            let shutdown_deadline = tokio::time::sleep(grace_period);
+            tokio::pin!(shutdown_deadline);
+
+            while remaining_tasks > 0 {
+                tokio::select! {
+                    result = tasks.join_next() => {
+                        match result {
+                            Some(result) => {
+                                results.push(result);
+                                remaining_tasks = remaining_tasks.saturating_sub(1);
+                            }
+                            None => break,
+                        }
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        warn!("Second Ctrl-C received, aborting remaining tasks immediately.");
+                        tasks.abort_all();
+                        tokio::time::sleep(Duration::from_millis(25)).await;
+                        break;
+                    }
+                    _ = &mut shutdown_deadline => {
+                        warn!(
+                            "Tasks did not complete within shutdown grace period ({}s), aborting remaining tasks and continuing with shutdown...",
+                            grace_period.as_secs()
+                        );
+                        tasks.abort_all();
+                        tokio::time::sleep(Duration::from_millis(25)).await;
+                        break;
+                    }
+                }
+            }
+        } else {
             while let Some(result) = tasks.join_next().await {
                 results.push(result);
             }
-            results
-        })
-        .await;
-
-        let results = match results {
-            Ok(results) => {
-                trace!("All tasks completed during shutdown");
-                results
-            }
-            Err(_) => {
-                warn!(
-                    "Tasks did not complete within timeout ({}s), aborting remaining tasks and continuing with shutdown...",
-                    timeout_duration.as_secs()
-                );
-                tasks.abort_all();
-
-                tokio::time::sleep(Duration::from_millis(25)).await;
-
-                Vec::new()
-            }
-        };
+            trace!("All tasks completed during shutdown");
+        }
 
         for result in results {
             if let Err(e) = result {

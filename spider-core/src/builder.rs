@@ -268,6 +268,12 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
+    /// Sets the maximum grace period for crawler shutdown before forcing task abort.
+    pub fn shutdown_grace_period(mut self, grace_period: Duration) -> Self {
+        self.config.shutdown_grace_period = grace_period;
+        self
+    }
+
     /// Sets a custom downloader implementation.
     ///
     /// Use this method to provide a custom [`Downloader`] implementation
@@ -603,5 +609,61 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         builder.filter_module("spider_macro", level);
 
         builder.init();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CrawlerBuilder;
+    use crate::Spider;
+    use async_trait::async_trait;
+    use serde_json::Value;
+    use spider_util::error::SpiderError;
+    use spider_util::item::{ParseOutput, ScrapedItem};
+    use spider_util::response::Response;
+    use std::any::Any;
+    use std::time::Duration;
+
+    struct TestSpider;
+    #[derive(Debug, Clone)]
+    struct TestItem;
+
+    impl ScrapedItem for TestItem {
+        fn as_any(&self) -> &dyn Any {
+            self
+        }
+
+        fn box_clone(&self) -> Box<dyn ScrapedItem + Send + Sync> {
+            Box::new(self.clone())
+        }
+
+        fn to_json_value(&self) -> Value {
+            Value::Null
+        }
+    }
+
+    #[async_trait]
+    impl Spider for TestSpider {
+        type Item = TestItem;
+        type State = ();
+
+        fn start_requests(&self) -> Result<crate::StartRequests<'_>, SpiderError> {
+            Ok(crate::StartRequests::Iter(Box::new(std::iter::empty())))
+        }
+
+        async fn parse(
+            &self,
+            _response: Response,
+            _state: &Self::State,
+        ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+            Ok(ParseOutput::new())
+        }
+    }
+
+    #[test]
+    fn shutdown_grace_period_builder_sets_config_value() {
+        let builder = CrawlerBuilder::new(TestSpider).shutdown_grace_period(Duration::from_secs(2));
+
+        assert_eq!(builder.config.shutdown_grace_period, Duration::from_secs(2));
     }
 }

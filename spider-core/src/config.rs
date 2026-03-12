@@ -65,6 +65,8 @@ pub struct CrawlerConfig {
     pub live_stats: bool,
     /// Refresh interval for live statistics output.
     pub live_stats_interval: Duration,
+    /// Maximum time to wait for a graceful shutdown before forcing task abort.
+    pub shutdown_grace_period: Duration,
 }
 
 impl Default for CrawlerConfig {
@@ -82,6 +84,7 @@ impl Default for CrawlerConfig {
             retry_release_permit: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
+            shutdown_grace_period: Duration::from_secs(5),
         }
     }
 }
@@ -158,6 +161,12 @@ impl CrawlerConfig {
         self
     }
 
+    /// Sets the maximum grace period for crawler shutdown.
+    pub fn with_shutdown_grace_period(mut self, grace_period: Duration) -> Self {
+        self.shutdown_grace_period = grace_period;
+        self
+    }
+
     /// Validates the configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.max_concurrent_downloads == 0 {
@@ -183,6 +192,9 @@ impl CrawlerConfig {
         }
         if self.live_stats_interval.is_zero() {
             return Err("live_stats_interval must be greater than 0".to_string());
+        }
+        if self.shutdown_grace_period.is_zero() {
+            return Err("shutdown_grace_period must be greater than 0".to_string());
         }
         Ok(())
     }
@@ -260,6 +272,29 @@ impl CheckpointConfigBuilder {
             path: self.path,
             interval: self.interval,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CrawlerConfig;
+    use std::time::Duration;
+
+    #[test]
+    fn default_shutdown_grace_period_is_five_seconds() {
+        let config = CrawlerConfig::default();
+
+        assert_eq!(config.shutdown_grace_period, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn shutdown_grace_period_must_be_non_zero() {
+        let config = CrawlerConfig::default().with_shutdown_grace_period(Duration::ZERO);
+
+        assert_eq!(
+            config.validate(),
+            Err("shutdown_grace_period must be greater than 0".to_string())
+        );
     }
 }
 
