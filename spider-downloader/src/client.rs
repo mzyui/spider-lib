@@ -11,7 +11,7 @@
 
 use crate::Downloader;
 use async_trait::async_trait;
-use log::{debug, warn};
+use log::{Level, debug, log_enabled, warn};
 use moka::sync::Cache;
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
@@ -37,33 +37,36 @@ impl Downloader for ReqwestClientDownloader {
     }
 
     async fn download(&self, request: Request) -> Result<Response, SpiderError> {
-        debug!(
-            "Downloading {} (fingerprint: {})",
-            request.url,
-            request.fingerprint()
-        );
+        if log_enabled!(Level::Debug) {
+            debug!(
+                "Downloading {} (fingerprint: {})",
+                request.url,
+                request.fingerprint()
+            );
+        }
 
-        let url = request.url.clone();
-        let body = request.body.clone();
         let client_to_use = self.select_client_for_request(&request);
+        let mut request = request;
+        let meta = request.take_meta();
+        let Request {
+            url: request_url,
+            method,
+            headers,
+            body,
+            ..
+        } = request;
 
-        let mut req_builder = client_to_use.request(request.method.clone(), url.clone());
+        let mut req_builder = client_to_use.request(method, request_url.clone());
 
         if let Some(body_content) = body {
             req_builder = match body_content {
                 Body::Json(json_val) => req_builder.json(&json_val),
-                Body::Form(form_val) => {
-                    let mut form_map = std::collections::HashMap::new();
-                    for entry in form_val.iter() {
-                        form_map.insert(entry.key().clone(), entry.value().clone());
-                    }
-                    req_builder.form(&form_map)
-                }
+                Body::Form(form_val) => req_builder.form(&Self::form_pairs(&form_val)),
                 Body::Bytes(bytes_val) => req_builder.body(bytes_val),
             };
         }
 
-        let res = req_builder.headers(request.headers.clone()).send().await?;
+        let res = req_builder.headers(headers).send().await?;
 
         let response_url = res.url().clone();
         let status = res.status();
@@ -75,8 +78,8 @@ impl Downloader for ReqwestClientDownloader {
             status,
             headers: response_headers,
             body: response_body,
-            request_url: url,
-            meta: request.meta_inner().clone(),
+            request_url,
+            meta,
             cached: false,
         })
     }
@@ -105,17 +108,17 @@ impl ReqwestClientDownloader {
 
     /// Tries to create a new `ReqwestClientDownloader` with a specified request timeout.
     pub fn try_new_with_timeout(timeout: Duration) -> Result<Self, SpiderError> {
-        let base_client = Client::builder()
-            .timeout(timeout)
-            .pool_max_idle_per_host(200)
-            .pool_idle_timeout(Duration::from_secs(120))
-            .tcp_keepalive(Duration::from_secs(60))
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .map_err(|e| SpiderError::ReqwestError(e.into()))?;
+        let base_client = Self::build_client(
+            timeout,
+            None,
+            200,
+            Duration::from_secs(120),
+            Duration::from_secs(60),
+            Duration::from_secs(10),
+        )?;
 
         Ok(ReqwestClientDownloader {
-            client: base_client.clone(),
+            client: base_client,
             timeout,
             proxy_clients: Cache::builder()
                 .max_capacity(Self::PROXY_CLIENT_CACHE_MAX_CAPACITY)
@@ -130,6 +133,38 @@ impl ReqwestClientDownloader {
                 .get(Self::PROXY_META_KEY)
                 .and_then(|proxy_val| proxy_val.as_str().map(str::to_owned))
         })
+    }
+
+    fn form_pairs(form: &dashmap::DashMap<String, String>) -> Vec<(String, String)> {
+        let mut pairs = Vec::with_capacity(form.len());
+        for entry in form.iter() {
+            pairs.push((entry.key().clone(), entry.value().clone()));
+        }
+        pairs
+    }
+
+    fn build_client(
+        timeout: Duration,
+        proxy: Option<Proxy>,
+        pool_max_idle_per_host: usize,
+        pool_idle_timeout: Duration,
+        tcp_keepalive: Duration,
+        connect_timeout: Duration,
+    ) -> Result<Client, SpiderError> {
+        let mut builder = Client::builder()
+            .timeout(timeout)
+            .pool_max_idle_per_host(pool_max_idle_per_host)
+            .pool_idle_timeout(pool_idle_timeout)
+            .tcp_keepalive(tcp_keepalive)
+            .connect_timeout(connect_timeout);
+
+        if let Some(proxy) = proxy {
+            builder = builder.proxy(proxy);
+        }
+
+        builder
+            .build()
+            .map_err(|err| SpiderError::ReqwestError(err.into()))
     }
 
     fn select_client_for_request(&self, request: &Request) -> Client {
@@ -159,15 +194,14 @@ impl ReqwestClientDownloader {
             }
         };
 
-        let proxy_client = match Client::builder()
-            .timeout(self.timeout)
-            .pool_max_idle_per_host(50)
-            .pool_idle_timeout(Duration::from_secs(90))
-            .tcp_keepalive(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(5))
-            .proxy(proxy)
-            .build()
-        {
+        let proxy_client = match Self::build_client(
+            self.timeout,
+            Some(proxy),
+            50,
+            Duration::from_secs(90),
+            Duration::from_secs(30),
+            Duration::from_secs(5),
+        ) {
             Ok(client) => client,
             Err(err) => {
                 warn!(
@@ -215,5 +249,104 @@ impl ReqwestClientDownloader {
 impl Default for ReqwestClientDownloader {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ReqwestClientDownloader;
+    use crate::Downloader;
+    use dashmap::DashMap;
+    use spider_util::request::Request;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+    use url::Url;
+
+    #[test]
+    fn extracts_proxy_from_request_metadata() {
+        let request = Request::new(Url::parse("https://example.com").unwrap())
+            .with_meta("proxy", serde_json::json!("http://127.0.0.1:8080"));
+
+        assert_eq!(
+            ReqwestClientDownloader::proxy_from_request(&request).as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+    }
+
+    #[test]
+    fn reuses_cached_proxy_clients() {
+        let downloader = ReqwestClientDownloader::new_with_timeout(Duration::from_secs(5));
+        let proxy_url = "http://127.0.0.1:8080";
+
+        assert!(downloader.get_or_create_proxy_client(proxy_url).is_some());
+        assert!(downloader.get_or_create_proxy_client(proxy_url).is_some());
+        assert!(downloader.proxy_clients.get(proxy_url).is_some());
+    }
+
+    #[test]
+    fn invalid_proxy_urls_fall_back_without_caching() {
+        let downloader = ReqwestClientDownloader::new_with_timeout(Duration::from_secs(5));
+
+        assert!(
+            downloader
+                .get_or_create_proxy_client("::invalid::")
+                .is_none()
+        );
+        assert_eq!(downloader.proxy_clients.entry_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn form_requests_preserve_expected_payload_shape() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let server = thread::spawn(move || -> String {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buffer = [0_u8; 4096];
+            let bytes_read = stream.read(&mut buffer).unwrap();
+            let request_text = String::from_utf8_lossy(&buffer[..bytes_read]).into_owned();
+
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK")
+                .unwrap();
+
+            request_text
+        });
+
+        let form = DashMap::from_iter([
+            ("alpha".to_string(), "one".to_string()),
+            ("beta".to_string(), "two words".to_string()),
+        ]);
+
+        let downloader = ReqwestClientDownloader::new_with_timeout(Duration::from_secs(5));
+        let request =
+            Request::new(Url::parse(&format!("http://{addr}/submit")).unwrap()).with_form(form);
+
+        let response = downloader.download(request).await.unwrap();
+        assert_eq!(response.status.as_u16(), 200);
+
+        let raw_request = server.join().unwrap();
+        assert!(raw_request.starts_with("POST /submit HTTP/1.1"));
+        assert!(raw_request.contains("content-type: application/x-www-form-urlencoded"));
+
+        let body = raw_request.split("\r\n\r\n").nth(1).unwrap_or_default();
+        assert!(body.contains("alpha=one"));
+        assert!(body.contains("beta=two+words"));
+    }
+
+    #[test]
+    fn form_pairs_collect_all_entries() {
+        let form = DashMap::from_iter([
+            ("alpha".to_string(), "one".to_string()),
+            ("beta".to_string(), "two".to_string()),
+        ]);
+
+        let pairs = ReqwestClientDownloader::form_pairs(&form);
+
+        assert_eq!(pairs.len(), 2);
+        assert!(pairs.contains(&("alpha".to_string(), "one".to_string())));
+        assert!(pairs.contains(&("beta".to_string(), "two".to_string())));
     }
 }
