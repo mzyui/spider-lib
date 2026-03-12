@@ -147,33 +147,25 @@ async fn flush_items(
     items_buffer: &mut Vec<Value>,
     first_item: &mut bool,
 ) -> Result<(), PipelineError> {
-    for (i, item) in items_buffer.drain(..).enumerate() {
-        let prefix = if *first_item && i == 0 {
-            *first_item = false;
-            ""
-        } else {
-            ","
-        };
-
+    for item in items_buffer.drain(..) {
         let item_str = serde_json::to_string(&item)
             .map_err(|e| PipelineError::SerializationError(e.to_string()))?;
 
-        if !prefix.is_empty() {
+        if *first_item {
+            *first_item = false;
+        } else {
             writer
-                .write_all(prefix.as_bytes())
+                .write_all(b",\n")
                 .await
                 .map_err(|e| PipelineError::IoError(e.to_string()))?;
         }
+
         writer
             .write_all(b"  ")
             .await
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
         writer
             .write_all(item_str.as_bytes())
-            .await
-            .map_err(|e| PipelineError::IoError(e.to_string()))?;
-        writer
-            .write_all(b"\n")
             .await
             .map_err(|e| PipelineError::IoError(e.to_string()))?;
     }
