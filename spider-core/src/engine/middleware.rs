@@ -8,7 +8,6 @@ use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 /// A manager for middlewares that provides efficient concurrent access.
 pub struct MiddlewareManager<C> {
@@ -23,13 +22,13 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 
     /// Processes a request through all registered middlewares.
     pub async fn process_request(
-        &mut self,
+        &self,
         client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
         let mut current_request = request;
 
-        for middleware in self.middlewares.iter_mut() {
+        for middleware in &self.middlewares {
             match middleware.process_request(client, current_request).await {
                 Ok(MiddlewareAction::Continue(req)) => {
                     current_request = req;
@@ -44,13 +43,13 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 
     /// Processes a response through all registered middlewares in reverse order.
     pub async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         let mut current_response = response;
 
         // Process in reverse order to match the request processing chain
-        for middleware in self.middlewares.iter_mut().rev() {
+        for middleware in self.middlewares.iter().rev() {
             match middleware.process_response(current_response).await {
                 Ok(MiddlewareAction::Continue(res)) => {
                     current_response = res;
@@ -65,13 +64,13 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 
     /// Processes an error through all registered middlewares in reverse order.
     pub async fn handle_error(
-        &mut self,
+        &self,
         request: &Request,
         error: &SpiderError,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
         let mut current_error = error.clone();
 
-        for middleware in self.middlewares.iter_mut().rev() {
+        for middleware in self.middlewares.iter().rev() {
             match middleware.handle_error(request, &current_error).await {
                 Ok(action) => return Ok(action),
                 Err(next_error) => current_error = next_error,
@@ -83,18 +82,19 @@ impl<C: Send + Sync + 'static> MiddlewareManager<C> {
 }
 
 /// A shared middleware manager that can be safely accessed concurrently.
-/// Uses Mutex because all operations require mutable access (write-heavy workload).
+/// Middleware state is expected to use interior mutability when needed, so the
+/// request path stays fully concurrent.
 pub struct SharedMiddlewareManager<C> {
-    manager: Arc<Mutex<MiddlewareManager<C>>>,
+    manager: Arc<MiddlewareManager<C>>,
     has_middlewares: bool,
 }
 
-impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
+impl<C: Send + Sync + 'static> SharedMiddlewareManager<C> {
     /// Creates a new `SharedMiddlewareManager` with the given middlewares.
     pub fn new(middlewares: Vec<Box<dyn Middleware<C> + Send + Sync>>) -> Self {
         let has_middlewares = !middlewares.is_empty();
         Self {
-            manager: Arc::new(Mutex::new(MiddlewareManager::new(middlewares))),
+            manager: Arc::new(MiddlewareManager::new(middlewares)),
             has_middlewares,
         }
     }
@@ -108,11 +108,7 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
         if !self.has_middlewares {
             return Ok(MiddlewareAction::Continue(request));
         }
-        self.manager
-            .lock()
-            .await
-            .process_request(client, request)
-            .await
+        self.manager.process_request(client, request).await
     }
 
     /// Processes a response through all registered middlewares in reverse order.
@@ -123,7 +119,7 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
         if !self.has_middlewares {
             return Ok(MiddlewareAction::Continue(response));
         }
-        self.manager.lock().await.process_response(response).await
+        self.manager.process_response(response).await
     }
 
     /// Processes a downloader error through all registered middlewares in reverse order.
@@ -135,15 +131,80 @@ impl<C: Send + Sync + Clone + 'static> SharedMiddlewareManager<C> {
         if !self.has_middlewares {
             return Err(error.clone());
         }
-        self.manager.lock().await.handle_error(request, error).await
+        self.manager.handle_error(request, error).await
     }
 }
 
-impl<C: Send + Sync + Clone + 'static> Clone for SharedMiddlewareManager<C> {
+impl<C: Send + Sync + 'static> Clone for SharedMiddlewareManager<C> {
     fn clone(&self) -> Self {
         Self {
             manager: Arc::clone(&self.manager),
             has_middlewares: self.has_middlewares,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SharedMiddlewareManager;
+    use async_trait::async_trait;
+    use spider_middleware::middleware::{Middleware, MiddlewareAction};
+    use spider_util::{error::SpiderError, request::Request};
+    use std::{sync::Arc, time::Duration};
+    use tokio::sync::Barrier;
+    use tokio::time::Instant;
+    use url::Url;
+
+    struct ConcurrentProbeMiddleware {
+        barrier: Arc<Barrier>,
+        delay: Duration,
+    }
+
+    #[async_trait]
+    impl Middleware<()> for ConcurrentProbeMiddleware {
+        fn name(&self) -> &str {
+            "ConcurrentProbeMiddleware"
+        }
+
+        async fn process_request(
+            &self,
+            _client: &(),
+            request: Request,
+        ) -> Result<MiddlewareAction<Request>, SpiderError> {
+            self.barrier.wait().await;
+            tokio::time::sleep(self.delay).await;
+            Ok(MiddlewareAction::Continue(request))
+        }
+    }
+
+    #[tokio::test]
+    async fn shared_manager_does_not_serialize_concurrent_requests() {
+        let request_count = 4;
+        let barrier = Arc::new(Barrier::new(request_count));
+        let manager = SharedMiddlewareManager::new(vec![Box::new(ConcurrentProbeMiddleware {
+            barrier,
+            delay: Duration::from_millis(40),
+        })]);
+
+        let start = Instant::now();
+        let mut tasks = Vec::new();
+        for idx in 0..request_count {
+            let manager = manager.clone();
+            tasks.push(tokio::spawn(async move {
+                let request =
+                    Request::new(Url::parse(&format!("https://example.com/{idx}")).unwrap());
+                manager.process_request(&(), request).await.unwrap()
+            }));
+        }
+
+        for task in tasks {
+            task.await.unwrap();
+        }
+
+        assert!(
+            start.elapsed() < Duration::from_millis(120),
+            "middleware processing was serialized: {:?}",
+            start.elapsed()
+        );
     }
 }

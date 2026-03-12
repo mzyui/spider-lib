@@ -47,7 +47,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -180,6 +180,22 @@ pub struct StatCollector {
     pub request_times: Cache<String, Duration>,
     #[serde(skip)]
     pub parsing_times: Cache<String, Duration>,
+    #[serde(skip)]
+    request_time_total_nanos: AtomicU64,
+    #[serde(skip)]
+    request_time_fastest_nanos: AtomicU64,
+    #[serde(skip)]
+    request_time_slowest_nanos: AtomicU64,
+    #[serde(skip)]
+    request_time_count_total: AtomicUsize,
+    #[serde(skip)]
+    parsing_time_total_nanos: AtomicU64,
+    #[serde(skip)]
+    parsing_time_fastest_nanos: AtomicU64,
+    #[serde(skip)]
+    parsing_time_slowest_nanos: AtomicU64,
+    #[serde(skip)]
+    parsing_time_count_total: AtomicUsize,
 
     // Exponential moving average metrics for accurate speed calculations
     #[serde(skip)]
@@ -229,6 +245,14 @@ impl StatCollector {
                 .max_capacity(1_000)
                 .time_to_idle(Duration::from_secs(60)) // 1 minute TTL
                 .build(),
+            request_time_total_nanos: AtomicU64::new(0),
+            request_time_fastest_nanos: AtomicU64::new(u64::MAX),
+            request_time_slowest_nanos: AtomicU64::new(0),
+            request_time_count_total: AtomicUsize::new(0),
+            parsing_time_total_nanos: AtomicU64::new(0),
+            parsing_time_fastest_nanos: AtomicU64::new(u64::MAX),
+            parsing_time_slowest_nanos: AtomicU64::new(0),
+            parsing_time_count_total: AtomicUsize::new(0),
             // Initialize exponential moving averages for recent speed calculations (alpha = 0.2 for good balance)
             requests_sent_ema: ExpMovingAverage::new(0.2),
             responses_received_ema: ExpMovingAverage::new(0.2),
@@ -359,37 +383,43 @@ impl StatCollector {
     /// Records the time taken for a request.
     pub fn record_request_time(&self, url: &str, duration: Duration) {
         self.request_times.insert(url.to_string(), duration);
+        let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.request_time_total_nanos
+            .fetch_add(nanos, Ordering::AcqRel);
+        self.request_time_count_total.fetch_add(1, Ordering::AcqRel);
+        update_min(&self.request_time_fastest_nanos, nanos);
+        update_max(&self.request_time_slowest_nanos, nanos);
     }
 
     /// Calculates the average request time across all recorded requests.
     pub fn average_request_time(&self) -> Option<Duration> {
-        let times: Vec<Duration> = self
-            .request_times
-            .iter()
-            .map(|(_key, value)| value)
-            .collect();
-        if times.is_empty() {
-            None
-        } else {
-            let total_nanos: u128 = times.iter().map(|d| d.as_nanos()).sum();
-            let avg_nanos = total_nanos / times.len() as u128;
-            Some(Duration::from_nanos(avg_nanos as u64))
-        }
+        average_duration(
+            &self.request_time_total_nanos,
+            self.request_time_count_total.load(Ordering::Acquire),
+        )
     }
 
     /// Gets the fastest request time among all recorded requests.
     pub fn fastest_request_time(&self) -> Option<Duration> {
-        self.request_times.iter().map(|(_key, value)| value).min()
+        duration_from_extreme(
+            &self.request_time_fastest_nanos,
+            self.request_time_count_total.load(Ordering::Acquire),
+            true,
+        )
     }
 
     /// Gets the slowest request time among all recorded requests.
     pub fn slowest_request_time(&self) -> Option<Duration> {
-        self.request_times.iter().map(|(_key, value)| value).max()
+        duration_from_extreme(
+            &self.request_time_slowest_nanos,
+            self.request_time_count_total.load(Ordering::Acquire),
+            false,
+        )
     }
 
     /// Gets the total number of recorded request times.
     pub fn request_time_count(&self) -> usize {
-        self.request_times.entry_count() as usize
+        self.request_time_count_total.load(Ordering::Acquire)
     }
 
     /// Gets the request time for a specific URL.
@@ -415,47 +445,63 @@ impl StatCollector {
             }
         );
         self.parsing_times.insert(id, duration);
+        let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
+        self.parsing_time_total_nanos
+            .fetch_add(nanos, Ordering::AcqRel);
+        self.parsing_time_count_total.fetch_add(1, Ordering::AcqRel);
+        update_min(&self.parsing_time_fastest_nanos, nanos);
+        update_max(&self.parsing_time_slowest_nanos, nanos);
     }
 
     /// Calculates the average parsing time across all recorded parses.
     pub fn average_parsing_time(&self) -> Option<Duration> {
-        let times: Vec<Duration> = self
-            .parsing_times
-            .iter()
-            .map(|(_key, value)| value)
-            .collect();
-        if times.is_empty() {
-            None
-        } else {
-            let total_nanos: u128 = times.iter().map(|d| d.as_nanos()).sum();
-            let avg_nanos = total_nanos / times.len() as u128;
-            Some(Duration::from_nanos(avg_nanos as u64))
-        }
+        average_duration(
+            &self.parsing_time_total_nanos,
+            self.parsing_time_count_total.load(Ordering::Acquire),
+        )
     }
 
     /// Gets the fastest parsing time among all recorded parses.
     pub fn fastest_parsing_time(&self) -> Option<Duration> {
-        self.parsing_times.iter().map(|(_key, value)| value).min()
+        duration_from_extreme(
+            &self.parsing_time_fastest_nanos,
+            self.parsing_time_count_total.load(Ordering::Acquire),
+            true,
+        )
     }
 
     /// Gets the slowest parsing time among all recorded parses.
     pub fn slowest_parsing_time(&self) -> Option<Duration> {
-        self.parsing_times.iter().map(|(_key, value)| value).max()
+        duration_from_extreme(
+            &self.parsing_time_slowest_nanos,
+            self.parsing_time_count_total.load(Ordering::Acquire),
+            false,
+        )
     }
 
     /// Gets the total number of recorded parsing times.
     pub fn parsing_time_count(&self) -> usize {
-        self.parsing_times.entry_count() as usize
+        self.parsing_time_count_total.load(Ordering::Acquire)
     }
 
     /// Clears all recorded request times.
     pub fn clear_request_times(&self) {
         self.request_times.invalidate_all();
+        self.request_time_total_nanos.store(0, Ordering::Release);
+        self.request_time_fastest_nanos
+            .store(u64::MAX, Ordering::Release);
+        self.request_time_slowest_nanos.store(0, Ordering::Release);
+        self.request_time_count_total.store(0, Ordering::Release);
     }
 
     /// Clears all recorded parsing times.
     pub fn clear_parsing_times(&self) {
         self.parsing_times.invalidate_all();
+        self.parsing_time_total_nanos.store(0, Ordering::Release);
+        self.parsing_time_fastest_nanos
+            .store(u64::MAX, Ordering::Release);
+        self.parsing_time_slowest_nanos.store(0, Ordering::Release);
+        self.parsing_time_count_total.store(0, Ordering::Release);
     }
 
     /// Converts the snapshot into a JSON string.
@@ -650,5 +696,74 @@ impl Default for StatCollector {
 impl std::fmt::Display for StatCollector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\n{}\n", self.to_live_report_string())
+    }
+}
+
+fn average_duration(total_nanos: &AtomicU64, count: usize) -> Option<Duration> {
+    if count == 0 {
+        return None;
+    }
+
+    Some(Duration::from_nanos(
+        total_nanos.load(Ordering::Acquire) / count as u64,
+    ))
+}
+
+fn duration_from_extreme(extreme: &AtomicU64, count: usize, is_min: bool) -> Option<Duration> {
+    if count == 0 {
+        return None;
+    }
+
+    let nanos = extreme.load(Ordering::Acquire);
+    if is_min && nanos == u64::MAX {
+        None
+    } else {
+        Some(Duration::from_nanos(nanos))
+    }
+}
+
+fn update_min(target: &AtomicU64, candidate: u64) {
+    let mut current = target.load(Ordering::Acquire);
+    while candidate < current {
+        match target.compare_exchange_weak(current, candidate, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => break,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
+fn update_max(target: &AtomicU64, candidate: u64) {
+    let mut current = target.load(Ordering::Acquire);
+    while candidate > current {
+        match target.compare_exchange_weak(current, candidate, Ordering::AcqRel, Ordering::Acquire)
+        {
+            Ok(_) => break,
+            Err(actual) => current = actual,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StatCollector;
+    use std::time::Duration;
+
+    #[test]
+    fn clearing_timing_caches_resets_aggregates() {
+        let stats = StatCollector::default();
+        stats.record_request_time("https://example.com/1", Duration::from_millis(10));
+        stats.record_request_time("https://example.com/2", Duration::from_millis(20));
+        stats.record_parsing_time(Duration::from_millis(5));
+
+        stats.clear_request_times();
+        stats.clear_parsing_times();
+
+        assert_eq!(stats.request_time_count(), 0);
+        assert_eq!(stats.average_request_time(), None);
+        assert_eq!(stats.fastest_request_time(), None);
+        assert_eq!(stats.slowest_request_time(), None);
+        assert_eq!(stats.parsing_time_count(), 0);
+        assert_eq!(stats.average_parsing_time(), None);
     }
 }

@@ -269,12 +269,12 @@ where
             _ = async {
                 loop {
                     if scheduler.is_idle() && state.is_idle() {
-                        tokio::time::sleep(Duration::from_millis(50)).await;
+                        tokio::time::sleep(Duration::from_millis(25)).await;
                         if scheduler.is_idle() && state.is_idle() {
                             break;
                         }
                     }
-                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    tokio::time::sleep(Duration::from_millis(25)).await;
                 }
             } => {
                 info!("Crawl has become idle, initiating shutdown.");
@@ -320,7 +320,7 @@ where
                 );
                 tasks.abort_all();
 
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(25)).await;
 
                 Vec::new()
             }
@@ -405,7 +405,7 @@ where
 {
     tokio::spawn(async move {
         match ctx.spider.start_requests() {
-            Ok(source) => match source.into_stream() {
+            Ok(source) => match source.into_iter() {
                 Ok(requests) => {
                     for req_res in requests {
                         let mut req = match req_res {

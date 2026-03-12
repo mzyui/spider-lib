@@ -24,7 +24,7 @@
 //!     type State = ();
 //!     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
 //!         let req = spider_util::request::Request::new("https://example.com".parse()?);
-//!         Ok(spider_core::spider::StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
+//!         Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
 //!     }
 //!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
 //!         let _ = (response, state);
@@ -66,7 +66,7 @@ pub use spider_macro::scraped_item;
 
 pub use async_trait::async_trait;
 pub use dashmap::DashMap;
-pub use spider::{Spider, StartRequestStream, StartRequests};
+pub use spider::{Spider, StartRequestIter, StartRequests};
 pub use state::{
     ConcurrentMap, ConcurrentVec, Counter, Counter64, Flag, StateAccessMetrics, VisitedUrls,
 };

@@ -32,7 +32,7 @@
 //! use spider_util::request::Request;
 //! use url::Url;
 //!
-//! let (scheduler, request_receiver) = Scheduler::new(None);
+//! let (scheduler, request_receiver) = Scheduler::new(None, 32);
 //!
 //! // Enqueue a request
 //! let request = Request::new(Url::parse("https://example.com").unwrap());
@@ -66,6 +66,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 enum SchedulerMessage {
     /// Enqueue a new request for processing.
     Enqueue(Arc<Request>),
+    /// Re-enqueue a request without changing the pending counter.
+    Requeue(Arc<Request>),
     /// Mark a URL fingerprint as visited.
     MarkAsVisited(String),
     /// Mark multiple URL fingerprints as visited in a batch.
@@ -111,6 +113,8 @@ pub struct Scheduler {
     buffer: Arc<Mutex<HashSet<String>>>,
     /// Notifier for triggering buffer flushes.
     notify: Arc<Notify>,
+    /// Notifier for waking tasks blocked on scheduler capacity.
+    capacity_notify: Arc<Notify>,
     /// Sender for internal scheduler messages.
     tx: AsyncSender<SchedulerMessage>,
     /// Count of pending requests (queued + in-flight).
@@ -150,13 +154,15 @@ impl Scheduler {
     ///
     /// ```rust,ignore
     /// # use spider_core::Scheduler;
-    /// let (scheduler, request_rx) = Scheduler::new(None);
+    /// let (scheduler, request_rx) = Scheduler::new(None, 32);
     /// ```
     pub fn new(
         #[cfg(feature = "checkpoint")] initial_state: Option<SchedulerCheckpoint>,
         #[cfg(not(feature = "checkpoint"))] _initial_state: Option<()>,
+        max_pending_requests: usize,
     ) -> (Arc<Self>, AsyncReceiver<Request>) {
-        let (tx, rx_internal) = bounded_async(MAX_PENDING_REQUESTS * 2);
+        let max_pending = max_pending_requests.max(1).min(MAX_PENDING_REQUESTS);
+        let (tx, rx_internal) = bounded_async(max_pending.saturating_mul(2).max(1));
         let (tx_out, rx_out) = bounded_async(100);
 
         let queue: SegQueue<Request>;
@@ -217,6 +223,7 @@ impl Scheduler {
 
         let buffer = Arc::new(Mutex::new(HashSet::new()));
         let notify = Arc::new(Notify::new());
+        let capacity_notify = Arc::new(Notify::new());
 
         let scheduler = Arc::new(Scheduler {
             queue,
@@ -227,11 +234,12 @@ impl Scheduler {
             ))),
             buffer: buffer.clone(),
             notify: notify.clone(),
+            capacity_notify: Arc::clone(&capacity_notify),
             tx,
             pending,
             salvaged,
             is_shutting_down: AtomicBool::new(false),
-            max_pending: MAX_PENDING_REQUESTS,
+            max_pending,
         });
 
         let scheduler_bloom = Arc::clone(&scheduler);
@@ -281,7 +289,6 @@ impl Scheduler {
                         } else {
                             trace!("Successfully sent request to crawler");
                         }
-                        self.pending.fetch_sub(1, Ordering::AcqRel);
                     },
                     recv_res = rx_internal.recv() => {
                         trace!("Received internal message while sending request");
@@ -312,6 +319,12 @@ impl Scheduler {
                 trace!("Enqueuing request: {}", request.url);
                 self.queue.push(request);
                 self.pending.fetch_add(1, Ordering::AcqRel);
+                true
+            }
+            Ok(SchedulerMessage::Requeue(arc_request)) => {
+                let request = Arc::unwrap_or_clone(arc_request);
+                trace!("Re-enqueuing request: {}", request.url);
+                self.queue.push(request);
                 true
             }
             Ok(SchedulerMessage::MarkAsVisited(fingerprint)) => {
@@ -423,15 +436,23 @@ impl Scheduler {
             return Ok(());
         }
 
-        let pending = self.pending.load(Ordering::SeqCst);
-        if pending >= self.max_pending {
-            warn!(
-                "Maximum pending requests reached ({}), request dropped due to backpressure: {}",
+        loop {
+            let pending = self.pending.load(Ordering::SeqCst);
+            if pending < self.max_pending {
+                break;
+            }
+
+            if self.is_shutting_down.load(Ordering::SeqCst) {
+                return Err(SpiderError::GeneralError(
+                    "Scheduler is shutting down.".into(),
+                ));
+            }
+
+            trace!(
+                "Scheduler capacity reached ({} pending), waiting to enqueue: {}",
                 self.max_pending, request.url
             );
-            return Err(SpiderError::GeneralError(
-                "Scheduler at maximum capacity, request dropped due to backpressure.".into(),
-            ));
+            self.capacity_notify.notified().await;
         }
 
         trace!("Enqueuing request: {}", request.url);
@@ -458,6 +479,78 @@ impl Scheduler {
 
         trace!("Successfully enqueued request: {}", request_arc.url);
         Ok(())
+    }
+
+    /// Re-enqueues a request while keeping the outstanding request count unchanged.
+    ///
+    /// This is intended for retries or request replacements that originate from an
+    /// already in-flight request lifecycle.
+    pub async fn requeue_request(&self, request: Request) -> Result<(), SpiderError> {
+        if !self.should_enqueue(&request) {
+            trace!(
+                "Request already visited during requeue, skipping: {}",
+                request.url
+            );
+            return Ok(());
+        }
+
+        let reserved_slot = self
+            .pending
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok();
+
+        trace!(
+            "Re-enqueuing request without changing pending count: {}",
+            request.url
+        );
+        let request_arc = Arc::new(request);
+        if self
+            .tx
+            .send(SchedulerMessage::Requeue(Arc::clone(&request_arc)))
+            .await
+            .is_err()
+        {
+            if !self.is_shutting_down.load(Ordering::SeqCst) {
+                error!(
+                    "Scheduler internal message channel is closed. Salvaging re-queued request: {}",
+                    request_arc.url
+                );
+            }
+            let salvaged_request =
+                Arc::try_unwrap(request_arc).unwrap_or_else(|shared| shared.as_ref().clone());
+            self.salvaged.push(salvaged_request);
+            if reserved_slot {
+                self.complete_request();
+            }
+            return Err(SpiderError::GeneralError(
+                "Scheduler internal channel closed, request salvaged.".into(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Marks one outstanding request as fully completed.
+    pub fn complete_request(&self) {
+        let mut current = self.pending.load(Ordering::Acquire);
+        loop {
+            if current == 0 {
+                warn!("Scheduler pending request counter underflow prevented.");
+                return;
+            }
+
+            match self.pending.compare_exchange_weak(
+                current,
+                current - 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
+
+        self.capacity_notify.notify_waiters();
     }
 
     /// Signals the scheduler loop to stop processing new work.

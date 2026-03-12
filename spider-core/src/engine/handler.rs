@@ -29,9 +29,9 @@ use spider_util::request::Request;
 use spider_util::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tokio::task::yield_now;
 use tokio::time::Instant;
 
 #[allow(clippy::too_many_arguments)]
@@ -67,32 +67,28 @@ where
             // Check for backpressure by monitoring response channel capacity
             if res_tx.len() > max_concurrent_downloads * 2 {
                 trace!("High response channel occupancy detected, applying backpressure");
-                tokio::time::sleep(Duration::from_millis(50)).await;
+                yield_now().await;
                 continue;
             }
 
-            let request = tokio::select! {
-                result = req_rx.recv() => {
-                    match result {
-                        Ok(req) => {
-                            trace!("Received request for URL: {}", req.url);
+            let request = match req_rx.recv().await {
+                Ok(req) => {
+                    trace!("Received request for URL: {}", req.url);
 
-                            // Apply backpressure if response channel is filling up
-                            if res_tx.len() > max_concurrent_downloads {
-                                trace!("Applying backpressure, response channel occupancy: {}", res_tx.len());
-                                tokio::time::sleep(Duration::from_millis(10)).await;
-                            }
-
-                            req
-                        },
-                        Err(_) => {
-                            trace!("Request channel closed, exiting downloader task");
-                            break;
-                        }
+                    // Apply backpressure if response channel is filling up.
+                    if res_tx.len() > max_concurrent_downloads {
+                        trace!(
+                            "Applying backpressure, response channel occupancy: {}",
+                            res_tx.len()
+                        );
+                        yield_now().await;
                     }
+
+                    req
                 }
-                _ = tokio::time::sleep(Duration::from_millis(100)) => {
-                    continue;
+                Err(_) => {
+                    trace!("Request channel closed, exiting downloader task");
+                    break;
                 }
             };
 
@@ -100,7 +96,7 @@ where
             let permit = match semaphore.clone().acquire_owned().await {
                 Ok(permit) => permit,
                 Err(_) => {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    yield_now().await;
                     continue;
                 }
             };
@@ -139,6 +135,7 @@ where
                     }
                 }
 
+                scheduler_clone.complete_request();
                 state_clone
                     .in_flight_requests
                     .fetch_sub(1, Ordering::AcqRel);
@@ -204,7 +201,7 @@ where
             );
             stats.increment_requests_retried();
             tokio::time::sleep(delay).await;
-            if scheduler.enqueue_request(*req).await.is_err() {
+            if scheduler.requeue_request(*req).await.is_err() {
                 error!(
                     "Failed to re-enqueue retried request for URL: {}",
                     request_url
@@ -310,7 +307,7 @@ where
             );
             stats.increment_requests_retried();
             tokio::time::sleep(delay).await;
-            if scheduler.enqueue_request(*request).await.is_err() {
+            if scheduler.requeue_request(*request).await.is_err() {
                 error!(
                     "Failed to re-enqueue retried request for URL: {}",
                     request_url
@@ -376,7 +373,7 @@ where
                 "Error middleware continued request after download failure for URL: {}",
                 next_request.url
             );
-            if scheduler.enqueue_request(next_request).await.is_err() {
+            if scheduler.requeue_request(next_request).await.is_err() {
                 error!("Failed to re-enqueue continued request after download failure.");
                 stats.increment_requests_failed();
             }
@@ -389,7 +386,7 @@ where
             );
             stats.increment_requests_retried();
             tokio::time::sleep(delay).await;
-            if scheduler.enqueue_request(*next_request).await.is_err() {
+            if scheduler.requeue_request(*next_request).await.is_err() {
                 error!(
                     "Failed to re-enqueue retried request after download failure for URL: {}",
                     request_url
@@ -442,12 +439,6 @@ where
     S::Item: ScrapedItem,
     C: Send + Sync + Clone + 'static,
 {
-    process_request_through_middlewares::<S, C>(
-        request,
-        downloader,
-        middlewares,
-        scheduler,
-        stats,
-    )
-    .await
+    process_request_through_middlewares::<S, C>(request, downloader, middlewares, scheduler, stats)
+        .await
 }

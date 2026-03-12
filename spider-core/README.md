@@ -43,7 +43,7 @@ impl Spider for MySpider {
 
     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
         let req = spider_util::request::Request::new("https://example.com".parse()?);
-        Ok(spider_core::spider::StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
+        Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
     }
 
     async fn parse(

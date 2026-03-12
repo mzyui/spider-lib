@@ -61,6 +61,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio::task::yield_now;
 use tokio::time::Instant;
 
 fn spawn_parser_worker<S>(
@@ -153,7 +154,7 @@ where
         let mut last_scale_check = Instant::now();
 
         loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            tokio::time::sleep(Duration::from_millis(250)).await;
 
             // Scale workers based on queue depth and processing times
             if last_scale_check.elapsed() >= Duration::from_secs(1) {
@@ -211,7 +212,7 @@ where
                     "Applying backpressure to parser, item channel occupancy: {}",
                     item_tx.len()
                 );
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                yield_now().await;
             }
 
             state.parsing_responses.fetch_add(1, Ordering::AcqRel);

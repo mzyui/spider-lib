@@ -45,6 +45,8 @@ use std::time::Duration;
 pub struct CrawlerConfig {
     /// The maximum number of concurrent downloads.
     pub max_concurrent_downloads: usize,
+    /// The maximum number of outstanding requests tracked by the scheduler.
+    pub max_pending_requests: usize,
     /// The number of workers dedicated to parsing responses.
     pub parser_workers: usize,
     /// The maximum number of concurrent item processing pipelines.
@@ -59,8 +61,10 @@ pub struct CrawlerConfig {
 
 impl Default for CrawlerConfig {
     fn default() -> Self {
+        let max_concurrent_downloads = (num_cpus::get() * 8).clamp(32, 256);
         CrawlerConfig {
-            max_concurrent_downloads: num_cpus::get().max(16),
+            max_concurrent_downloads,
+            max_pending_requests: max_concurrent_downloads * 8,
             parser_workers: num_cpus::get().clamp(4, 16),
             max_concurrent_pipelines: num_cpus::get().min(8),
             channel_capacity: 1000,
@@ -79,6 +83,12 @@ impl CrawlerConfig {
     /// Sets the maximum number of concurrent downloads.
     pub fn with_max_concurrent_downloads(mut self, limit: usize) -> Self {
         self.max_concurrent_downloads = limit;
+        self
+    }
+
+    /// Sets the maximum number of outstanding requests tracked by the scheduler.
+    pub fn with_max_pending_requests(mut self, limit: usize) -> Self {
+        self.max_pending_requests = limit;
         self
     }
 
@@ -116,6 +126,9 @@ impl CrawlerConfig {
     pub fn validate(&self) -> Result<(), String> {
         if self.max_concurrent_downloads == 0 {
             return Err("max_concurrent_downloads must be greater than 0".to_string());
+        }
+        if self.max_pending_requests == 0 {
+            return Err("max_pending_requests must be greater than 0".to_string());
         }
         if self.parser_workers == 0 {
             return Err("parser_workers must be greater than 0".to_string());

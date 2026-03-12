@@ -93,12 +93,13 @@ use std::fs;
 /// #     type Item = String;
 /// #     type State = ();
 /// #     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
-/// #         Ok(spider_core::spider::StartRequests::Stream(Box::new(std::iter::empty())))
+/// #         Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::empty())))
 /// #     }
 /// #     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> { todo!() }
 /// # }
 /// let builder = CrawlerBuilder::new(MySpider)
 ///     .max_concurrent_downloads(8)
+///     .max_pending_requests(16)
 ///     .max_parser_workers(4);
 /// ```
 pub struct CrawlerBuilder<S: Spider, D>
@@ -176,6 +177,15 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Defaults to the number of CPU cores, with a minimum of 16.
     pub fn max_concurrent_downloads(mut self, limit: usize) -> Self {
         self.config.max_concurrent_downloads = limit;
+        self
+    }
+
+    /// Sets the maximum number of outstanding requests tracked by the scheduler.
+    ///
+    /// This includes queued requests plus requests already handed off for download.
+    /// Lower values keep the frontier tighter and reduce internal request buildup.
+    pub fn max_pending_requests(mut self, limit: usize) -> Self {
+        self.config.max_pending_requests = limit;
         self
     }
 
@@ -424,7 +434,8 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         };
 
         // Create scheduler with or without checkpoint state
-        let (scheduler_arc, req_rx) = Scheduler::new(scheduler_state);
+        let (scheduler_arc, req_rx) =
+            Scheduler::new(scheduler_state, self.config.max_pending_requests);
         let downloader_arc = Arc::new(self.downloader);
         let stats = Arc::new(StatCollector::new());
 
@@ -522,6 +533,11 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         if self.config.max_concurrent_downloads == 0 {
             return Err(SpiderError::ConfigurationError(
                 "max_concurrent_downloads must be greater than 0.".to_string(),
+            ));
+        }
+        if self.config.max_pending_requests == 0 {
+            return Err(SpiderError::ConfigurationError(
+                "max_pending_requests must be greater than 0.".to_string(),
             ));
         }
         if self.config.parser_workers == 0 {
