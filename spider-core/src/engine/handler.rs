@@ -43,6 +43,8 @@ pub fn spawn_downloader_task<S, C>(
     state: Arc<CrawlerState>,
     res_tx: AsyncSender<Response>,
     max_concurrent_downloads: usize,
+    response_backpressure_threshold: usize,
+    retry_release_permit: bool,
     stats: Arc<StatCollector>,
 ) -> tokio::task::JoinHandle<()>
 where
@@ -65,7 +67,7 @@ where
             }
 
             // Check for backpressure by monitoring response channel capacity
-            if res_tx.len() > max_concurrent_downloads * 2 {
+            if res_tx.len() > response_backpressure_threshold {
                 trace!("High response channel occupancy detected, applying backpressure");
                 yield_now().await;
                 continue;
@@ -76,7 +78,7 @@ where
                     trace!("Received request for URL: {}", req.url);
 
                     // Apply backpressure if response channel is filling up.
-                    if res_tx.len() > max_concurrent_downloads {
+                    if res_tx.len() > response_backpressure_threshold.saturating_div(2).max(1) {
                         trace!(
                             "Applying backpressure, response channel occupancy: {}",
                             res_tx.len()
@@ -120,6 +122,7 @@ where
                     &downloader_clone,
                     &middlewares_clone,
                     &scheduler_clone,
+                    retry_release_permit,
                     &stats_clone,
                 )
                 .await;
@@ -160,6 +163,7 @@ async fn process_request_through_middlewares<S, C>(
     downloader: &Arc<dyn Downloader<Client = C> + Send + Sync>,
     middlewares: &SharedMiddlewareManager<C>,
     scheduler: &Arc<Scheduler>,
+    retry_release_permit: bool,
     stats: &Arc<StatCollector>,
 ) -> Result<Option<Response>, ()>
 where
@@ -200,13 +204,14 @@ where
                 request_url, delay
             );
             stats.increment_requests_retried();
-            tokio::time::sleep(delay).await;
-            if scheduler.requeue_request(*req).await.is_err() {
-                error!(
-                    "Failed to re-enqueue retried request for URL: {}",
-                    request_url
-                );
-            }
+            schedule_retry(
+                Arc::clone(scheduler),
+                *req,
+                delay,
+                retry_release_permit,
+                Arc::clone(stats),
+            )
+            .await;
             return Ok(None);
         }
         Ok(MiddlewareAction::Drop) => {
@@ -281,6 +286,7 @@ where
                         e,
                         middlewares,
                         scheduler,
+                        retry_release_permit,
                         stats,
                     )
                     .await;
@@ -306,13 +312,14 @@ where
                 request_url, delay
             );
             stats.increment_requests_retried();
-            tokio::time::sleep(delay).await;
-            if scheduler.requeue_request(*request).await.is_err() {
-                error!(
-                    "Failed to re-enqueue retried request for URL: {}",
-                    request_url
-                );
-            }
+            schedule_retry(
+                Arc::clone(scheduler),
+                *request,
+                delay,
+                retry_release_permit,
+                Arc::clone(stats),
+            )
+            .await;
             return Err(());
         }
         Ok(MiddlewareAction::Drop) => {
@@ -362,6 +369,7 @@ async fn handle_download_error<C>(
     error: SpiderError,
     middlewares: &SharedMiddlewareManager<C>,
     scheduler: &Arc<Scheduler>,
+    retry_release_permit: bool,
     stats: &Arc<StatCollector>,
 ) -> Result<Option<Response>, ()>
 where
@@ -385,14 +393,14 @@ where
                 request_url, delay
             );
             stats.increment_requests_retried();
-            tokio::time::sleep(delay).await;
-            if scheduler.requeue_request(*next_request).await.is_err() {
-                error!(
-                    "Failed to re-enqueue retried request after download failure for URL: {}",
-                    request_url
-                );
-                stats.increment_requests_failed();
-            }
+            schedule_retry(
+                Arc::clone(scheduler),
+                *next_request,
+                delay,
+                retry_release_permit,
+                Arc::clone(stats),
+            )
+            .await;
         }
         Ok(MiddlewareAction::Drop) => {
             debug!(
@@ -426,12 +434,45 @@ where
     Ok(None)
 }
 
+async fn schedule_retry(
+    scheduler: Arc<Scheduler>,
+    request: Request,
+    delay: tokio::time::Duration,
+    release_permit: bool,
+    stats: Arc<StatCollector>,
+) {
+    let request_url = request.url.clone();
+    if release_permit {
+        stats.increment_requests_scheduled_for_retry();
+        stats.add_retry_delay_in_flight(delay);
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            stats.remove_retry_delay_in_flight(delay);
+            if scheduler.requeue_request(request).await.is_err() {
+                error!(
+                    "Failed to re-enqueue retried request for URL: {}",
+                    request_url
+                );
+            }
+        });
+    } else {
+        tokio::time::sleep(delay).await;
+        if scheduler.requeue_request(request).await.is_err() {
+            error!(
+                "Failed to re-enqueue retried request for URL: {}",
+                request_url
+            );
+        }
+    }
+}
+
 #[cfg(feature = "test-support")]
 pub async fn test_process_request_through_middlewares<S, C>(
     request: Request,
     downloader: &Arc<dyn Downloader<Client = C> + Send + Sync>,
     middlewares: &SharedMiddlewareManager<C>,
     scheduler: &Arc<Scheduler>,
+    retry_release_permit: bool,
     stats: &Arc<StatCollector>,
 ) -> Result<Option<Response>, ()>
 where
@@ -439,6 +480,13 @@ where
     S::Item: ScrapedItem,
     C: Send + Sync + Clone + 'static,
 {
-    process_request_through_middlewares::<S, C>(request, downloader, middlewares, scheduler, stats)
-        .await
+    process_request_through_middlewares::<S, C>(
+        request,
+        downloader,
+        middlewares,
+        scheduler,
+        retry_release_permit,
+        stats,
+    )
+    .await
 }

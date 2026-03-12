@@ -170,6 +170,8 @@ where
             state.clone(),
             res_tx.clone(),
             config.max_concurrent_downloads,
+            config.response_backpressure_threshold.max(1),
+            config.retry_release_permit,
             Arc::clone(&ctx.stats),
         );
 
@@ -182,6 +184,8 @@ where
             res_rx,
             item_tx.clone(),
             config.parser_workers,
+            config.output_batch_size.max(1),
+            config.item_backpressure_threshold.max(1),
             Arc::clone(&ctx.stats),
         );
 

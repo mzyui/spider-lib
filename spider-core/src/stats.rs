@@ -60,7 +60,9 @@ struct StatsSnapshot {
     requests_succeeded: usize,
     requests_failed: usize,
     requests_retried: usize,
+    requests_scheduled_for_retry: usize,
     requests_dropped: usize,
+    retry_delay_in_flight_ms: u64,
     responses_received: usize,
     responses_from_cache: usize,
     total_bytes_downloaded: usize,
@@ -159,7 +161,9 @@ pub struct StatCollector {
     pub requests_succeeded: AtomicUsize,
     pub requests_failed: AtomicUsize,
     pub requests_retried: AtomicUsize,
+    pub requests_scheduled_for_retry: AtomicUsize,
     pub requests_dropped: AtomicUsize,
+    pub retry_delay_in_flight_ms: AtomicU64,
 
     // Response-related metrics
     pub responses_received: AtomicUsize,
@@ -227,7 +231,9 @@ impl StatCollector {
             requests_succeeded: AtomicUsize::new(0),
             requests_failed: AtomicUsize::new(0),
             requests_retried: AtomicUsize::new(0),
+            requests_scheduled_for_retry: AtomicUsize::new(0),
             requests_dropped: AtomicUsize::new(0),
+            retry_delay_in_flight_ms: AtomicU64::new(0),
             responses_received: AtomicUsize::new(0),
             responses_from_cache: AtomicUsize::new(0),
             response_status_counts: Arc::new(dashmap::DashMap::new()),
@@ -280,7 +286,9 @@ impl StatCollector {
             requests_succeeded: self.requests_succeeded.load(Ordering::Acquire),
             requests_failed: self.requests_failed.load(Ordering::Acquire),
             requests_retried: self.requests_retried.load(Ordering::Acquire),
+            requests_scheduled_for_retry: self.requests_scheduled_for_retry.load(Ordering::Acquire),
             requests_dropped: self.requests_dropped.load(Ordering::Acquire),
+            retry_delay_in_flight_ms: self.retry_delay_in_flight_ms.load(Ordering::Acquire),
             responses_received: self.responses_received.load(Ordering::Acquire),
             responses_from_cache: self.responses_from_cache.load(Ordering::Acquire),
             total_bytes_downloaded: self.total_bytes_downloaded.load(Ordering::Acquire),
@@ -335,6 +343,37 @@ impl StatCollector {
     /// Increments the count of dropped requests.
     pub(crate) fn increment_requests_dropped(&self) {
         self.requests_dropped.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Increments the count of retries scheduled outside the downloader permit path.
+    pub(crate) fn increment_requests_scheduled_for_retry(&self) {
+        self.requests_scheduled_for_retry
+            .fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Adds the currently scheduled retry delay in milliseconds.
+    pub(crate) fn add_retry_delay_in_flight(&self, delay: Duration) {
+        let millis = delay.as_millis().min(u128::from(u64::MAX)) as u64;
+        self.retry_delay_in_flight_ms
+            .fetch_add(millis, Ordering::AcqRel);
+    }
+
+    /// Removes completed retry delay from the in-flight total.
+    pub(crate) fn remove_retry_delay_in_flight(&self, delay: Duration) {
+        let millis = delay.as_millis().min(u128::from(u64::MAX)) as u64;
+        let mut current = self.retry_delay_in_flight_ms.load(Ordering::Acquire);
+        loop {
+            let next = current.saturating_sub(millis);
+            match self.retry_delay_in_flight_ms.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     /// Increments the count of received responses.
@@ -545,7 +584,9 @@ impl StatCollector {
 | Succeeded  | {}     |
 | Failed     | {}     |
 | Retried    | {}     |
+| Retry Scheduled | {} |
 | Dropped    | {}     |
+| Retry Delay In Flight | {} ms |
 
 ## Responses
 | Metric     | Count |
@@ -614,7 +655,9 @@ impl StatCollector {
             snapshot.requests_succeeded,
             snapshot.requests_failed,
             snapshot.requests_retried,
+            snapshot.requests_scheduled_for_retry,
             snapshot.requests_dropped,
+            snapshot.retry_delay_in_flight_ms,
             snapshot.responses_received,
             snapshot.responses_from_cache,
             snapshot.formatted_bytes(),

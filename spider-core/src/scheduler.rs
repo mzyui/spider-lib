@@ -66,6 +66,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 enum SchedulerMessage {
     /// Enqueue a new request for processing.
     Enqueue(Arc<Request>),
+    /// Enqueue multiple new requests for processing.
+    EnqueueBatch(Vec<Arc<Request>>),
     /// Re-enqueue a request without changing the pending counter.
     Requeue(Arc<Request>),
     /// Mark a URL fingerprint as visited.
@@ -321,6 +323,14 @@ impl Scheduler {
                 self.pending.fetch_add(1, Ordering::AcqRel);
                 true
             }
+            Ok(SchedulerMessage::EnqueueBatch(requests)) => {
+                let count = requests.len();
+                for request in requests {
+                    self.queue.push(Arc::unwrap_or_clone(request));
+                }
+                self.pending.fetch_add(count, Ordering::AcqRel);
+                true
+            }
             Ok(SchedulerMessage::Requeue(arc_request)) => {
                 let request = Arc::unwrap_or_clone(arc_request);
                 trace!("Re-enqueuing request: {}", request.url);
@@ -479,6 +489,68 @@ impl Scheduler {
 
         trace!("Successfully enqueued request: {}", request_arc.url);
         Ok(())
+    }
+
+    /// Enqueues multiple requests with a single scheduler message.
+    pub async fn enqueue_requests_batch(
+        &self,
+        requests: Vec<Request>,
+    ) -> Result<usize, SpiderError> {
+        if requests.is_empty() {
+            return Ok(0);
+        }
+
+        let mut filtered = Vec::with_capacity(requests.len());
+        let mut seen_fingerprints = HashSet::with_capacity(requests.len());
+        for request in requests {
+            let fingerprint = request.fingerprint();
+            if seen_fingerprints.insert(fingerprint) && self.should_enqueue(&request) {
+                filtered.push(Arc::new(request));
+            }
+        }
+
+        if filtered.is_empty() {
+            return Ok(0);
+        }
+
+        let batch_len = filtered.len();
+        loop {
+            let pending = self.pending.load(Ordering::SeqCst);
+            if pending.saturating_add(batch_len) <= self.max_pending {
+                break;
+            }
+
+            if self.is_shutting_down.load(Ordering::SeqCst) {
+                return Err(SpiderError::GeneralError(
+                    "Scheduler is shutting down.".into(),
+                ));
+            }
+
+            self.capacity_notify.notified().await;
+        }
+
+        if self
+            .tx
+            .send(SchedulerMessage::EnqueueBatch(filtered.clone()))
+            .await
+            .is_err()
+        {
+            if !self.is_shutting_down.load(Ordering::SeqCst) {
+                error!(
+                    "Scheduler internal message channel is closed. Salvaging batch request set."
+                );
+            }
+            for request in filtered {
+                let salvaged =
+                    Arc::try_unwrap(request).unwrap_or_else(|shared| shared.as_ref().clone());
+                self.salvaged.push(salvaged);
+            }
+            return Err(SpiderError::GeneralError(
+                "Scheduler internal channel closed, request batch salvaged.".into(),
+            ));
+        }
+
+        Ok(batch_len)
     }
 
     /// Re-enqueues a request while keeping the outstanding request count unchanged.

@@ -56,7 +56,6 @@ use kanal::{AsyncReceiver, AsyncSender};
 use log::{debug, error, info, trace, warn};
 use spider_util::item::{ParseOutput, ScrapedItem};
 use spider_util::response::Response;
-use std::cmp::max;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -71,6 +70,7 @@ fn spawn_parser_worker<S>(
     scheduler: Arc<Scheduler>,
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
+    output_batch_size: usize,
     stats: Arc<StatCollector>,
 ) where
     S: Spider + 'static,
@@ -94,6 +94,7 @@ fn spawn_parser_worker<S>(
                         scheduler.clone(),
                         item_tx.clone(),
                         state.clone(),
+                        output_batch_size,
                         stats.clone(),
                     )
                     .await;
@@ -115,6 +116,8 @@ pub fn spawn_parser_task<S>(
     res_rx: AsyncReceiver<Response>,
     item_tx: AsyncSender<S::Item>,
     parser_workers: usize,
+    output_batch_size: usize,
+    item_backpressure_threshold: usize,
     stats: Arc<StatCollector>,
 ) -> tokio::task::JoinHandle<()>
 where
@@ -136,6 +139,7 @@ where
             Arc::clone(&scheduler),
             item_tx.clone(),
             Arc::clone(&state),
+            output_batch_size,
             Arc::clone(&stats),
         );
     }
@@ -182,6 +186,7 @@ where
                             scheduler_clone,
                             item_tx_clone,
                             state_clone,
+                            output_batch_size,
                             stats_clone,
                         );
 
@@ -207,7 +212,7 @@ where
             trace!("Received response for parsing from URL: {}", response.url);
 
             // Apply backpressure if item channel is filling up
-            if item_tx.len() > parser_workers * max(2, parser_workers / 2) {
+            if item_tx.len() > item_backpressure_threshold {
                 trace!(
                     "Applying backpressure to parser, item channel occupancy: {}",
                     item_tx.len()
@@ -233,6 +238,7 @@ pub async fn process_crawl_outputs<S>(
     scheduler: Arc<Scheduler>,
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
+    output_batch_size: usize,
     stats: Arc<StatCollector>,
 ) where
     S: Spider + 'static,
@@ -258,37 +264,64 @@ pub async fn process_crawl_outputs<S>(
     let mut request_error_total = 0;
 
     // Process all requests first without delays
-    for (idx, request) in requests.into_iter().enumerate() {
-        trace!(
-            "Processing request {} of {} from spider output: {}",
-            idx + 1,
-            requests_len,
-            request.url
-        );
-
-        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-            debug!(
-                "Scheduler is shutting down, skipping request: {}",
-                request.url
-            );
-            request_error_total += 1;
+    let batch_size = output_batch_size.max(1);
+    let mut request_batch = Vec::with_capacity(batch_size);
+    for request in requests {
+        request_batch.push(request);
+        if request_batch.len() < batch_size {
             continue;
         }
 
-        match scheduler.enqueue_request(request).await {
-            Ok(_) => {
-                trace!("Successfully enqueued request");
-                stats.increment_requests_enqueued();
+        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+            debug!("Scheduler is shutting down, skipping remaining requests");
+            request_error_total += request_batch.len();
+            request_batch.clear();
+            continue;
+        }
+
+        let current_batch = std::mem::take(&mut request_batch);
+        match scheduler.enqueue_requests_batch(current_batch).await {
+            Ok(enqueued) => {
+                for _ in 0..enqueued {
+                    stats.increment_requests_enqueued();
+                }
+                request_error_total += batch_size.saturating_sub(enqueued);
             }
             Err(e) => {
                 if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                     debug!("Scheduler is shutting down, skipping remaining requests");
-                    request_error_total += 1;
+                    request_error_total += batch_size;
                     continue;
                 }
 
-                error!("Failed to enqueue request: {:?}", e);
-                request_error_total += 1;
+                error!("Failed to enqueue request batch: {:?}", e);
+                request_error_total += batch_size;
+            }
+        }
+    }
+
+    if !request_batch.is_empty() {
+        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+            debug!("Scheduler is shutting down, skipping remaining requests");
+            request_error_total += request_batch.len();
+        } else {
+            let remaining = request_batch.len();
+            match scheduler.enqueue_requests_batch(request_batch).await {
+                Ok(enqueued) => {
+                    for _ in 0..enqueued {
+                        stats.increment_requests_enqueued();
+                    }
+                    request_error_total += remaining.saturating_sub(enqueued);
+                }
+                Err(e) => {
+                    if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                        debug!("Scheduler is shutting down, skipping remaining requests");
+                        request_error_total += remaining;
+                    } else {
+                        error!("Failed to enqueue request batch: {:?}", e);
+                        request_error_total += remaining;
+                    }
+                }
             }
         }
     }
@@ -303,24 +336,23 @@ pub async fn process_crawl_outputs<S>(
     }
 
     let mut item_error_total = 0;
-    for (idx, item) in items.into_iter().enumerate() {
-        trace!(
-            "Processing item {} of {} from spider output",
-            idx + 1,
-            items_len
-        );
-
+    let mut item_batch_len = 0usize;
+    for item in items {
+        item_batch_len += 1;
         if item_tx.is_closed() {
             warn!("Item channel is closed, stopping item processing");
-            item_error_total += items_len - idx;
-            break;
+            item_error_total += 1;
+        } else {
+            state.processing_items.fetch_add(1, Ordering::AcqRel);
+            if item_tx.send(item).await.is_err() {
+                error!("Failed to send item to processing channel");
+                item_error_total += 1;
+                state.processing_items.fetch_sub(1, Ordering::AcqRel);
+            }
         }
 
-        state.processing_items.fetch_add(1, Ordering::AcqRel);
-        if item_tx.send(item).await.is_err() {
-            error!("Failed to send item to processing channel");
-            item_error_total += 1;
-            state.processing_items.fetch_sub(1, Ordering::AcqRel);
+        if item_batch_len == batch_size {
+            item_batch_len = 0;
         }
     }
 

@@ -229,6 +229,30 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
+    /// Sets the parser output batch size.
+    pub fn output_batch_size(mut self, batch_size: usize) -> Self {
+        self.config.output_batch_size = batch_size;
+        self
+    }
+
+    /// Sets the downloader response-channel backpressure threshold.
+    pub fn response_backpressure_threshold(mut self, threshold: usize) -> Self {
+        self.config.response_backpressure_threshold = threshold;
+        self
+    }
+
+    /// Sets the parser item-channel backpressure threshold.
+    pub fn item_backpressure_threshold(mut self, threshold: usize) -> Self {
+        self.config.item_backpressure_threshold = threshold;
+        self
+    }
+
+    /// Controls whether retries release downloader permits before waiting.
+    pub fn retry_release_permit(mut self, enabled: bool) -> Self {
+        self.config.retry_release_permit = enabled;
+        self
+    }
+
     /// Enables or disables live, in-place statistics updates on terminal stdout.
     ///
     /// When enabled, spider-* logs are forced to `LevelFilter::Off` during build

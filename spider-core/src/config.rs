@@ -53,6 +53,14 @@ pub struct CrawlerConfig {
     pub max_concurrent_pipelines: usize,
     /// The capacity of communication channels between components.
     pub channel_capacity: usize,
+    /// Number of requests/items processed per parser output batch.
+    pub output_batch_size: usize,
+    /// Downloader backpressure threshold for the response channel.
+    pub response_backpressure_threshold: usize,
+    /// Parser backpressure threshold for the item channel.
+    pub item_backpressure_threshold: usize,
+    /// When enabled, retries are scheduled outside the downloader permit path.
+    pub retry_release_permit: bool,
     /// Enables in-place live statistics updates on terminal stdout.
     pub live_stats: bool,
     /// Refresh interval for live statistics output.
@@ -68,6 +76,10 @@ impl Default for CrawlerConfig {
             parser_workers: num_cpus::get().clamp(4, 16),
             max_concurrent_pipelines: num_cpus::get().min(8),
             channel_capacity: 1000,
+            output_batch_size: 64,
+            response_backpressure_threshold: max_concurrent_downloads * 2,
+            item_backpressure_threshold: num_cpus::get().clamp(4, 16) * 2,
+            retry_release_permit: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
         }
@@ -110,6 +122,30 @@ impl CrawlerConfig {
         self
     }
 
+    /// Sets the parser output batch size.
+    pub fn with_output_batch_size(mut self, batch_size: usize) -> Self {
+        self.output_batch_size = batch_size;
+        self
+    }
+
+    /// Sets the downloader response-channel backpressure threshold.
+    pub fn with_response_backpressure_threshold(mut self, threshold: usize) -> Self {
+        self.response_backpressure_threshold = threshold;
+        self
+    }
+
+    /// Sets the parser item-channel backpressure threshold.
+    pub fn with_item_backpressure_threshold(mut self, threshold: usize) -> Self {
+        self.item_backpressure_threshold = threshold;
+        self
+    }
+
+    /// Controls whether retry delays release the downloader permit immediately.
+    pub fn with_retry_release_permit(mut self, enabled: bool) -> Self {
+        self.retry_release_permit = enabled;
+        self
+    }
+
     /// Enables or disables in-place live stats updates on stdout.
     pub fn with_live_stats(mut self, enabled: bool) -> Self {
         self.live_stats = enabled;
@@ -135,6 +171,15 @@ impl CrawlerConfig {
         }
         if self.max_concurrent_pipelines == 0 {
             return Err("max_concurrent_pipelines must be greater than 0".to_string());
+        }
+        if self.output_batch_size == 0 {
+            return Err("output_batch_size must be greater than 0".to_string());
+        }
+        if self.response_backpressure_threshold == 0 {
+            return Err("response_backpressure_threshold must be greater than 0".to_string());
+        }
+        if self.item_backpressure_threshold == 0 {
+            return Err("item_backpressure_threshold must be greater than 0".to_string());
         }
         if self.live_stats_interval.is_zero() {
             return Err("live_stats_interval must be greater than 0".to_string());
