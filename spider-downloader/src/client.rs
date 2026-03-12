@@ -89,8 +89,7 @@ impl ReqwestClientDownloader {
     const PROXY_CLIENT_CACHE_MAX_CAPACITY: u64 = 512;
     const PROXY_CLIENT_CACHE_TTL_SECS: u64 = 30 * 60;
     const PROXY_META_KEY: &str = "proxy";
-    const DEFAULT_USER_AGENT: &'static str =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
+    const DEFAULT_USER_AGENT: &'static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
 
     /// Creates a new `ReqwestClientDownloader` with a default timeout of 30 seconds.
     pub fn new() -> Self {

@@ -501,7 +501,7 @@ mod tests {
 
         assert_eq!(
             report,
-             "Crawl Statistics\n\
+            "Crawl Statistics\n\
              ----------------\n\
              duration : 33s\n\
              speed    : req/s 0.30, resp/s 0.30, item/s 0.24\n\
