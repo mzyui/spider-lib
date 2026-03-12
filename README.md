@@ -74,7 +74,7 @@ impl Spider for QuoteSpider {
 
     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
         let req = Request::new("https://quotes.toscrape.com/".parse()?);
-        Ok(StartRequests::Stream(Box::new(std::iter::once(Ok(req)))))
+        Ok(StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
     }
 
     async fn parse(

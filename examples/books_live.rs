@@ -1,7 +1,4 @@
-use dashmap::DashMap;
 use spider_lib::prelude::*;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Scraped item model for a book detail page.
 #[scraped_item]
@@ -16,48 +13,13 @@ pub struct BookItem {
     pub stock: String,
 }
 
-/// Shared runtime state for the books spider example.
-#[derive(Clone, Default)]
-pub struct BooksSpiderState {
-    page_count: Arc<AtomicUsize>,
-    book_count: Arc<AtomicUsize>,
-    visited_urls: Arc<DashMap<String, bool>>,
-}
-
-impl BooksSpiderState {
-    /// Increments the number of processed pages.
-    pub fn increment_page_count(&self) {
-        self.page_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Increments the number of discovered books.
-    pub fn increment_book_count(&self) {
-        self.book_count.fetch_add(1, Ordering::SeqCst);
-    }
-
-    /// Returns the current processed page count.
-    pub fn get_page_count(&self) -> usize {
-        self.page_count.load(Ordering::SeqCst)
-    }
-
-    /// Returns the current discovered book count.
-    pub fn get_book_count(&self) -> usize {
-        self.book_count.load(Ordering::SeqCst)
-    }
-
-    /// Marks a URL as visited in the local state map.
-    pub fn mark_url_visited(&self, url: String) {
-        self.visited_urls.insert(url, true);
-    }
-}
-
 /// Example spider for https://books.toscrape.com/.
 pub struct BooksSpider;
 
 #[async_trait]
 impl Spider for BooksSpider {
     type Item = BookItem;
-    type State = BooksSpiderState;
+    type State = ();
 
     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
         Ok(StartRequests::Urls(vec!["https://books.toscrape.com/"]))
@@ -66,11 +28,8 @@ impl Spider for BooksSpider {
     async fn parse(
         &self,
         response: Response,
-        state: &Self::State,
+        _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        state.increment_page_count();
-        state.mark_url_visited(response.url.to_string());
-
         let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
@@ -141,8 +100,6 @@ impl Spider for BooksSpider {
                 reviews,
                 stock: String::new(),
             });
-
-            state.increment_book_count();
         } else {
             for book in html.select(&"article.product_pod".to_selector()?) {
                 if let Some(book_link) = book
@@ -155,8 +112,6 @@ impl Spider for BooksSpider {
                     // Create a request to the book detail page
                     output.add_request(Request::new(book_url));
                 }
-
-                state.increment_book_count();
             }
 
             if let Some(next_href) = html
@@ -180,13 +135,7 @@ async fn main() -> Result<(), SpiderError> {
         .add_pipeline(CsvPipeline::new("output/books_live.csv")?)
         .build()
         .await?;
-
-    let state = crawler.state_arc();
     crawler.start_crawl().await?;
-
-    println!("=== Final Results ===");
-    println!("Total pages crawled: {}", state.get_page_count());
-    println!("Total books scraped: {}", state.get_book_count());
 
     Ok(())
 }
