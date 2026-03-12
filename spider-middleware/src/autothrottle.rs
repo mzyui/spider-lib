@@ -91,7 +91,7 @@ impl<C: Send + Sync> Middleware<C> for AutoThrottleMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         mut request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
@@ -137,7 +137,7 @@ impl<C: Send + Sync> Middleware<C> for AutoThrottleMiddleware {
     }
 
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         if response.cached {

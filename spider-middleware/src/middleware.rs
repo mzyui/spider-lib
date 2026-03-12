@@ -36,21 +36,21 @@ pub trait Middleware<C: Send + Sync>: Any + Send + Sync + 'static {
     fn name(&self) -> &str;
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
         Ok(MiddlewareAction::Continue(request))
     }
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         Ok(MiddlewareAction::Continue(response))
     }
 
     async fn handle_error(
-        &mut self,
+        &self,
         _request: &Request,
         error: &SpiderError,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {

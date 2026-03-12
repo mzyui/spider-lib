@@ -441,7 +441,7 @@ impl<C: Send + Sync> Middleware<C> for UserAgentMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         mut request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {

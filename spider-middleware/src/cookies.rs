@@ -157,7 +157,7 @@ impl<C: Send + Sync> Middleware<C> for CookieMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         mut request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
@@ -180,7 +180,7 @@ impl<C: Send + Sync> Middleware<C> for CookieMiddleware {
     }
 
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         let cookies_to_store = response

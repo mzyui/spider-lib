@@ -81,7 +81,7 @@ impl<C: Send + Sync> Middleware<C> for RetryMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
@@ -89,7 +89,7 @@ impl<C: Send + Sync> Middleware<C> for RetryMiddleware {
     }
 
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         trace!(
@@ -131,7 +131,7 @@ impl<C: Send + Sync> Middleware<C> for RetryMiddleware {
     }
 
     async fn handle_error(
-        &mut self,
+        &self,
         request: &Request,
         error: &SpiderError,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {

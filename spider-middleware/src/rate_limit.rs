@@ -225,7 +225,7 @@ impl<C: Send + Sync> Middleware<C> for RateLimitMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
@@ -247,7 +247,7 @@ impl<C: Send + Sync> Middleware<C> for RateLimitMiddleware {
     }
 
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         let key = self.scope_key(&response.request_from_response());

@@ -125,7 +125,7 @@ impl<C: HttpClient> Middleware<C> for RobotsTxtMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {

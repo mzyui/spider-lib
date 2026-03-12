@@ -200,7 +200,7 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
     }
 
     async fn process_request(
-        &mut self,
+        &self,
         _client: &C,
         mut request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
@@ -211,7 +211,7 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
     }
 
     async fn process_response(
-        &mut self,
+        &self,
         response: Response,
     ) -> Result<MiddlewareAction<Response>, SpiderError> {
         if self.strategy != ProxyRotationStrategy::StickyFailover {
@@ -246,7 +246,7 @@ impl<C: Send + Sync> Middleware<C> for ProxyMiddleware {
     }
 
     async fn handle_error(
-        &mut self,
+        &self,
         _request: &Request,
         error: &SpiderError,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
