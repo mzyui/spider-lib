@@ -8,15 +8,7 @@ const OUTPUT_PATH: &str = "output/kusonime.json";
 
 const CONTENT_KEYWORDS: &[&str] = &["anime", "film", "movie", "batch", "episode", "tv", "ova"];
 const EXCLUDED_KEYWORDS: &[&str] = &[
-    "login",
-    "register",
-    "signup",
-    "search",
-    "tag",
-    "author",
-    "feed",
-    "comment",
-    "wp-admin",
+    "login", "register", "signup", "search", "tag", "author", "feed", "comment", "wp-admin",
     "wp-login",
 ];
 
@@ -91,7 +83,15 @@ impl Spider for KusonimeSpider {
                 anchor_text.to_lowercase()
             );
 
-            if next_page_url.is_none() && is_next_page_link(&anchor_text, &url, anchor.attr("rel"), anchor.attr("class"), &response.url) {
+            if next_page_url.is_none()
+                && is_next_page_link(
+                    &anchor_text,
+                    &url,
+                    anchor.attr("rel"),
+                    anchor.attr("class"),
+                    &response.url,
+                )
+            {
                 next_page_url = Some(url.clone());
             }
 
@@ -148,8 +148,14 @@ fn contains_any_keyword(haystack: &str, keywords: &[&str]) -> bool {
 }
 
 fn is_detail_page(html: &Html) -> Result<bool, SpiderError> {
-    Ok(html.select(&".venutama .lexot .info".to_selector()?).next().is_some()
-        && html.select(&".dlbodz #dl .smokeurlrh".to_selector()?).next().is_some())
+    Ok(html
+        .select(&".venutama .lexot .info".to_selector()?)
+        .next()
+        .is_some()
+        && html
+            .select(&".dlbodz #dl .smokeurlrh".to_selector()?)
+            .next()
+            .is_some())
 }
 
 fn is_content_candidate(haystack: &str) -> bool {
