@@ -1,6 +1,6 @@
 [package]
 name = "spider-lib"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "A Rust-based web scraping framework inspired by Scrapy (Python)."
@@ -85,11 +85,11 @@ quote = "1.0"
 
 [dependencies]
 
-spider-util = { version = "0.3.3", path = "spider-util" }
-spider-macro = { version = "0.1.10", path = "spider-macro" }
-spider-middleware = { version = "0.3.4", path = "spider-middleware", features = ["core"] }
-spider-core = { version = "2.0.0", path = "spider-core", default-features = false }
-spider-pipeline = { version = "0.3.5", path = "spider-pipeline" }
+spider-util = { version = "0.3.4", path = "spider-util" }
+spider-macro = { version = "0.1.11", path = "spider-macro" }
+spider-middleware = { version = "0.3.5", path = "spider-middleware", features = ["core"] }
+spider-core = { version = "2.0.1", path = "spider-core", default-features = false }
+spider-pipeline = { version = "0.3.6", path = "spider-pipeline" }
 
 
 [features]
@@ -127,6 +127,11 @@ name = "books_live"
 path = "examples/books_live.rs"
 required-features = ["live-stats", "pipeline-csv"]
 
+[[example]]
+name = "kusonime"
+path = "examples/kusonime.rs"
+required-features = ["live-stats", "pipeline-stream-json"]
+
 [dev-dependencies]
 env_logger.workspace = true
 serde.workspace = true
@@ -137,8 +142,9 @@ async-trait.workspace = true
 tokio.workspace = true
 url.workspace = true
 kanal.workspace = true
-spider-core = { version = "2.0.0", path = "spider-core", default-features = false, features = ["test-support"] }
-spider-downloader = { version = "1.0.1", path = "spider-downloader", features = ["test-support"] }
+scraper.workspace = true
+spider-core = { version = "2.0.1", path = "spider-core", default-features = false, features = ["test-support"] }
+spider-downloader = { version = "1.0.2", path = "spider-downloader", features = ["test-support"] }
 
 [profile.release]
 # Full link-time optimization for maximum performance
