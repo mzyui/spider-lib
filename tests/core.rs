@@ -100,11 +100,15 @@ fn crawler_config_default() {
     assert!(config.max_concurrent_downloads > 0);
     assert_eq!(
         config.max_pending_requests,
-        config.max_concurrent_downloads * 2
+        config.max_concurrent_downloads * 8
     );
     assert!(config.parser_workers > 0);
     assert!(config.max_concurrent_pipelines > 0);
     assert!(config.channel_capacity > 0);
+    assert!(config.output_batch_size > 0);
+    assert!(config.response_backpressure_threshold > 0);
+    assert!(config.item_backpressure_threshold > 0);
+    assert!(config.retry_release_permit);
 }
 
 #[test]
@@ -114,13 +118,21 @@ fn crawler_config_builder() {
         .with_max_pending_requests(24)
         .with_parser_workers(8)
         .with_max_concurrent_pipelines(4)
-        .with_channel_capacity(500);
+        .with_channel_capacity(500)
+        .with_output_batch_size(32)
+        .with_response_backpressure_threshold(64)
+        .with_item_backpressure_threshold(48)
+        .with_retry_release_permit(false);
 
     assert_eq!(config.max_concurrent_downloads, 20);
     assert_eq!(config.max_pending_requests, 24);
     assert_eq!(config.parser_workers, 8);
     assert_eq!(config.max_concurrent_pipelines, 4);
     assert_eq!(config.channel_capacity, 500);
+    assert_eq!(config.output_batch_size, 32);
+    assert_eq!(config.response_backpressure_threshold, 64);
+    assert_eq!(config.item_backpressure_threshold, 48);
+    assert!(!config.retry_release_permit);
 }
 
 #[test]
@@ -230,6 +242,8 @@ async fn queued_responses_keep_parser_state_non_idle() {
         res_rx,
         item_tx,
         1,
+        32,
+        2,
         stats,
     );
 
@@ -330,6 +344,7 @@ async fn download_timeout_triggers_retry_error_middleware() {
         &downloader,
         &middlewares,
         &scheduler,
+        true,
         &stats,
     )
     .await
@@ -340,7 +355,29 @@ async fn download_timeout_triggers_retry_error_middleware() {
     assert_eq!(retried_request.url.as_str(), "https://example.com/retry");
     assert_eq!(retried_request.get_retry_attempts(), 1);
     assert_eq!(stats.requests_retried.load(Ordering::Acquire), 1);
+    assert_eq!(
+        stats.requests_scheduled_for_retry.load(Ordering::Acquire),
+        1
+    );
     assert_eq!(stats.requests_failed.load(Ordering::Acquire), 0);
+}
+
+#[tokio::test]
+async fn scheduler_batch_enqueue_respects_deduplication() {
+    let (scheduler, request_rx) = Scheduler::new(None, 8);
+    let req_one = Request::new(Url::parse("https://example.com/one").expect("valid url"));
+    let req_two = Request::new(Url::parse("https://example.com/two").expect("valid url"));
+    let duplicate_one = Request::new(Url::parse("https://example.com/one").expect("valid url"));
+
+    let enqueued = scheduler
+        .enqueue_requests_batch(vec![req_one, req_two.clone(), duplicate_one])
+        .await
+        .expect("batch enqueue should succeed");
+
+    assert_eq!(enqueued, 2);
+    let first = request_rx.recv().await.expect("first request dispatched");
+    let second = request_rx.recv().await.expect("second request dispatched");
+    assert_ne!(first.url, second.url);
 }
 
 #[tokio::test]
