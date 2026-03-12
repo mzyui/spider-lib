@@ -1,6 +1,6 @@
 [package]
 name = "spider-util"
-version = "0.3.3"
+version = "0.3.4"
 edition = "2024"
 description = "Shared utility functions and types for the spider-lib ecosystem"
 license = "MIT"
@@ -29,4 +29,3 @@ seahash.workspace = true
 thiserror.workspace = true
 url.workspace = true
 twox-hash = "2.1.2"
-
