@@ -174,7 +174,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     ///
     /// ## Default
     ///
-    /// Defaults to the number of CPU cores, with a minimum of 16.
+    /// Defaults to twice the number of CPU cores, clamped between 4 and 64.
     pub fn max_concurrent_downloads(mut self, limit: usize) -> Self {
         self.config.max_concurrent_downloads = limit;
         self

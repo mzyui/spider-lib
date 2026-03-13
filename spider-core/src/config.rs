@@ -71,16 +71,18 @@ pub struct CrawlerConfig {
 
 impl Default for CrawlerConfig {
     fn default() -> Self {
-        let max_concurrent_downloads = (num_cpus::get() * 8).clamp(32, 256);
+        let cpu_count = num_cpus::get();
+        let max_concurrent_downloads = (cpu_count * 2).clamp(4, 64);
+        let max_pending_requests = (cpu_count * 4).clamp(16, 1024);
         CrawlerConfig {
             max_concurrent_downloads,
-            max_pending_requests: max_concurrent_downloads * 8,
-            parser_workers: num_cpus::get().clamp(4, 16),
-            max_concurrent_pipelines: num_cpus::get().min(8),
+            max_pending_requests,
+            parser_workers: cpu_count.clamp(4, 16),
+            max_concurrent_pipelines: cpu_count.min(8),
             channel_capacity: 1000,
             output_batch_size: 64,
             response_backpressure_threshold: max_concurrent_downloads * 2,
-            item_backpressure_threshold: num_cpus::get().clamp(4, 16) * 2,
+            item_backpressure_threshold: cpu_count.clamp(4, 16) * 2,
             retry_release_permit: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
