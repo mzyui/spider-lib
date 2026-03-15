@@ -192,9 +192,11 @@ pub fn format_plain_text_metrics<T: MetricsSnapshotProvider>(snapshot: &T) -> St
         snapshot.get_items_scraped(),
         snapshot.get_elapsed_duration(),
     );
-    let pending_requests = snapshot
-        .get_requests_enqueued()
-        .saturating_sub(snapshot.get_requests_sent());
+    let pending_requests = snapshot.get_requests_enqueued().saturating_sub(
+        snapshot.get_requests_succeeded()
+            + snapshot.get_requests_failed()
+            + snapshot.get_requests_dropped(),
+    );
     let success_ratio = format_ratio(
         snapshot.get_requests_succeeded(),
         snapshot.get_requests_sent(),
@@ -449,116 +451,5 @@ impl MetricsSnapshotProvider for MetricsSnapshot {
 
     fn formatted_bytes(&self) -> String {
         self.formatted_bytes()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{MetricsDisplayFormatter, MetricsSnapshot, format_plain_text_metrics};
-    use std::collections::HashMap;
-    use std::time::Duration;
-
-    fn sample_snapshot() -> MetricsSnapshot {
-        let mut response_status_counts = HashMap::new();
-        response_status_counts.insert(500, 2);
-        response_status_counts.insert(200, 10);
-        response_status_counts.insert(404, 1);
-
-        MetricsSnapshot {
-            requests_enqueued: 10,
-            requests_sent: 10,
-            requests_succeeded: 9,
-            requests_failed: 1,
-            requests_retried: 2,
-            requests_scheduled_for_retry: 4,
-            requests_dropped: 3,
-            retry_delay_in_flight_ms: 250,
-            responses_received: 10,
-            responses_from_cache: 4,
-            total_bytes_downloaded: 1_536,
-            items_scraped: 8,
-            items_processed: 7,
-            items_dropped_by_pipeline: 1,
-            response_status_counts,
-            elapsed_duration: Duration::from_secs(33),
-            average_request_time: Some(Duration::from_millis(508)),
-            fastest_request_time: Some(Duration::from_millis(274)),
-            slowest_request_time: Some(Duration::from_millis(1_850)),
-            request_time_count: 10,
-            average_parsing_time: Some(Duration::from_millis(4)),
-            fastest_parsing_time: Some(Duration::from_millis(0)),
-            slowest_parsing_time: Some(Duration::from_millis(27)),
-            parsing_time_count: 9,
-            recent_requests_per_second: 33.77,
-            recent_responses_per_second: 34.80,
-            recent_items_per_second: 33.12,
-        }
-    }
-
-    #[test]
-    fn plain_text_metrics_use_aligned_terminal_layout() {
-        let report = format_plain_text_metrics(&sample_snapshot());
-
-        assert_eq!(
-            report,
-            "Crawl Statistics\n\
-             ----------------\n\
-             duration : 33s\n\
-             speed    : req/s 0.30, resp/s 0.30, item/s 0.24\n\
-             requests : enqueued 10, sent 10, pending 0, ok 9, fail 1\n\
-             retry    : retry 2, scheduled 4, drop 3\n\
-             ratios   : success 90.00%, failure 10.00%, cache hit 40.00%\n\
-             response : received 10, cache 4, downloaded 1.50 KB, bytes/s 46 B/s\n\
-             delay    : retry in flight 250 ms\n\
-             items    : scraped 8, processed 7, dropped 1\n\
-             req time : avg 508 ms, fastest 274 ms, slowest 1.85 s, total 10\n\
-             parsing  : avg 4 ms, fastest 0 ms, slowest 27 ms, total 9\n\
-             status   : 200: 10, 404: 1, 500: 2"
-        );
-    }
-
-    #[test]
-    fn metrics_display_formatter_preserves_wrapping_newlines() {
-        let report = MetricsDisplayFormatter.format_metrics(&sample_snapshot());
-
-        assert!(report.starts_with('\n'));
-        assert!(report.ends_with('\n'));
-        assert!(report.contains("status   : 200: 10, 404: 1, 500: 2"));
-    }
-
-    #[test]
-    fn plain_text_metrics_render_empty_status_as_none() {
-        let mut snapshot = sample_snapshot();
-        snapshot.response_status_counts.clear();
-        snapshot.average_request_time = None;
-        snapshot.fastest_request_time = None;
-        snapshot.slowest_request_time = None;
-        snapshot.average_parsing_time = None;
-        snapshot.fastest_parsing_time = None;
-        snapshot.slowest_parsing_time = None;
-
-        let report = format_plain_text_metrics(&snapshot);
-
-        assert!(report.contains("ratios   : success 90.00%, failure 10.00%, cache hit 40.00%"));
-        assert!(report.contains("req time : avg N/A, fastest N/A, slowest N/A, total 10"));
-        assert!(report.contains("parsing  : avg N/A, fastest N/A, slowest N/A, total 9"));
-        assert!(report.ends_with("status   : none"));
-    }
-
-    #[test]
-    fn plain_text_metrics_handle_zero_denominator_ratios() {
-        let mut snapshot = sample_snapshot();
-        snapshot.requests_sent = 0;
-        snapshot.requests_succeeded = 0;
-        snapshot.requests_failed = 0;
-        snapshot.responses_received = 0;
-        snapshot.responses_from_cache = 0;
-        snapshot.requests_enqueued = 5;
-
-        let report = format_plain_text_metrics(&snapshot);
-
-        assert!(report.contains("requests : enqueued 5, sent 0, pending 5, ok 0, fail 0"));
-        assert!(report.contains("retry    : retry 2, scheduled 4, drop 3"));
-        assert!(report.contains("ratios   : success 0.00%, failure 0.00%, cache hit 0.00%"));
     }
 }

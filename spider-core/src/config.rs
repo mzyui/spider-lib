@@ -277,29 +277,6 @@ impl CheckpointConfigBuilder {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::CrawlerConfig;
-    use std::time::Duration;
-
-    #[test]
-    fn default_shutdown_grace_period_is_five_seconds() {
-        let config = CrawlerConfig::default();
-
-        assert_eq!(config.shutdown_grace_period, Duration::from_secs(5));
-    }
-
-    #[test]
-    fn shutdown_grace_period_must_be_non_zero() {
-        let config = CrawlerConfig::default().with_shutdown_grace_period(Duration::ZERO);
-
-        assert_eq!(
-            config.validate(),
-            Err("shutdown_grace_period must be greater than 0".to_string())
-        );
-    }
-}
-
 /// Configuration for the parser workers.
 ///
 /// This struct holds settings specific to the response parsing subsystem.

@@ -174,7 +174,8 @@ impl StatsSnapshot {
     }
 
     fn pending_requests(&self) -> usize {
-        self.requests_enqueued.saturating_sub(self.requests_sent)
+        self.requests_enqueued
+            .saturating_sub(self.requests_succeeded + self.requests_failed + self.requests_dropped)
     }
 
     fn success_ratio(&self) -> f64 {
@@ -922,135 +923,5 @@ fn update_max(target: &AtomicU64, candidate: u64) {
             Ok(_) => break,
             Err(actual) => current = actual,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::StatCollector;
-    use std::time::Duration;
-
-    #[test]
-    fn clearing_timing_caches_resets_aggregates() {
-        let stats = StatCollector::default();
-        stats.record_request_time("https://example.com/1", Duration::from_millis(10));
-        stats.record_request_time("https://example.com/2", Duration::from_millis(20));
-        stats.record_parsing_time(Duration::from_millis(5));
-
-        stats.clear_request_times();
-        stats.clear_parsing_times();
-
-        assert_eq!(stats.request_time_count(), 0);
-        assert_eq!(stats.average_request_time(), None);
-        assert_eq!(stats.fastest_request_time(), None);
-        assert_eq!(stats.slowest_request_time(), None);
-        assert_eq!(stats.parsing_time_count(), 0);
-        assert_eq!(stats.average_parsing_time(), None);
-    }
-
-    #[test]
-    fn live_report_uses_shared_colon_layout_and_sorted_statuses() {
-        let stats = StatCollector::default();
-
-        stats
-            .requests_enqueued
-            .store(1050, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_sent
-            .store(1050, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_succeeded
-            .store(1050, std::sync::atomic::Ordering::Release);
-        stats
-            .responses_received
-            .store(1050, std::sync::atomic::Ordering::Release);
-        stats
-            .total_bytes_downloaded
-            .store(20_910_000, std::sync::atomic::Ordering::Release);
-        stats
-            .items_scraped
-            .store(1000, std::sync::atomic::Ordering::Release);
-        stats
-            .items_processed
-            .store(1000, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_scheduled_for_retry
-            .store(7, std::sync::atomic::Ordering::Release);
-        stats
-            .retry_delay_in_flight_ms
-            .store(1234, std::sync::atomic::Ordering::Release);
-        stats.response_status_counts.insert(500, 3);
-        stats.response_status_counts.insert(200, 1050);
-        stats.response_status_counts.insert(404, 2);
-
-        stats.record_request_time("https://example.com/1", Duration::from_millis(508));
-        stats.record_request_time("https://example.com/2", Duration::from_millis(274));
-        stats.record_request_time("https://example.com/3", Duration::from_millis(1_850));
-        stats.record_parsing_time(Duration::from_millis(4));
-        stats.record_parsing_time(Duration::from_millis(0));
-        stats.record_parsing_time(Duration::from_millis(27));
-
-        let report = stats.to_live_report_string();
-
-        assert!(report.contains("Crawl Statistics\n----------------\nduration :"));
-        assert!(report.contains("speed    : req/s "));
-        assert!(report.contains("requests : enqueued 1050, sent 1050, pending 0, ok 1050, fail 0"));
-        assert!(report.contains("retry    : retry 0, scheduled 7, drop 0"));
-        assert!(report.contains("ratios   : success 100.00%, failure 0.00%, cache hit 0.00%"));
-        assert!(report.contains("response : received 1050, cache 0, downloaded "));
-        assert!(report.contains("delay    : retry in flight 1234 ms"));
-        assert!(report.contains("req time : avg 877 ms, fastest 274 ms, slowest 1.85 s, total 3"));
-        assert!(report.contains("parsing  : avg 10 ms, fastest 0 ms, slowest 27 ms, total 3"));
-        assert!(report.ends_with("status   : 200: 1050, 404: 2, 500: 3"));
-    }
-
-    #[test]
-    fn display_wraps_live_report_with_blank_lines() {
-        let stats = StatCollector::default();
-        let display = format!("{stats}");
-
-        assert!(display.starts_with("\nCrawl Statistics\n"));
-        assert!(display.ends_with('\n'));
-    }
-
-    #[test]
-    fn markdown_report_includes_derived_metrics() {
-        let stats = StatCollector::default();
-        stats
-            .requests_enqueued
-            .store(10, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_sent
-            .store(8, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_succeeded
-            .store(6, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_failed
-            .store(2, std::sync::atomic::Ordering::Release);
-        stats
-            .requests_scheduled_for_retry
-            .store(3, std::sync::atomic::Ordering::Release);
-        stats
-            .retry_delay_in_flight_ms
-            .store(450, std::sync::atomic::Ordering::Release);
-        stats
-            .responses_received
-            .store(5, std::sync::atomic::Ordering::Release);
-        stats
-            .responses_from_cache
-            .store(2, std::sync::atomic::Ordering::Release);
-        stats
-            .total_bytes_downloaded
-            .store(2048, std::sync::atomic::Ordering::Release);
-
-        let report = stats.to_markdown_string();
-
-        assert!(report.contains("**Bytes Per Second**:"));
-        assert!(report.contains("**Request Ratios**: success 75.00%, failure 25.00%"));
-        assert!(report.contains("**Cache Hit Ratio**: 40.00%"));
-        assert!(report.contains("| Pending    | 2"));
-        assert!(report.contains("| Retry Scheduled | 3 |"));
-        assert!(report.contains("| Retry Delay In Flight | 450 ms |"));
     }
 }

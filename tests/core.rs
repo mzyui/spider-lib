@@ -97,11 +97,9 @@ fn start_requests_fails_when_seed_file_missing() {
 #[test]
 fn crawler_config_default() {
     let config = CrawlerConfig::default();
+    let cpu_count = num_cpus::get();
     assert!(config.max_concurrent_downloads > 0);
-    assert_eq!(
-        config.max_pending_requests,
-        config.max_concurrent_downloads * 8
-    );
+    assert_eq!(config.max_pending_requests, (cpu_count * 4).clamp(16, 1024));
     assert!(config.parser_workers > 0);
     assert!(config.max_concurrent_pipelines > 0);
     assert!(config.channel_capacity > 0);

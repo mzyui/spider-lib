@@ -331,7 +331,7 @@ fn best_title(anchor_text: &str, url: &Url) -> String {
 async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(KusonimeSpider)
         .live_stats(true)
-        .add_middleware(RetryMiddleware::new().max_retries(2))
+        //        .add_middleware(RetryMiddleware::new().max_retries(2))
         .add_pipeline(DeduplicationPipeline::new(&["url"]))
         .add_pipeline(StreamJsonPipeline::new(OUTPUT_PATH)?)
         .build()

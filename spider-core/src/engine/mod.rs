@@ -44,6 +44,8 @@ pub(crate) use handler::spawn_downloader_task;
 #[cfg(feature = "test-support")]
 pub use handler::test_process_request_through_middlewares as process_request_through_middlewares;
 #[cfg(feature = "test-support")]
+pub use handler::test_schedule_retry as schedule_retry_for_test;
+#[cfg(feature = "test-support")]
 pub use middleware::SharedMiddlewareManager;
 #[cfg(not(feature = "test-support"))]
 pub(crate) use middleware::SharedMiddlewareManager;

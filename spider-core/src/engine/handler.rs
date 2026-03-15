@@ -234,6 +234,7 @@ where
                 "Request middleware error for URL {}: {:?}",
                 original_request_url, e
             );
+            stats.increment_requests_dropped();
             return Ok(None);
         }
     }
@@ -513,67 +514,13 @@ where
     .await
 }
 
-#[cfg(test)]
-mod tests {
-    use super::schedule_retry;
-    use crate::Scheduler;
-    use crate::stats::StatCollector;
-    use spider_util::request::Request;
-    use std::sync::Arc;
-    use std::sync::atomic::Ordering;
-    use std::time::Duration;
-    use url::Url;
-
-    #[tokio::test]
-    async fn schedule_retry_noops_when_scheduler_is_already_shutting_down() {
-        let (scheduler, _rx) = Scheduler::new(None, 32);
-        scheduler.shutdown().await.unwrap();
-
-        let stats = Arc::new(StatCollector::new());
-        let request = Request::new(Url::parse("https://example.com/retry").unwrap());
-
-        schedule_retry(
-            Arc::clone(&scheduler),
-            request,
-            Duration::from_millis(10),
-            true,
-            Arc::clone(&stats),
-        )
-        .await;
-
-        tokio::time::sleep(Duration::from_millis(20)).await;
-
-        assert_eq!(
-            stats.requests_scheduled_for_retry.load(Ordering::Acquire),
-            0
-        );
-        assert_eq!(stats.retry_delay_in_flight_ms.load(Ordering::Acquire), 0);
-    }
-
-    #[tokio::test]
-    async fn scheduled_retry_does_not_requeue_after_shutdown_begins() {
-        let (scheduler, rx) = Scheduler::new(None, 32);
-        let stats = Arc::new(StatCollector::new());
-        let request = Request::new(Url::parse("https://example.com/retry-late").unwrap());
-
-        schedule_retry(
-            Arc::clone(&scheduler),
-            request,
-            Duration::from_millis(30),
-            true,
-            Arc::clone(&stats),
-        )
-        .await;
-
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        scheduler.shutdown().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(50)).await;
-
-        assert!(rx.try_recv().ok().flatten().is_none());
-        assert_eq!(
-            stats.requests_scheduled_for_retry.load(Ordering::Acquire),
-            1
-        );
-        assert_eq!(stats.retry_delay_in_flight_ms.load(Ordering::Acquire), 0);
-    }
+#[cfg(feature = "test-support")]
+pub async fn test_schedule_retry(
+    scheduler: Arc<Scheduler>,
+    request: Request,
+    delay: tokio::time::Duration,
+    release_permit: bool,
+    stats: Arc<StatCollector>,
+) {
+    schedule_retry(scheduler, request, delay, release_permit, stats).await
 }
