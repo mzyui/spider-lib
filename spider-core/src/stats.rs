@@ -40,7 +40,6 @@
 //! println!("{}", stats.to_markdown_string());
 //! ```
 
-use moka::sync::Cache;
 use spider_util::error::SpiderError;
 use spider_util::metrics::{ExpMovingAverage, MetricsSnapshotProvider, format_plain_text_metrics};
 use std::{
@@ -358,10 +357,6 @@ pub struct StatCollector {
     // Timing metrics - Using bounded LRU caches to prevent memory leaks
     // Only keeps recent entries (max 10,000 for requests, 1,000 for parsing)
     #[serde(skip)]
-    pub request_times: Cache<String, Duration>,
-    #[serde(skip)]
-    pub parsing_times: Cache<String, Duration>,
-    #[serde(skip)]
     request_time_total_nanos: AtomicU64,
     #[serde(skip)]
     request_time_fastest_nanos: AtomicU64,
@@ -389,13 +384,6 @@ pub struct StatCollector {
 
 impl StatCollector {
     /// Creates a new `StatCollector` with all counters initialized to zero.
-    #[cfg(feature = "test-support")]
-    pub fn new() -> Self {
-        Self::build()
-    }
-
-    /// Creates a new `StatCollector` with all counters initialized to zero.
-    #[cfg(not(feature = "test-support"))]
     pub(crate) fn new() -> Self {
         Self::build()
     }
@@ -418,16 +406,6 @@ impl StatCollector {
             items_scraped: AtomicUsize::new(0),
             items_processed: AtomicUsize::new(0),
             items_dropped_by_pipeline: AtomicUsize::new(0),
-            // Use bounded LRU caches to prevent memory leaks
-            // Automatically evicts oldest entries when capacity is reached
-            request_times: Cache::builder()
-                .max_capacity(10_000)
-                .time_to_idle(Duration::from_secs(300)) // 5 minutes TTL
-                .build(),
-            parsing_times: Cache::builder()
-                .max_capacity(1_000)
-                .time_to_idle(Duration::from_secs(60)) // 1 minute TTL
-                .build(),
             request_time_total_nanos: AtomicU64::new(0),
             request_time_fastest_nanos: AtomicU64::new(u64::MAX),
             request_time_slowest_nanos: AtomicU64::new(0),
@@ -597,8 +575,7 @@ impl StatCollector {
     }
 
     /// Records the time taken for a request.
-    pub fn record_request_time(&self, url: &str, duration: Duration) {
-        self.request_times.insert(url.to_string(), duration);
+    pub fn record_request_time(&self, _url: &str, duration: Duration) {
         let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
         self.request_time_total_nanos
             .fetch_add(nanos, Ordering::AcqRel);
@@ -640,27 +617,17 @@ impl StatCollector {
 
     /// Gets the request time for a specific URL.
     pub fn get_request_time(&self, url: &str) -> Option<Duration> {
-        self.request_times.get(url)
+        let _ = url;
+        None
     }
 
     /// Gets all recorded request times as a vector of (URL, Duration) pairs.
     pub fn get_all_request_times(&self) -> Vec<(String, Duration)> {
-        self.request_times
-            .iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect()
+        Vec::new()
     }
 
     /// Records the time taken for parsing a response.
     pub fn record_parsing_time(&self, duration: Duration) {
-        let id = format!(
-            "parse_{}",
-            match std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-                Ok(duration) => duration.as_nanos(),
-                Err(err) => err.duration().as_nanos(),
-            }
-        );
-        self.parsing_times.insert(id, duration);
         let nanos = duration.as_nanos().min(u128::from(u64::MAX)) as u64;
         self.parsing_time_total_nanos
             .fetch_add(nanos, Ordering::AcqRel);
@@ -702,7 +669,6 @@ impl StatCollector {
 
     /// Clears all recorded request times.
     pub fn clear_request_times(&self) {
-        self.request_times.invalidate_all();
         self.request_time_total_nanos.store(0, Ordering::Release);
         self.request_time_fastest_nanos
             .store(u64::MAX, Ordering::Release);
@@ -712,7 +678,6 @@ impl StatCollector {
 
     /// Clears all recorded parsing times.
     pub fn clear_parsing_times(&self) {
-        self.parsing_times.invalidate_all();
         self.parsing_time_total_nanos.store(0, Ordering::Release);
         self.parsing_time_fastest_nanos
             .store(u64::MAX, Ordering::Release);

@@ -274,11 +274,6 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
-    #[cfg(feature = "test-support")]
-    pub fn test_config(&self) -> &CrawlerConfig {
-        &self.config
-    }
-
     /// Sets a custom downloader implementation.
     ///
     /// Use this method to provide a custom [`Downloader`] implementation

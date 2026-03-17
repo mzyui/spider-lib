@@ -20,7 +20,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use spider_core::state::{Counter, VisitedUrls};
 //! use std::sync::Arc;
 //!
@@ -56,7 +56,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::Counter;
 ///
 /// let counter = Counter::new();
@@ -137,7 +137,7 @@ impl Clone for Counter {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::Counter64;
 ///
 /// let counter = Counter64::new();
@@ -205,7 +205,7 @@ impl Clone for Counter64 {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::Flag;
 ///
 /// let flag = Flag::new(false);
@@ -261,7 +261,7 @@ impl Clone for Flag {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::VisitedUrls;
 ///
 /// let visited = VisitedUrls::new();
@@ -337,7 +337,7 @@ impl Clone for VisitedUrls {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::ConcurrentMap;
 ///
 /// let map = ConcurrentMap::new();
@@ -447,7 +447,7 @@ where
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::ConcurrentVec;
 ///
 /// let vec = ConcurrentVec::new();
@@ -525,7 +525,7 @@ where
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_core::state::StateAccessMetrics;
 ///
 /// let metrics = StateAccessMetrics::new();

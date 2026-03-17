@@ -165,7 +165,8 @@ impl Scheduler {
     ) -> (Arc<Self>, AsyncReceiver<Request>) {
         let max_pending = max_pending_requests.max(1).min(MAX_PENDING_REQUESTS);
         let (tx, rx_internal) = bounded_async(max_pending.saturating_mul(2).max(1));
-        let (tx_out, rx_out) = bounded_async(100);
+        let output_capacity = (max_pending / 8).clamp(256, 2048);
+        let (tx_out, rx_out) = bounded_async(output_capacity);
 
         let queue: SegQueue<Request>;
         let visited: Cache<String, bool>;

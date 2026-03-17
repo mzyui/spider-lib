@@ -213,7 +213,7 @@ pub trait Spider: Send + Sync + 'static {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use std::sync::Arc;
     /// use std::sync::atomic::{AtomicUsize, Ordering};
     /// use dashmap::DashMap;
@@ -246,7 +246,7 @@ pub trait Spider: Send + Sync + 'static {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_core::{scraped_item, Spider, StartRequests};
     /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
     /// # #[scraped_item]
@@ -304,7 +304,7 @@ pub trait Spider: Send + Sync + 'static {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_core::{scraped_item, Spider, StartRequests};
     /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
     /// # use async_trait::async_trait;

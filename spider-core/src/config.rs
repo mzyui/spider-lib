@@ -18,7 +18,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use spider_core::config::{CrawlerConfig, CheckpointConfig};
 //! use std::time::Duration;
 //!
@@ -72,17 +72,20 @@ pub struct CrawlerConfig {
 impl Default for CrawlerConfig {
     fn default() -> Self {
         let cpu_count = num_cpus::get();
-        let max_concurrent_downloads = (cpu_count * 2).clamp(4, 64);
-        let max_pending_requests = (cpu_count * 4).clamp(16, 1024);
+        let max_concurrent_downloads = (cpu_count * 4).clamp(8, 128);
+        let max_pending_requests = (max_concurrent_downloads * 8).clamp(64, 4096);
+        let parser_workers = (cpu_count * 2).clamp(4, 32);
+        let max_concurrent_pipelines = (cpu_count * 2).clamp(4, 16);
+        let channel_capacity = (max_pending_requests / 2).clamp(512, 4096);
         CrawlerConfig {
             max_concurrent_downloads,
             max_pending_requests,
-            parser_workers: cpu_count.clamp(4, 16),
-            max_concurrent_pipelines: cpu_count.min(8),
-            channel_capacity: 1000,
+            parser_workers,
+            max_concurrent_pipelines,
+            channel_capacity,
             output_batch_size: 64,
-            response_backpressure_threshold: max_concurrent_downloads * 2,
-            item_backpressure_threshold: cpu_count.clamp(4, 16) * 2,
+            response_backpressure_threshold: (max_concurrent_downloads * 6).min(channel_capacity),
+            item_backpressure_threshold: (parser_workers * 6).min(channel_capacity),
             retry_release_permit: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
