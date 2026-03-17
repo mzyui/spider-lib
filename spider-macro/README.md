@@ -19,7 +19,7 @@ serde_json = "1.0"
 
 ## Usage
 
-```rust
+```rust,ignore
 use spider_macro::scraped_item;
 
 #[scraped_item]
@@ -31,7 +31,7 @@ struct Product {
 
 Most users can access this macro via `spider-lib` prelude:
 
-```rust
+```rust,ignore
 use spider_lib::prelude::*;
 ```
 
