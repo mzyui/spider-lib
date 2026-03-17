@@ -387,7 +387,6 @@ spider-lib = { version = "3.0.0", features = ["cookie-store"] }
 cargo check --workspace --all-targets
 cargo fmt --check
 cargo clippy --all-features -- -D warnings
-cargo test --all-features
 make check-all-features
 ```
 

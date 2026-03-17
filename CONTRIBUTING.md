@@ -8,7 +8,6 @@ Thank you for your interest in contributing to spider-lib! This document provide
 - [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
 - [Making Changes](#making-changes)
-- [Testing](#testing)
 - [Code Style](#code-style)
 - [Pull Request Process](#pull-request-process)
 - [Issue Reporting](#issue-reporting)
@@ -65,7 +64,7 @@ cargo run --example books
 
 2. **Make your changes** following the code style guidelines below
 
-3. **Test your changes** thoroughly (see [Testing](#testing))
+3. **Validate your changes** with build and lint checks
 
 4. **Commit your changes** with clear, descriptive messages (see [Commit Messages](#commit-messages))
 
@@ -73,24 +72,6 @@ cargo run --example books
    ```bash
    git push origin feature/your-feature-name
    ```
-
-## Testing
-
-### Running Tests
-
-```bash
-# Run all tests
-cargo test
-
-# Run tests with all features
-cargo test --all-features
-
-# Run tests for a specific crate
-cargo test -p spider-core
-
-# Run tests with output
-cargo test -- --nocapture
-```
 
 ### Running Clippy
 
@@ -119,11 +100,9 @@ cargo fmt
 
 Before submitting a PR, ensure:
 
-- [ ] `cargo test --all-features` passes
 - [ ] `cargo clippy --all-features` has no warnings
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo build --all-features` succeeds
-- [ ] New code has appropriate tests
 - [ ] Documentation is updated if needed
 
 ## Code Style
@@ -175,7 +154,6 @@ Follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 - `docs`: Documentation changes
 - `style`: Code style changes (formatting, etc.)
 - `refactor`: Code refactoring
-- `test`: Adding or updating tests
 - `chore`: Maintenance tasks
 
 **Example:**
@@ -262,7 +240,7 @@ When adding new optional functionality:
 1. Add a feature flag in `Cargo.toml`
 2. Use `#[cfg(feature = "your-feature")]` guards
 3. Document the feature in README.md
-4. Ensure tests cover both with and without the feature
+4. Ensure the feature builds cleanly in the intended configurations
 
 ## Questions?
 

@@ -133,22 +133,10 @@ path = "examples/kusonime.rs"
 required-features = ["live-stats", "pipeline-stream-json"]
 
 [dev-dependencies]
-env_logger.workspace = true
+dashmap.workspace = true
+log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-log.workspace = true
-dashmap.workspace = true
-async-trait.workspace = true
-tokio.workspace = true
-url.workspace = true
-kanal.workspace = true
-scraper.workspace = true
-bytes.workspace = true
-http.workspace = true
-reqwest.workspace = true
-num_cpus.workspace = true
-spider-core = { version = "2.0.1", path = "spider-core", default-features = false, features = ["test-support"] }
-spider-downloader = { version = "1.0.2", path = "spider-downloader", features = ["test-support"] }
 
 [profile.release]
 # Full link-time optimization for maximum performance

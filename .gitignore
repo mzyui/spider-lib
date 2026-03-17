@@ -27,3 +27,4 @@ SCRAPY_COMPARISON.md
 .gemini/
 gha-creds-*.json
 AGENTS.md
+output/
