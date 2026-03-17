@@ -62,8 +62,8 @@ pub struct CsvPipeline<I> {
 }
 
 impl<I: ScrapedItem> CsvPipeline<I> {
-    const COMMAND_CHANNEL_CAPACITY: usize = 1024;
-    const FLUSH_EVERY_WRITES: usize = 100;
+    const COMMAND_CHANNEL_CAPACITY: usize = 4096;
+    const FLUSH_EVERY_WRITES: usize = 250;
 
     /// Creates a new `CsvPipeline`.
     ///
