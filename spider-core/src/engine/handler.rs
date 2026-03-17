@@ -31,7 +31,6 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-use tokio::task::yield_now;
 use tokio::time::Instant;
 
 #[allow(clippy::too_many_arguments)]
@@ -66,26 +65,9 @@ where
                 break;
             }
 
-            // Check for backpressure by monitoring response channel capacity
-            if res_tx.len() > response_backpressure_threshold {
-                trace!("High response channel occupancy detected, applying backpressure");
-                yield_now().await;
-                continue;
-            }
-
             let request = match req_rx.recv().await {
                 Ok(req) => {
                     trace!("Received request for URL: {}", req.url);
-
-                    // Apply backpressure if response channel is filling up.
-                    if res_tx.len() > response_backpressure_threshold.saturating_div(2).max(1) {
-                        trace!(
-                            "Applying backpressure, response channel occupancy: {}",
-                            res_tx.len()
-                        );
-                        yield_now().await;
-                    }
-
                     req
                 }
                 Err(_) => {
@@ -94,11 +76,22 @@ where
                 }
             };
 
+            while res_tx.len() >= response_backpressure_threshold {
+                if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                    break;
+                }
+                trace!(
+                    "Response channel near saturation ({}), waiting for drain",
+                    res_tx.len()
+                );
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+
             // Acquire permit from semaphore for concurrency control
             let permit = match semaphore.clone().acquire_owned().await {
                 Ok(permit) => permit,
                 Err(_) => {
-                    yield_now().await;
+                    tokio::task::yield_now().await;
                     continue;
                 }
             };
@@ -487,40 +480,4 @@ async fn schedule_retry(
             );
         }
     }
-}
-
-#[cfg(feature = "test-support")]
-pub async fn test_process_request_through_middlewares<S, C>(
-    request: Request,
-    downloader: &Arc<dyn Downloader<Client = C> + Send + Sync>,
-    middlewares: &SharedMiddlewareManager<C>,
-    scheduler: &Arc<Scheduler>,
-    retry_release_permit: bool,
-    stats: &Arc<StatCollector>,
-) -> Result<Option<Response>, ()>
-where
-    S: crate::spider::Spider + 'static,
-    S::Item: ScrapedItem,
-    C: Send + Sync + Clone + 'static,
-{
-    process_request_through_middlewares::<S, C>(
-        request,
-        downloader,
-        middlewares,
-        scheduler,
-        retry_release_permit,
-        stats,
-    )
-    .await
-}
-
-#[cfg(feature = "test-support")]
-pub async fn test_schedule_retry(
-    scheduler: Arc<Scheduler>,
-    request: Request,
-    delay: tokio::time::Duration,
-    release_permit: bool,
-    stats: Arc<StatCollector>,
-) {
-    schedule_retry(scheduler, request, delay, release_permit, stats).await
 }

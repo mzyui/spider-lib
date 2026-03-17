@@ -53,14 +53,11 @@ use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use kanal::{AsyncReceiver, AsyncSender};
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, trace, warn};
 use spider_util::item::{ParseOutput, ScrapedItem};
 use spider_util::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-use tokio::sync::RwLock;
-use tokio::task::yield_now;
 use tokio::time::Instant;
 
 fn spawn_parser_worker<S>(
@@ -127,10 +124,6 @@ where
     let (internal_parse_tx, internal_parse_rx) =
         kanal::bounded_async::<Response>(parser_workers * 2);
 
-    // Track worker count dynamically
-    let current_worker_count = Arc::new(RwLock::new(parser_workers));
-
-    // Spawn initial parsing worker tasks
     for _ in 0..parser_workers {
         spawn_parser_worker::<S>(
             internal_parse_rx.clone(),
@@ -144,68 +137,9 @@ where
         );
     }
 
-    // Dynamic worker scaling task
-    let scaling_scheduler = Arc::clone(&scheduler);
-    let scaling_spider = Arc::clone(&spider);
-    let scaling_spider_state = Arc::clone(&spider_state);
-    let scaling_state = Arc::clone(&state);
-    let scaling_item_tx = item_tx.clone();
-    let scaling_stats = Arc::clone(&stats);
-    let scaling_worker_count = Arc::clone(&current_worker_count);
-    let scaling_internal_parse_rx = internal_parse_rx.clone();
-
-    tokio::spawn(async move {
-        let mut last_scale_check = Instant::now();
-
-        loop {
-            tokio::time::sleep(Duration::from_millis(250)).await;
-
-            // Scale workers based on queue depth and processing times
-            if last_scale_check.elapsed() >= Duration::from_secs(1) {
-                let current_workers = *scaling_worker_count.read().await;
-                let queue_depth = scaling_internal_parse_rx.len();
-
-                // Scale up if queue is backing up significantly
-                if queue_depth > current_workers * 3 && current_workers < parser_workers * 4 {
-                    let mut worker_count = scaling_worker_count.write().await;
-                    if *worker_count < parser_workers * 4 {
-                        *worker_count += 1;
-
-                        // Spawn a new worker
-                        let internal_parse_rx_clone = scaling_internal_parse_rx.clone();
-                        let spider_clone = Arc::clone(&scaling_spider);
-                        let spider_state_clone = Arc::clone(&scaling_spider_state);
-                        let scheduler_clone = Arc::clone(&scaling_scheduler);
-                        let item_tx_clone = scaling_item_tx.clone();
-                        let state_clone = Arc::clone(&scaling_state);
-                        let stats_clone = Arc::clone(&scaling_stats);
-                        spawn_parser_worker::<S>(
-                            internal_parse_rx_clone,
-                            spider_clone,
-                            spider_state_clone,
-                            scheduler_clone,
-                            item_tx_clone,
-                            state_clone,
-                            output_batch_size,
-                            stats_clone,
-                        );
-
-                        trace!("Scaled up parser workers to: {}", *worker_count);
-                    }
-                }
-
-                last_scale_check = Instant::now();
-            }
-
-            if scaling_scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                break;
-            }
-        }
-    });
-
     tokio::spawn(async move {
         trace!(
-            "Response parser coordinator started with {} workers (dynamic scaling enabled)",
+            "Response parser coordinator started with {} workers",
             parser_workers
         );
         while let Ok(response) = res_rx.recv().await {
@@ -213,11 +147,7 @@ where
 
             // Apply backpressure if item channel is filling up
             if item_tx.len() > item_backpressure_threshold {
-                trace!(
-                    "Applying backpressure to parser, item channel occupancy: {}",
-                    item_tx.len()
-                );
-                yield_now().await;
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
             }
 
             state.parsing_responses.fetch_add(1, Ordering::AcqRel);
@@ -249,7 +179,7 @@ pub async fn process_crawl_outputs<S>(
     let requests_len = requests.len();
 
     if requests_len > 0 || items_len > 0 {
-        info!(
+        debug!(
             "Processing {} requests and {} items from spider output.",
             requests_len, items_len
         );

@@ -7,27 +7,10 @@ use kanal::AsyncReceiver;
 use log::{debug, error, trace, warn};
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::item::ScrapedItem;
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-use tokio::time::Instant;
-
-async fn record_pipeline_timing(
-    pipeline_stats: &Arc<RwLock<HashMap<String, (Duration, usize)>>>,
-    pipeline_name: &str,
-    elapsed: Duration,
-) {
-    let mut stats_map = pipeline_stats.write().await;
-    let (total_time, count) = stats_map
-        .entry(pipeline_name.to_string())
-        .or_insert((Duration::new(0, 0), 0));
-    *total_time += elapsed;
-    *count += 1;
-}
 
 pub fn spawn_item_processor_task<S>(
     state: Arc<CrawlerState>,
@@ -42,7 +25,6 @@ where
 {
     let mut tasks = JoinSet::new();
     let semaphore = Arc::new(Semaphore::new(max_concurrent_pipelines));
-    let pipeline_stats = Arc::new(RwLock::new(HashMap::new()));
 
     trace!(
         "Starting item processor with max_concurrent_pipelines: {}",
@@ -65,7 +47,6 @@ where
             let state_clone = Arc::clone(&state);
             let pipelines_clone = Arc::clone(&pipelines);
             let stats_clone = Arc::clone(&stats);
-            let pipeline_stats_clone = Arc::clone(&pipeline_stats);
 
             tasks.spawn(async move {
                 trace!(
@@ -76,8 +57,6 @@ where
                 let mut item_to_process = Some(item);
                 for (idx, pipeline) in pipelines_clone.iter().enumerate() {
                     if let Some(current_item) = item_to_process.take() {
-                        let start_time = Instant::now();
-
                         trace!(
                             "Processing item through pipeline '{}' ({} of {})",
                             pipeline.name(),
@@ -88,45 +67,16 @@ where
                         match pipeline.process_item(current_item).await {
                             Ok(Some(next_item)) => {
                                 trace!("Pipeline '{}' returned processed item", pipeline.name());
-
-                                // Record pipeline processing time
-                                let elapsed = start_time.elapsed();
-                                record_pipeline_timing(
-                                    &pipeline_stats_clone,
-                                    pipeline.name(),
-                                    elapsed,
-                                )
-                                .await;
-
                                 item_to_process = Some(next_item);
                             }
                             Ok(None) => {
                                 debug!("Pipeline '{}' dropped item", pipeline.name());
                                 stats_clone.increment_items_dropped_by_pipeline();
-
-                                // Record pipeline processing time even for dropped items
-                                let elapsed = start_time.elapsed();
-                                record_pipeline_timing(
-                                    &pipeline_stats_clone,
-                                    pipeline.name(),
-                                    elapsed,
-                                )
-                                .await;
-
                                 break;
                             }
                             Err(e) => {
                                 error!("Pipeline '{}' error: {:?}", pipeline.name(), e);
                                 stats_clone.increment_items_dropped_by_pipeline();
-
-                                let elapsed = start_time.elapsed();
-                                record_pipeline_timing(
-                                    &pipeline_stats_clone,
-                                    pipeline.name(),
-                                    elapsed,
-                                )
-                                .await;
-
                                 break;
                             }
                         }
