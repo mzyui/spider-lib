@@ -112,7 +112,7 @@ impl ReqwestClientDownloader {
         let base_client = Self::build_client(
             timeout,
             None,
-            200,
+            512,
             Duration::from_secs(120),
             Duration::from_secs(60),
             Duration::from_secs(10),
@@ -157,6 +157,7 @@ impl ReqwestClientDownloader {
             .pool_max_idle_per_host(pool_max_idle_per_host)
             .pool_idle_timeout(pool_idle_timeout)
             .tcp_keepalive(tcp_keepalive)
+            .tcp_nodelay(true)
             .connect_timeout(connect_timeout)
             .user_agent(Self::DEFAULT_USER_AGENT);
 
@@ -199,7 +200,7 @@ impl ReqwestClientDownloader {
         let proxy_client = match Self::build_client(
             self.timeout,
             Some(proxy),
-            50,
+            128,
             Duration::from_secs(90),
             Duration::from_secs(30),
             Duration::from_secs(5),
@@ -220,31 +221,6 @@ impl ReqwestClientDownloader {
         self.proxy_clients
             .insert(proxy_url.to_string(), proxy_client.clone());
         Some(proxy_client)
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn test_proxy_from_request(request: &Request) -> Option<String> {
-        Self::proxy_from_request(request)
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn test_select_client_for_request(&self, request: &Request) -> Client {
-        self.select_client_for_request(request)
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn test_get_or_create_proxy_client(&self, proxy_url: &str) -> Option<Client> {
-        self.get_or_create_proxy_client(proxy_url)
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn test_proxy_client_count(&self) -> u64 {
-        self.proxy_clients.entry_count()
-    }
-
-    #[cfg(feature = "test-support")]
-    pub fn test_has_proxy_client(&self, proxy_url: &str) -> bool {
-        self.proxy_clients.get(proxy_url).is_some()
     }
 }
 
