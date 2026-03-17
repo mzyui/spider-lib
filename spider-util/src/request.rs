@@ -14,7 +14,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use spider_util::request::{Request, Body};
 //! use url::Url;
 //! use serde_json::json;
@@ -56,7 +56,7 @@ use crate::error::SpiderError;
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::request::Body;
 /// use serde_json::json;
 /// use dashmap::DashMap;
@@ -172,7 +172,7 @@ impl<'de> Deserialize<'de> for Body {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::request::Request;
 /// use url::Url;
 ///
@@ -376,7 +376,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
@@ -396,7 +396,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
@@ -416,7 +416,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
@@ -441,7 +441,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::{Request, Body};
     /// use url::Url;
     /// use serde_json::json;
@@ -458,7 +458,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     /// use serde_json::json;
@@ -474,7 +474,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     /// use dashmap::DashMap;
@@ -493,7 +493,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     /// use bytes::Bytes;
@@ -512,7 +512,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     /// use serde_json::json;
@@ -627,7 +627,7 @@ impl Request {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
     ///

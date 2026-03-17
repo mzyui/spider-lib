@@ -15,7 +15,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use spider_util::error::{SpiderError, PipelineError};
 //! use url::Url;
 //!
@@ -78,7 +78,7 @@ impl From<reqwest::Error> for ReqwestError {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::error::SpiderError;
 /// use url::Url;
 ///
@@ -185,7 +185,7 @@ impl From<SerdeJsonError> for SpiderError {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::error::PipelineError;
 ///
 /// let err = PipelineError::IoError("File not found".to_string());

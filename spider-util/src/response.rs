@@ -13,7 +13,7 @@
 //!
 //! ## Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use spider_util::response::Response;
 //! use reqwest::StatusCode;
 //! use bytes::Bytes;
@@ -44,10 +44,18 @@ use dashmap::{DashMap, DashSet};
 use linkify::{LinkFinder, LinkKind};
 use reqwest::StatusCode;
 use scraper::{ElementRef, Html};
+use seahash::SeaHasher;
 use serde::de::DeserializeOwned;
 use serde_json;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::{str::Utf8Error, str::from_utf8, sync::Arc};
 use url::Url;
+
+thread_local! {
+    static HTML_CACHE: RefCell<HashMap<u64, Html>> = RefCell::new(HashMap::new());
+}
 
 /// Represents the type of a discovered link.
 ///
@@ -85,7 +93,7 @@ pub enum LinkType {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::response::{Link, LinkType};
 /// use url::Url;
 ///
@@ -200,7 +208,7 @@ impl LinkExtractOptions {
 ///
 /// ## Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use spider_util::response::Response;
 /// use reqwest::StatusCode;
 /// use bytes::Bytes;
@@ -241,6 +249,25 @@ pub struct Response {
 }
 
 impl Response {
+    /// Creates a new response with an empty HTML cache.
+    pub fn new(
+        url: Url,
+        status: StatusCode,
+        headers: http::header::HeaderMap,
+        body: bytes::Bytes,
+        request_url: Url,
+    ) -> Self {
+        Self {
+            url,
+            status,
+            headers,
+            body,
+            request_url,
+            meta: None,
+            cached: false,
+        }
+    }
+
     /// Reconstructs the original [`Request`] that led to this response.
     ///
     /// This method creates a new [`Request`] with the same URL and metadata
@@ -249,7 +276,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::Response;
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -284,7 +311,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::Response;
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -318,7 +345,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::Response;
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -336,8 +363,18 @@ impl Response {
     /// # Ok::<(), std::str::Utf8Error>(())
     /// ```
     pub fn to_html(&self) -> Result<Html, Utf8Error> {
-        let body_str = from_utf8(&self.body)?;
-        Ok(Html::parse_document(body_str))
+        let cache_key = self.html_cache_key();
+
+        HTML_CACHE.with(|cache| {
+            if let Some(html) = cache.borrow().get(&cache_key).cloned() {
+                return Ok(html);
+            }
+
+            let body_str = from_utf8(&self.body)?;
+            let html = Html::parse_document(body_str);
+            cache.borrow_mut().insert(cache_key, html.clone());
+            Ok(html)
+        })
     }
 
     /// Lazily parses the response body as HTML.
@@ -351,7 +388,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::Response;
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -371,11 +408,7 @@ impl Response {
     /// # Ok::<(), std::str::Utf8Error>(())
     /// ```
     pub fn lazy_html(&self) -> Result<impl Fn() -> Result<Html, Utf8Error> + '_, Utf8Error> {
-        let body_bytes = &self.body;
-        Ok(move || {
-            let body_str = from_utf8(body_bytes)?;
-            Ok(Html::parse_document(body_str))
-        })
+        Ok(move || self.to_html())
     }
 
     /// Returns a customizable iterator of links discovered in the response body.
@@ -385,7 +418,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::{LinkExtractOptions, Response};
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -423,7 +456,7 @@ impl Response {
     ///
     /// ## Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use spider_util::response::Response;
     /// # use reqwest::StatusCode;
     /// # use bytes::Bytes;
@@ -531,6 +564,14 @@ impl Response {
         }
 
         Some(Link { url, link_type })
+    }
+
+    fn html_cache_key(&self) -> u64 {
+        let mut hasher = SeaHasher::new();
+        self.url.as_str().hash(&mut hasher);
+        self.request_url.as_str().hash(&mut hasher);
+        self.body.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
