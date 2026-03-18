@@ -91,7 +91,8 @@ fn extract_description(html: &Html) -> Result<String, SpiderError> {
             continue;
         }
 
-        let text = clean_description_text(&normalize_whitespace(&paragraph.text().collect::<String>()));
+        let text =
+            clean_description_text(&normalize_whitespace(&paragraph.text().collect::<String>()));
         if text.is_empty() || text == "\u{a0}" || text.chars().count() < 80 {
             continue;
         }
@@ -213,16 +214,13 @@ fn is_release_descriptor_token(token: &str) -> bool {
 }
 
 fn is_title_separator_token(token: &str) -> bool {
-    token.chars()
+    token
+        .chars()
         .all(|ch| ch.is_ascii_punctuation() || ch.is_whitespace())
 }
 
 fn clean_metadata_part(input: &str) -> String {
-    input
-        .trim()
-        .trim_matches(':')
-        .trim()
-        .to_string()
+    input.trim().trim_matches(':').trim().to_string()
 }
 
 fn extract_metadata_value(full_text: &str, label: &str) -> String {
@@ -230,11 +228,10 @@ fn extract_metadata_value(full_text: &str, label: &str) -> String {
         return String::new();
     }
 
-    let remainder = full_text.split_once(':').map(|(_, rest)| rest).unwrap_or_else(|| {
-        full_text
-            .strip_prefix(label)
-            .unwrap_or_default()
-    });
+    let remainder = full_text
+        .split_once(':')
+        .map(|(_, rest)| rest)
+        .unwrap_or_else(|| full_text.strip_prefix(label).unwrap_or_default());
 
     clean_metadata_part(remainder)
 }
@@ -282,7 +279,11 @@ fn find_download_marker(input: &str) -> Option<usize> {
 
     markers
         .iter()
-        .filter_map(|marker| input.find(marker).map(|index| index + marker.len() - "Download ".len()))
+        .filter_map(|marker| {
+            input
+                .find(marker)
+                .map(|index| index + marker.len() - "Download ".len())
+        })
         .min()
 }
 

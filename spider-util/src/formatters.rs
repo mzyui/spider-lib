@@ -17,9 +17,28 @@ pub trait DurationFormatter {
 /// Default implementation for duration formatting.
 pub struct DefaultDurationFormatter;
 
+fn format_human_duration(duration: Duration) -> String {
+    let total_secs = duration.as_secs();
+    let hours = total_secs / 3600;
+    let minutes = (total_secs % 3600) / 60;
+    let seconds = duration.as_secs_f64() % 60.0;
+
+    if hours > 0 {
+        format!("{hours}h {minutes:02}m {seconds:05.2}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds:05.2}s")
+    } else if total_secs > 0 {
+        format!("{:.2}s", duration.as_secs_f64())
+    } else if duration.as_millis() > 0 {
+        format!("{}ms", duration.as_millis())
+    } else {
+        format!("{}us", duration.as_micros())
+    }
+}
+
 impl DurationFormatter for DefaultDurationFormatter {
     fn formatted_duration(&self, duration: Duration) -> String {
-        format!("{:?}", duration)
+        format_human_duration(duration)
     }
 
     fn formatted_request_time(&self, duration: Option<Duration>) -> String {

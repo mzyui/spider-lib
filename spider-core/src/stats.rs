@@ -90,7 +90,22 @@ struct StatsSnapshot {
 
 impl StatsSnapshot {
     fn formatted_duration(&self) -> String {
-        format!("{:?}", self.elapsed_duration)
+        let total_secs = self.elapsed_duration.as_secs();
+        let hours = total_secs / 3600;
+        let minutes = (total_secs % 3600) / 60;
+        let seconds = self.elapsed_duration.as_secs_f64() % 60.0;
+
+        if hours > 0 {
+            format!("{hours}h {minutes:02}m {seconds:05.2}s")
+        } else if minutes > 0 {
+            format!("{minutes}m {seconds:05.2}s")
+        } else if total_secs > 0 {
+            format!("{:.2}s", self.elapsed_duration.as_secs_f64())
+        } else if self.elapsed_duration.as_millis() > 0 {
+            format!("{}ms", self.elapsed_duration.as_millis())
+        } else {
+            format!("{}us", self.elapsed_duration.as_micros())
+        }
     }
 
     fn formatted_request_time(&self, duration: Option<Duration>) -> String {
