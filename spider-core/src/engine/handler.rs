@@ -21,7 +21,7 @@ use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 
 use kanal::{AsyncReceiver, AsyncSender};
-use log::{debug, error, trace};
+use log::{debug, error, info, trace};
 use spider_middleware::middleware::MiddlewareAction;
 use spider_util::error::SpiderError;
 use spider_util::item::ScrapedItem;
@@ -55,13 +55,13 @@ where
     let mut tasks = JoinSet::new();
 
     tokio::spawn(async move {
-        trace!(
+        info!(
             "Downloader task started with max_concurrent_downloads: {}",
             max_concurrent_downloads
         );
         loop {
             if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                trace!("Scheduler shutdown flag detected, exiting downloader task");
+                info!("Downloader task observed scheduler shutdown and is stopping");
                 break;
             }
 
@@ -71,7 +71,7 @@ where
                     req
                 }
                 Err(_) => {
-                    trace!("Request channel closed, exiting downloader task");
+                    info!("Downloader task is stopping because the request channel closed");
                     break;
                 }
             };
@@ -139,7 +139,7 @@ where
             });
         }
 
-        trace!("Waiting for active download tasks to complete");
+        info!("Downloader task waiting for active downloads to finish");
         while let Some(res) = tasks.join_next().await {
             if let Err(e) = res {
                 error!("A download task failed: {:?}", e);
@@ -147,7 +147,7 @@ where
                 trace!("Download task completed successfully");
             }
         }
-        trace!("Downloader task finished");
+        info!("Downloader task finished");
     })
 }
 

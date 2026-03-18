@@ -32,6 +32,8 @@ use spider_pipeline::pipeline::Pipeline;
 use spider_util::error::SpiderError;
 use spider_util::item::ScrapedItem;
 use spider_util::request::Request;
+#[cfg(feature = "live-stats")]
+use unicode_width::UnicodeWidthChar;
 
 #[cfg(feature = "checkpoint")]
 use crate::checkpoint::save_checkpoint;
@@ -108,10 +110,11 @@ where
 
     pub async fn start_crawl(self) -> Result<(), SpiderError> {
         info!(
-            "Crawler starting crawl with configuration: max_concurrent_downloads={}, parser_workers={}, max_concurrent_pipelines={}",
+            "Crawler starting crawl with configuration: max_concurrent_downloads={}, parser_workers={}, max_concurrent_pipelines={}, item_limit={:?}",
             self.config.max_concurrent_downloads,
             self.config.parser_workers,
-            self.config.max_concurrent_pipelines
+            self.config.max_concurrent_pipelines,
+            self.config.item_limit
         );
 
         let Crawler {
@@ -155,13 +158,13 @@ where
         let (res_tx, res_rx) = bounded_async(channel_capacity);
         let (item_tx, item_rx) = bounded_async(channel_capacity);
 
-        trace!("Spawning initial requests task");
+        info!("Starting initial request bootstrap task");
         let init_task = spawn_init_task(ctx.clone());
 
-        trace!("Initializing middleware manager");
+        debug!("Initializing middleware manager");
         let middlewares = super::SharedMiddlewareManager::new(middlewares);
 
-        trace!("Spawning downloader task");
+        info!("Starting downloader task");
         let downloader_handle = super::spawn_downloader_task::<S, C>(
             Arc::clone(&ctx.scheduler),
             req_rx,
@@ -175,7 +178,7 @@ where
             Arc::clone(&ctx.stats),
         );
 
-        trace!("Spawning parser task");
+        info!("Starting parser task");
         let parser_handle = super::spawn_parser_task::<S>(
             Arc::clone(&ctx.scheduler),
             Arc::clone(&ctx.spider),
@@ -186,10 +189,11 @@ where
             config.parser_workers,
             config.output_batch_size.max(1),
             config.item_backpressure_threshold.max(1),
+            config.item_limit,
             Arc::clone(&ctx.stats),
         );
 
-        trace!("Spawning item processor task");
+        info!("Starting item processor task");
         let processor_handle = super::spawn_item_processor_task::<S>(
             state.clone(),
             item_rx,
@@ -231,7 +235,7 @@ where
                 #[cfg(not(feature = "cookie-store"))]
                 let _cookie_store_cp = ();
 
-                trace!(
+                info!(
                     "Starting periodic checkpoint task with interval: {:?}",
                     interval
                 );
@@ -272,7 +276,7 @@ where
                 if let Err(e) = scheduler.shutdown().await {
                     error!("Error during scheduler shutdown: {}", e);
                 } else {
-                    debug!("Scheduler shutdown initiated successfully");
+                    info!("Scheduler shutdown initiated successfully");
                 }
                 true
             }
@@ -300,7 +304,7 @@ where
             if let Err(e) = scheduler.shutdown().await {
                 error!("Error during scheduler shutdown: {}", e);
             } else {
-                debug!("Scheduler shutdown initiated successfully");
+                info!("Scheduler shutdown initiated successfully");
             }
         }
 
@@ -398,7 +402,7 @@ where
         info!("Closing item pipelines...");
         let futures: Vec<_> = pipelines.iter().map(|p| p.close()).collect();
         join_all(futures).await;
-        debug!("All item pipelines closed");
+        info!("All item pipelines closed");
 
         if config.live_stats {
             println!("{}\n", stats.to_live_report_string());
@@ -430,6 +434,9 @@ where
     I: ScrapedItem,
 {
     tokio::spawn(async move {
+        let mut enqueued = 0usize;
+        let mut skipped = 0usize;
+        let mut failed = 0usize;
         match ctx.spider.start_requests() {
             Ok(source) => match source.into_iter() {
                 Ok(requests) => {
@@ -438,6 +445,7 @@ where
                             Ok(req) => req,
                             Err(e) => {
                                 warn!("Skipping invalid start URL entry: {}", e);
+                                skipped += 1;
                                 continue;
                             }
                         };
@@ -446,12 +454,18 @@ where
                         match ctx.scheduler.enqueue_request(req).await {
                             Ok(_) => {
                                 ctx.stats.increment_requests_enqueued();
+                                enqueued += 1;
                             }
                             Err(e) => {
                                 error!("Failed to enqueue initial request: {}", e);
+                                failed += 1;
                             }
                         }
                     }
+                    info!(
+                        "Initial request bootstrap finished: {} enqueued, {} skipped, {} failed",
+                        enqueued, skipped, failed
+                    );
                 }
                 Err(e) => error!("Failed to resolve start request source: {}", e),
             },
@@ -481,7 +495,7 @@ impl LiveStatsRenderer {
         let terminal_width = Self::terminal_width();
         let next_lines: Vec<String> = content
             .lines()
-            .map(|line| Self::trim_to_width(line, terminal_width))
+            .map(|line| Self::fit_line(line, terminal_width))
             .collect();
         let previous_len = self.previous_lines.len();
         let next_len = next_lines.len();
@@ -514,11 +528,64 @@ impl LiveStatsRenderer {
             .unwrap_or(usize::MAX)
     }
 
-    fn trim_to_width(line: &str, width: usize) -> String {
+    fn fit_line(line: &str, width: usize) -> String {
+        let safe_width = Self::safe_terminal_width(width);
+
+        if line.starts_with("current  : ") {
+            return Self::truncate_with_ellipsis(line, safe_width);
+        }
+
+        Self::truncate_to_width(line, safe_width)
+    }
+
+    fn safe_terminal_width(width: usize) -> usize {
         if width == usize::MAX {
+            return width;
+        }
+
+        width.saturating_sub(1)
+    }
+
+    fn truncate_to_width(line: &str, width: usize) -> String {
+        if width == usize::MAX || width == 0 {
             return line.to_owned();
         }
-        line.chars().take(width).collect()
+
+        let mut visible_width = 0;
+        let mut truncated = String::new();
+
+        for ch in line.chars() {
+            let ch_width = ch.width().unwrap_or(0);
+            if visible_width + ch_width > width {
+                break;
+            }
+
+            truncated.push(ch);
+            visible_width += ch_width;
+        }
+
+        truncated
+    }
+
+    fn truncate_with_ellipsis(line: &str, width: usize) -> String {
+        if width == usize::MAX || width == 0 {
+            return line.to_owned();
+        }
+
+        if Self::display_width(line) <= width {
+            return line.to_owned();
+        }
+
+        if width <= 3 {
+            return ".".repeat(width);
+        }
+
+        let visible = Self::truncate_to_width(line, width - 3);
+        format!("{visible}...")
+    }
+
+    fn display_width(line: &str) -> usize {
+        line.chars().map(|ch| ch.width().unwrap_or(0)).sum()
     }
 
     fn finish(self) {

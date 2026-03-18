@@ -53,7 +53,7 @@ use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use kanal::{AsyncReceiver, AsyncSender};
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use spider_util::item::{ParseOutput, ScrapedItem};
 use spider_util::response::Response;
 use std::sync::Arc;
@@ -68,6 +68,7 @@ fn spawn_parser_worker<S>(
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
     output_batch_size: usize,
+    item_limit: Option<usize>,
     stats: Arc<StatCollector>,
 ) where
     S: Spider + 'static,
@@ -92,6 +93,7 @@ fn spawn_parser_worker<S>(
                         item_tx.clone(),
                         state.clone(),
                         output_batch_size,
+                        item_limit,
                         stats.clone(),
                     )
                     .await;
@@ -115,6 +117,7 @@ pub fn spawn_parser_task<S>(
     parser_workers: usize,
     output_batch_size: usize,
     item_backpressure_threshold: usize,
+    item_limit: Option<usize>,
     stats: Arc<StatCollector>,
 ) -> tokio::task::JoinHandle<()>
 where
@@ -133,12 +136,13 @@ where
             item_tx.clone(),
             Arc::clone(&state),
             output_batch_size,
+            item_limit,
             Arc::clone(&stats),
         );
     }
 
     tokio::spawn(async move {
-        trace!(
+        info!(
             "Response parser coordinator started with {} workers",
             parser_workers
         );
@@ -159,7 +163,7 @@ where
 
         trace!("Closing internal parse channel");
         drop(internal_parse_tx);
-        trace!("Response parser coordinator finished");
+        info!("Response parser coordinator finished");
     })
 }
 
@@ -169,6 +173,7 @@ pub async fn process_crawl_outputs<S>(
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
     output_batch_size: usize,
+    item_limit: Option<usize>,
     stats: Arc<StatCollector>,
 ) where
     S: Spider + 'static,
@@ -187,69 +192,156 @@ pub async fn process_crawl_outputs<S>(
         trace!("Spider output contained no requests or items");
     }
 
-    if items_len > 0 {
-        stats.add_items_scraped(items_len);
+    let mut item_error_total = 0;
+    let mut items_sent = 0usize;
+    let mut item_limit_hit = false;
+    let batch_size = output_batch_size.max(1);
+    let mut item_batch_len = 0usize;
+    for item in items {
+        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+            item_error_total += 1;
+            continue;
+        }
+
+        if let Some(limit) = item_limit {
+            if state
+                .admitted_items
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                    (current < limit).then_some(current + 1)
+                })
+                .is_err()
+            {
+                item_limit_hit = true;
+                break;
+            }
+        }
+
+        item_batch_len += 1;
+        if item_tx.is_closed() {
+            warn!("Item channel is closed, stopping item processing");
+            item_error_total += 1;
+            if item_limit.is_some() {
+                state.admitted_items.fetch_sub(1, Ordering::AcqRel);
+            }
+        } else {
+            stats.record_current_item_preview(&item);
+            state.processing_items.fetch_add(1, Ordering::AcqRel);
+            if item_tx.send(item).await.is_err() {
+                error!("Failed to send item to processing channel");
+                item_error_total += 1;
+                state.processing_items.fetch_sub(1, Ordering::AcqRel);
+                if item_limit.is_some() {
+                    state.admitted_items.fetch_sub(1, Ordering::AcqRel);
+                }
+            } else {
+                items_sent += 1;
+                if matches!(item_limit, Some(limit) if state.admitted_items.load(Ordering::Acquire) >= limit)
+                {
+                    item_limit_hit = true;
+                }
+            }
+        }
+
+        if item_batch_len == batch_size {
+            item_batch_len = 0;
+        }
+    }
+
+    if items_sent > 0 {
+        stats.add_items_scraped(items_sent);
+    }
+
+    if item_error_total > 0 {
+        warn!(
+            "Failed to send {} of {} scraped items.",
+            item_error_total, items_len
+        );
+    } else if items_sent > 0 {
+        debug!(
+            "Successfully sent {} scraped items for processing",
+            items_sent
+        );
+    }
+
+    if item_limit_hit
+        && state
+            .item_limit_reached
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+    {
+        info!("Item limit reached, initiating scheduler shutdown");
+        if let Err(err) = scheduler.shutdown().await {
+            error!(
+                "Failed to shut down scheduler after reaching item limit: {:?}",
+                err
+            );
+        }
     }
 
     let mut request_error_total = 0;
 
-    // Process all requests first without delays
-    let batch_size = output_batch_size.max(1);
-    let mut request_batch = Vec::with_capacity(batch_size);
-    for request in requests {
-        request_batch.push(request);
-        if request_batch.len() < batch_size {
-            continue;
-        }
-
-        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+    if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+        request_error_total = requests_len;
+        if requests_len > 0 {
             debug!("Scheduler is shutting down, skipping remaining requests");
-            request_error_total += request_batch.len();
-            request_batch.clear();
-            continue;
         }
-
-        let current_batch = std::mem::take(&mut request_batch);
-        match scheduler.enqueue_requests_batch(current_batch).await {
-            Ok(enqueued) => {
-                for _ in 0..enqueued {
-                    stats.increment_requests_enqueued();
-                }
-                request_error_total += batch_size.saturating_sub(enqueued);
+    } else {
+        let mut request_batch = Vec::with_capacity(batch_size);
+        for request in requests {
+            request_batch.push(request);
+            if request_batch.len() < batch_size {
+                continue;
             }
-            Err(e) => {
-                if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                    debug!("Scheduler is shutting down, skipping remaining requests");
-                    request_error_total += batch_size;
-                    continue;
-                }
 
-                error!("Failed to enqueue request batch: {:?}", e);
-                request_error_total += batch_size;
+            if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                debug!("Scheduler is shutting down, skipping remaining requests");
+                request_error_total += request_batch.len();
+                request_batch.clear();
+                continue;
             }
-        }
-    }
 
-    if !request_batch.is_empty() {
-        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-            debug!("Scheduler is shutting down, skipping remaining requests");
-            request_error_total += request_batch.len();
-        } else {
-            let remaining = request_batch.len();
-            match scheduler.enqueue_requests_batch(request_batch).await {
+            let current_batch = std::mem::take(&mut request_batch);
+            match scheduler.enqueue_requests_batch(current_batch).await {
                 Ok(enqueued) => {
                     for _ in 0..enqueued {
                         stats.increment_requests_enqueued();
                     }
-                    request_error_total += remaining.saturating_sub(enqueued);
+                    request_error_total += batch_size.saturating_sub(enqueued);
                 }
                 Err(e) => {
                     if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                         debug!("Scheduler is shutting down, skipping remaining requests");
-                        request_error_total += remaining;
-                    } else {
-                        error!("Failed to enqueue request batch: {:?}", e);
-                        request_error_total += remaining;
+                        request_error_total += batch_size;
+                        continue;
+                    }
+
+                    error!("Failed to enqueue request batch: {:?}", e);
+                    request_error_total += batch_size;
+                }
+            }
+        }
+
+        if !request_batch.is_empty() {
+            if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                debug!("Scheduler is shutting down, skipping remaining requests");
+                request_error_total += request_batch.len();
+            } else {
+                let remaining = request_batch.len();
+                match scheduler.enqueue_requests_batch(request_batch).await {
+                    Ok(enqueued) => {
+                        for _ in 0..enqueued {
+                            stats.increment_requests_enqueued();
+                        }
+                        request_error_total += remaining.saturating_sub(enqueued);
+                    }
+                    Err(e) => {
+                        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                            debug!("Scheduler is shutting down, skipping remaining requests");
+                            request_error_total += remaining;
+                        } else {
+                            error!("Failed to enqueue request batch: {:?}", e);
+                            request_error_total += remaining;
+                        }
                     }
                 }
             }
@@ -263,35 +355,5 @@ pub async fn process_crawl_outputs<S>(
         );
     } else if requests_len > 0 {
         debug!("Successfully enqueued all {} requests", requests_len);
-    }
-
-    let mut item_error_total = 0;
-    let mut item_batch_len = 0usize;
-    for item in items {
-        item_batch_len += 1;
-        if item_tx.is_closed() {
-            warn!("Item channel is closed, stopping item processing");
-            item_error_total += 1;
-        } else {
-            state.processing_items.fetch_add(1, Ordering::AcqRel);
-            if item_tx.send(item).await.is_err() {
-                error!("Failed to send item to processing channel");
-                item_error_total += 1;
-                state.processing_items.fetch_sub(1, Ordering::AcqRel);
-            }
-        }
-
-        if item_batch_len == batch_size {
-            item_batch_len = 0;
-        }
-    }
-
-    if item_error_total > 0 {
-        warn!(
-            "Failed to send {} of {} scraped items.",
-            item_error_total, items_len
-        );
-    } else if items_len > 0 {
-        debug!("Successfully sent all {} items for processing", items_len);
     }
 }

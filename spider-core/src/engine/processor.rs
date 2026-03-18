@@ -4,7 +4,7 @@
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use kanal::AsyncReceiver;
-use log::{debug, error, trace, warn};
+use log::{debug, error, info, trace, warn};
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::item::ScrapedItem;
 use std::sync::Arc;
@@ -26,7 +26,7 @@ where
     let mut tasks = JoinSet::new();
     let semaphore = Arc::new(Semaphore::new(max_concurrent_pipelines));
 
-    trace!(
+    info!(
         "Starting item processor with max_concurrent_pipelines: {}",
         max_concurrent_pipelines
     );
@@ -98,7 +98,7 @@ where
             });
         }
 
-        trace!("Waiting for active item processing tasks to complete");
+        info!("Item processor waiting for active pipeline work to finish");
         while let Some(res) = tasks.join_next().await {
             if let Err(e) = res {
                 error!("An item processing task failed: {:?}", e);
@@ -106,6 +106,6 @@ where
                 trace!("Item processing task completed successfully");
             }
         }
-        trace!("Item processor finished");
+        info!("Item processor finished");
     })
 }
