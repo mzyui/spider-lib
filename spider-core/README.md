@@ -55,7 +55,18 @@ impl Spider for MySpider {
     }
 }
 
+async fn run() -> Result<(), SpiderError> {
+    let crawler = CrawlerBuilder::new(MySpider)
+        .limit(1)
+        .build()
+        .await?;
+
+    crawler.start_crawl().await
+}
+
 ```
+
+`CrawlerBuilder::limit(n)` stops the crawl after `n` scraped items have been admitted for processing, which is useful for previews and smoke runs.
 
 ## Feature Flags
 

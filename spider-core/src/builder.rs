@@ -268,9 +268,30 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         self
     }
 
+    /// Sets which scraped item fields should be shown in live stats preview.
+    ///
+    /// Field names support dot notation for nested JSON objects such as
+    /// `title`, `source_url`, or `metadata.Japanese`.
+    ///
+    /// You can also set aliases with `label=path`, for example
+    /// `url=source_url` or `jp=metadata.Japanese`.
+    pub fn live_stats_preview_fields(
+        mut self,
+        fields: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.live_stats_preview_fields = Some(fields.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Sets the maximum grace period for crawler shutdown before forcing task abort.
     pub fn shutdown_grace_period(mut self, grace_period: Duration) -> Self {
         self.config.shutdown_grace_period = grace_period;
+        self
+    }
+
+    /// Stops the crawl after `limit` scraped items have been admitted for processing.
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.config.item_limit = Some(limit);
         self
     }
 
@@ -467,7 +488,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         let (scheduler_arc, req_rx) =
             Scheduler::new(scheduler_state, self.config.max_pending_requests);
         let downloader_arc = Arc::new(self.downloader);
-        let stats = Arc::new(StatCollector::new());
+        let stats = Arc::new(StatCollector::new(
+            self.config.live_stats_preview_fields.clone(),
+        ));
 
         // Build crawler with or without cookie store based on feature flag
         #[cfg(feature = "cookie-store")]
@@ -524,7 +547,7 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         let mut pipeline_states = None;
 
         if let Some(path) = &self.checkpoint_config.path {
-            debug!("Attempting to load checkpoint from {:?}", path);
+            info!("Attempting to restore checkpoint from {:?}", path);
             if let Some(checkpoint) = self.load_checkpoint_from_path(path) {
                 scheduler_state = Some(checkpoint.scheduler);
                 pipeline_states = Some(checkpoint.pipelines);
@@ -542,7 +565,10 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
         let mut cookie_store = None;
 
         if let Some(path) = &self.checkpoint_config.path {
-            debug!("Attempting to load cookie store from checkpoint {:?}", path);
+            info!(
+                "Attempting to restore cookie store from checkpoint {:?}",
+                path
+            );
             if let Some(checkpoint) = self.load_checkpoint_from_path(path) {
                 cookie_store = Some(checkpoint.cookie_store);
             }

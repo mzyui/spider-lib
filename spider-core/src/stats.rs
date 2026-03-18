@@ -40,7 +40,9 @@
 //! println!("{}", stats.to_markdown_string());
 //! ```
 
+use parking_lot::RwLock;
 use spider_util::error::SpiderError;
+use spider_util::item::ScrapedItem;
 use spider_util::metrics::{ExpMovingAverage, MetricsSnapshotProvider, format_plain_text_metrics};
 use std::{
     collections::HashMap,
@@ -83,6 +85,7 @@ struct StatsSnapshot {
     recent_requests_per_second: f64,
     recent_responses_per_second: f64,
     recent_items_per_second: f64,
+    current_item_preview: String,
 }
 
 impl StatsSnapshot {
@@ -311,6 +314,10 @@ impl MetricsSnapshotProvider for StatsSnapshot {
         self.recent_items_per_second
     }
 
+    fn get_current_item_preview(&self) -> &str {
+        &self.current_item_preview
+    }
+
     fn formatted_duration(&self) -> String {
         self.formatted_duration()
     }
@@ -380,15 +387,19 @@ pub struct StatCollector {
     responses_received_ema: ExpMovingAverage,
     #[serde(skip)]
     items_scraped_ema: ExpMovingAverage,
+    #[serde(skip)]
+    current_item_preview: Arc<RwLock<String>>,
+    #[serde(skip)]
+    live_stats_preview_fields: Option<Vec<String>>,
 }
 
 impl StatCollector {
     /// Creates a new `StatCollector` with all counters initialized to zero.
-    pub(crate) fn new() -> Self {
-        Self::build()
+    pub(crate) fn new(live_stats_preview_fields: Option<Vec<String>>) -> Self {
+        Self::build(live_stats_preview_fields)
     }
 
-    fn build() -> Self {
+    fn build(live_stats_preview_fields: Option<Vec<String>>) -> Self {
         StatCollector {
             start_time: Instant::now(),
             requests_enqueued: AtomicUsize::new(0),
@@ -418,6 +429,8 @@ impl StatCollector {
             requests_sent_ema: ExpMovingAverage::new(0.2),
             responses_received_ema: ExpMovingAverage::new(0.2),
             items_scraped_ema: ExpMovingAverage::new(0.2),
+            current_item_preview: Arc::new(RwLock::new("none".to_string())),
+            live_stats_preview_fields,
         }
     }
 
@@ -465,6 +478,7 @@ impl StatCollector {
             recent_requests_per_second,
             recent_responses_per_second,
             recent_items_per_second,
+            current_item_preview: self.current_item_preview.read().clone(),
         }
     }
 
@@ -561,6 +575,19 @@ impl StatCollector {
         }
         self.items_scraped.fetch_add(count, Ordering::AcqRel);
         self.items_scraped_ema.update(count);
+    }
+
+    /// Stores a compact single-line preview of the most recently scraped item.
+    pub(crate) fn record_current_item_preview<I: ScrapedItem>(&self, item: &I) {
+        let json = item.to_json_value();
+        let preview = build_item_preview(&json, self.live_stats_preview_fields.as_deref())
+            .unwrap_or_else(|| {
+                serde_json::to_string(&json).unwrap_or_else(|_| format!("{:?}", item))
+            })
+            .replace('\n', " ")
+            .replace('\r', " ");
+        let preview = truncate_preview(&preview, 160);
+        *self.current_item_preview.write() = preview;
     }
 
     /// Increments the count of processed items.
@@ -834,9 +861,73 @@ impl StatCollector {
     }
 }
 
+fn truncate_preview(input: &str, max_chars: usize) -> String {
+    let mut chars = input.chars();
+    let truncated: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        format!("{truncated}...")
+    } else {
+        truncated
+    }
+}
+
+fn build_item_preview(json: &serde_json::Value, fields: Option<&[String]>) -> Option<String> {
+    let fields = fields?;
+
+    if fields.len() == 1 {
+        let (_, path) = parse_preview_field(&fields[0]);
+        return get_value_by_path(json, path).map(format_preview_value);
+    }
+
+    let mut preview = serde_json::Map::new();
+
+    for field in fields {
+        let (label, path) = parse_preview_field(field);
+        if let Some(value) = get_value_by_path(json, path) {
+            preview.insert(label.to_string(), value.clone());
+        }
+    }
+
+    if preview.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&serde_json::Value::Object(preview)).ok()
+    }
+}
+
+fn format_preview_value(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(boolean) => boolean.to_string(),
+        serde_json::Value::Number(number) => number.to_string(),
+        serde_json::Value::String(text) => text.clone(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+            serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+        }
+    }
+}
+
+fn parse_preview_field(field: &str) -> (&str, &str) {
+    match field.split_once('=') {
+        Some((label, path)) if !label.is_empty() && !path.is_empty() => (label, path),
+        _ => (field, field),
+    }
+}
+
+fn get_value_by_path<'a>(
+    value: &'a serde_json::Value,
+    path: &str,
+) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for segment in path.split('.') {
+        current = current.get(segment)?;
+    }
+    Some(current)
+}
+
 impl Default for StatCollector {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
 

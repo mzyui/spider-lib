@@ -31,6 +31,7 @@ log.workspace = true
 env_logger.workspace = true
 url.workspace = true
 crossterm = { workspace = true, optional = true }
+unicode-width.workspace = true
 
 spider-macro = { version = "0.1.11", path = "../spider-macro" }
 spider-util = { version = "0.3.4", path = "../spider-util" }

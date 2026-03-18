@@ -642,7 +642,7 @@ impl Scheduler {
                 ))
             })
         } else {
-            debug!("Scheduler internal channel already closed, skipping shutdown signal");
+            info!("Scheduler internal channel already closed, skipping shutdown signal");
             Ok(())
         }
     }

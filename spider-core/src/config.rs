@@ -65,8 +65,12 @@ pub struct CrawlerConfig {
     pub live_stats: bool,
     /// Refresh interval for live statistics output.
     pub live_stats_interval: Duration,
+    /// Optional item fields to show in live-stats preview instead of full JSON.
+    pub live_stats_preview_fields: Option<Vec<String>>,
     /// Maximum time to wait for a graceful shutdown before forcing task abort.
     pub shutdown_grace_period: Duration,
+    /// Maximum number of scraped items to process before stopping the crawl.
+    pub item_limit: Option<usize>,
 }
 
 impl Default for CrawlerConfig {
@@ -89,7 +93,9 @@ impl Default for CrawlerConfig {
             retry_release_permit: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
+            live_stats_preview_fields: None,
             shutdown_grace_period: Duration::from_secs(5),
+            item_limit: None,
         }
     }
 }
@@ -166,9 +172,30 @@ impl CrawlerConfig {
         self
     }
 
+    /// Sets which item fields should be shown in live stats preview output.
+    ///
+    /// Field names support dot notation for nested JSON objects, for example:
+    /// `title`, `source_url`, or `metadata.Japanese`.
+    ///
+    /// You can also set aliases with `label=path`, for example:
+    /// `url=source_url` or `jp=metadata.Japanese`.
+    pub fn with_live_stats_preview_fields(
+        mut self,
+        fields: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.live_stats_preview_fields = Some(fields.into_iter().map(Into::into).collect());
+        self
+    }
+
     /// Sets the maximum grace period for crawler shutdown.
     pub fn with_shutdown_grace_period(mut self, grace_period: Duration) -> Self {
         self.shutdown_grace_period = grace_period;
+        self
+    }
+
+    /// Sets the maximum number of scraped items to process before stopping the crawl.
+    pub fn with_item_limit(mut self, limit: usize) -> Self {
+        self.item_limit = Some(limit);
         self
     }
 
@@ -198,8 +225,14 @@ impl CrawlerConfig {
         if self.live_stats_interval.is_zero() {
             return Err("live_stats_interval must be greater than 0".to_string());
         }
+        if matches!(self.live_stats_preview_fields.as_ref(), Some(fields) if fields.is_empty()) {
+            return Err("live_stats_preview_fields must not be empty".to_string());
+        }
         if self.shutdown_grace_period.is_zero() {
             return Err("shutdown_grace_period must be greater than 0".to_string());
+        }
+        if matches!(self.item_limit, Some(0)) {
+            return Err("item_limit must be greater than 0".to_string());
         }
         Ok(())
     }

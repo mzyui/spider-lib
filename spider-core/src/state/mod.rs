@@ -57,7 +57,7 @@ pub use primitives::{
 // ============================================================================
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Represents the shared state of the crawler's various actors.
 ///
@@ -77,6 +77,10 @@ pub struct CrawlerState {
     pub parsing_responses: AtomicUsize,
     /// The number of items currently being processed by pipelines.
     pub processing_items: AtomicUsize,
+    /// The number of scraped items admitted into the processing pipeline.
+    pub admitted_items: AtomicUsize,
+    /// Indicates that the crawl is shutting down because the item limit was reached.
+    pub item_limit_reached: AtomicBool,
 }
 
 impl CrawlerState {
