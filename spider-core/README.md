@@ -1,18 +1,18 @@
 # spider-core
 
-Core crawling engine for `spider-lib`: the spider trait, crawler runtime, scheduler, builder, state, and stats.
+`spider-core` is the runtime heart of the workspace. It owns the crawling loop, the `Spider` trait, the builder used to compose a crawler, the scheduler, shared state, and runtime stats.
 
-Most users should start with [`spider-lib`](../README.md). Use `spider-core` directly when you want lower-level control over runtime composition while staying inside the same ecosystem.
+Most applications should still start with [`spider-lib`](../README.md), because the facade crate re-exports the common pieces. `spider-core` is the crate to reach for when you want tighter control over runtime composition or when you are building extensions against the lower-level API.
 
-## When to Use This Crate Directly
+## When it makes sense to depend on this crate
 
-Use `spider-core` if you need one or more of these:
+Use `spider-core` directly if you are:
 
-- You want to build against the crawler runtime without the facade crate.
-- You are integrating a custom downloader, middleware stack, or pipeline stack.
-- You are publishing lower-level extensions that should depend on the core runtime API.
+- building on the runtime without the root facade crate
+- integrating a custom downloader, middleware stack, or pipeline stack
+- publishing reusable extensions that should depend on the runtime contracts rather than the application-facing facade
 
-If you just want to build a spider quickly, prefer `spider-lib`.
+If your goal is simply “write a spider and run it”, `spider-lib` is usually more convenient.
 
 ## Installation
 
@@ -23,29 +23,29 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-`serde` and `serde_json` are still required if you use `#[scraped_item]`.
+You only need `serde` and `serde_json` when you use `#[scraped_item]`.
 
-## Core Runtime Lifecycle
+## What lives here
 
-At a high level, `spider-core` drives this loop:
+The main exports are:
+
+- `Spider` for crawl logic
+- `Crawler` for the runtime handle
+- `CrawlerBuilder` for composition and configuration
+- `Scheduler` for request admission and deduplication
+- shared state primitives such as counters and concurrent maps
+- `StatCollector` for runtime statistics
+
+The runtime loop is intentionally simple:
 
 1. `Spider::start_requests` seeds the crawl.
-2. The scheduler admits and de-duplicates requests.
-3. The downloader executes HTTP requests.
-4. Middleware can inspect or modify requests and responses.
-5. `Spider::parse` turns a `Response` into `ParseOutput`.
+2. Requests go through scheduling and deduplication.
+3. The downloader fetches responses.
+4. Middleware can alter requests, responses, or retry behavior.
+5. `Spider::parse` returns a `ParseOutput` containing items and follow-up requests.
 6. Pipelines process emitted items.
 
-## Main Components
-
-- `Spider`: trait for crawl logic.
-- `Crawler`: runtime engine that drives requests and parsing.
-- `CrawlerBuilder`: runtime configuration and composition.
-- `Scheduler`: request queueing and dedup behavior.
-- `CrawlerState`: shared runtime state.
-- `StatCollector`: runtime statistics.
-
-## Minimal Usage
+## Minimal example
 
 ```rust,ignore
 use spider_core::{async_trait, CrawlerBuilder, Spider};
@@ -89,31 +89,27 @@ async fn run() -> Result<(), SpiderError> {
 }
 ```
 
-`CrawlerBuilder::limit(n)` stops the crawl after `n` scraped items have been admitted for processing, which is useful for previews and smoke runs.
+`limit(1)` is handy for previews and smoke runs because it stops after the first admitted item.
 
-## Feature Flags
+## Feature flags
 
 | Feature | Purpose |
 | --- | --- |
-| `core` | Base crawler runtime. Enabled by default. |
-| `live-stats` | In-place terminal statistics updates. |
+| `core` | Base runtime support. Enabled by default. |
+| `live-stats` | In-place terminal statistics display. |
 | `checkpoint` | Checkpoint and resume support. |
-| `cookie-store` | `cookie_store` integration for runtime state. |
+| `cookie-store` | `cookie_store` integration in core state. |
 
 ```toml
 [dependencies]
 spider-core = { version = "2.0.1", features = ["checkpoint"] }
 ```
 
-## Related Extension Crates
+## Practical note
 
-Use these when extending the runtime:
+If you want a full working example instead of a runtime skeleton, the repository-level [`books` example](../README.md#run-the-examples) is the best reference point. It uses the facade crate, but the runtime flow is the same one `spider-core` drives.
 
-- Custom downloader guide: [`spider-downloader`](../spider-downloader/README.md)
-- Custom middleware guide: [`spider-middleware`](../spider-middleware/README.md)
-- Custom pipeline guide: [`spider-pipeline`](../spider-pipeline/README.md)
-
-## Related Crates
+## Related crates
 
 - [`spider-lib`](../README.md)
 - [`spider-downloader`](../spider-downloader/README.md)

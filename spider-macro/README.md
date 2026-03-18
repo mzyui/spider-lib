@@ -1,12 +1,18 @@
 # spider-macro
 
-Procedural macros for `spider-lib`.
+`spider-macro` contains the procedural macros used by the rest of the workspace. Right now the main one is `#[scraped_item]`, which is the small convenience macro most spiders end up using.
 
-This crate currently provides `#[scraped_item]`, a small macro that removes boilerplate when defining item types emitted by spiders and consumed by pipelines.
+The job of this crate is straightforward: keep scraped item definitions short and remove the repetitive trait impls you would otherwise have to write by hand.
 
-## When to Use This Crate Directly
+## When to depend on it directly
 
-Use `spider-macro` directly if you want to import the macro without depending on the facade crate. Most users can instead access the same macro through `spider_lib::prelude::*`.
+Use `spider-macro` directly if you want the macro without bringing in the root facade crate.
+
+If you are already using `spider-lib`, the usual path is still:
+
+```rust,ignore
+use spider_lib::prelude::*;
+```
 
 ## Installation
 
@@ -17,13 +23,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-`serde` and `serde_json` must be direct dependencies when using `#[scraped_item]`.
+`serde` and `serde_json` need to be direct dependencies in the downstream crate.
 
-## Macro Reference
+## `#[scraped_item]`
 
-### `#[scraped_item]`
-
-Applies to a struct and generates:
+Apply the attribute to a struct and it will generate:
 
 - `Serialize`
 - `Deserialize`
@@ -31,9 +35,9 @@ Applies to a struct and generates:
 - `Debug`
 - an implementation of `ScrapedItem`
 
-This is the expected item trait used by the rest of the `spider-*` ecosystem.
+That is the item contract expected by pipelines and the rest of the `spider-*` ecosystem.
 
-## Usage
+## Example
 
 ```rust,ignore
 use spider_macro::scraped_item;
@@ -45,7 +49,7 @@ struct Product {
 }
 ```
 
-Most applications can import it from the facade crate instead:
+The same macro is available through the facade prelude:
 
 ```rust,ignore
 use spider_lib::prelude::*;
@@ -57,17 +61,17 @@ struct Product {
 }
 ```
 
-## What the Macro Saves You From
+## What it saves you from
 
-Without `#[scraped_item]`, you would need to derive serde traits manually and implement the `ScrapedItem` contract yourself. The macro keeps item definitions short and consistent across spiders, middleware, and pipelines.
+Without the macro, every item type would need manual serde derives plus a hand-written `ScrapedItem` implementation. That is not hard, but it gets old quickly once a project has more than a few item structs.
 
-## Common Gotchas
+## Good to know
 
-- The macro only applies to structs.
-- Missing direct `serde` or `serde_json` dependencies will cause compile errors in downstream crates.
-- If you are already using `spider-lib`, importing from the prelude is usually the least surprising option.
+- The macro is for structs.
+- Missing direct `serde` or `serde_json` dependencies will break downstream compilation.
+- If you are writing a normal spider app, importing the macro through [`spider-lib`](../README.md) is usually the least surprising setup.
 
-## Related Crates
+## Related crates
 
 - [`spider-lib`](../README.md)
 - [`spider-core`](../spider-core/README.md)

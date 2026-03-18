@@ -1,18 +1,16 @@
 # spider-pipeline
 
-Item pipelines for processing, filtering, and exporting scraped data in `spider-lib`.
+`spider-pipeline` is where scraped items get cleaned up, validated, filtered, and written out. Pipelines sit after parsing, so this crate is a good fit for data-shaping work that should stay separate from page extraction logic.
 
-Use this crate directly when you need pipeline functionality without taking the full facade crate, or when you want to build custom item processing stages against the lower-level API.
+For normal app code you can enable pipelines through [`spider-lib`](../README.md). This crate is more useful when you want to compose pipelines directly or ship reusable item-processing stages.
 
-## When to Use This Crate Directly
+## When to use it directly
 
 Use `spider-pipeline` if you want to:
 
 - build or publish custom pipelines
-- work directly with pipeline composition primitives
-- use export pipelines without depending on the facade crate
-
-If you are building a normal application spider, `spider-lib` is usually the easiest entry point.
+- compose processing stages without the root facade crate
+- depend on output backends directly from lower-level runtime code
 
 ## Installation
 
@@ -21,18 +19,18 @@ If you are building a normal application spider, `spider-lib` is usually the eas
 spider-pipeline = "0.3.6"
 ```
 
-## Pipeline Catalog
+## Built-in pipelines
 
-### Core pipelines
+Always available:
 
 | Type | Purpose |
 | --- | --- |
-| `TransformPipeline` | Normalize or transform item fields. |
-| `ValidationPipeline` | Enforce field and type rules. |
-| `DeduplicationPipeline` | Drop duplicate items by key fields. |
-| `ConsolePipeline` | Print processed items for visibility and debugging. |
+| `TransformPipeline` | Apply field-level transformations. |
+| `ValidationPipeline` | Enforce field presence, type, and value rules. |
+| `DeduplicationPipeline` | Drop duplicate items by selected fields. |
+| `ConsolePipeline` | Log items for visibility and debugging. |
 
-### Optional output pipelines
+Feature-gated output pipelines:
 
 | Feature | Type | Output |
 | --- | --- | --- |
@@ -42,7 +40,7 @@ spider-pipeline = "0.3.6"
 | `pipeline-sqlite` | `SqlitePipeline` | SQLite database |
 | `pipeline-stream-json` | `StreamJsonPipeline` | Streaming JSON output |
 
-## Core Composition Example
+## Composition example
 
 ```rust,ignore
 use spider_pipeline::{
@@ -68,7 +66,9 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-## Build a Custom Pipeline
+That ordering is a good default: clean first, validate second, deduplicate next, then export or log.
+
+## Custom pipeline example
 
 ```rust,ignore
 use async_trait::async_trait;
@@ -89,57 +89,26 @@ impl<I: ScrapedItem> Pipeline<I> for EnrichPipeline {
 }
 ```
 
-Runtime integration:
+## Runnable example in this repo
 
-```rust,ignore
-let crawler = spider_core::CrawlerBuilder::new(MySpider)
-    .add_pipeline(EnrichPipeline)
-    .build()
-    .await?;
+If you want to see a real pipeline setup instead of a skeleton, run:
+
+```bash
+cargo run --example books_live --features "live-stats pipeline-csv"
 ```
 
-## Output Examples
+That example uses `CsvPipeline` and writes output to `output/books_live.csv`.
 
-`JsonlPipeline` writes one item per line:
-
-```json
-{"title":"Example","url":"https://example.com"}
-{"title":"Another","url":"https://example.com/2"}
-```
-
-`CsvPipeline` produces standard tabular output:
-
-```csv
-title,url
-Example,https://example.com
-Another,https://example.com/2
-```
-
-## Feature Flags
+## Feature flags
 
 ```toml
 [dependencies]
 spider-pipeline = { version = "0.3.6", features = ["pipeline-jsonl", "pipeline-csv"] }
 ```
 
-When used through `spider-lib`, enable the same feature names on the root crate.
+When used through the root crate, enable the same feature names on `spider-lib`.
 
-## Pipeline Strategy
-
-A common production sequence:
-
-1. `TransformPipeline` for cleanup.
-2. `ValidationPipeline` for schema checks.
-3. `DeduplicationPipeline` to control duplicates.
-4. One or more output pipelines such as `JsonlPipeline` or `CsvPipeline`.
-
-## Common Gotchas
-
-- Export pipelines are feature-gated.
-- Pipeline order matters: transform before validate, validate before export is a common default.
-- If you need framework integration plus middleware and runtime setup, starting from `spider-lib` is simpler.
-
-## Related Crates
+## Related crates
 
 - [`spider-lib`](../README.md)
 - [`spider-core`](../spider-core/README.md)

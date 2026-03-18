@@ -1,18 +1,18 @@
 # spider-middleware
 
-Built-in middleware implementations for `spider-lib` crawlers.
+`spider-middleware` contains the middleware layer used by the crawler runtime. This is where request and response behavior can be adjusted without pushing transport concerns into the downloader or page-specific logic into the spider.
 
-Most users enable middleware through [`spider-lib`](../README.md) features. Use this crate directly when composing middleware in custom runtime setups or when publishing middleware extensions against the lower-level API.
+For most application code, middleware is enabled through [`spider-lib`](../README.md) feature flags. This crate becomes more useful when you want to work against the middleware trait directly or publish reusable middleware.
 
-## When to Use This Crate Directly
+## When to use it directly
 
 Use `spider-middleware` if you want to:
 
-- work directly against the middleware trait
-- compose middleware without pulling in the facade crate
-- build or publish custom middleware for `spider-core`
+- compose middleware without the facade crate
+- implement custom middleware against the shared runtime contract
+- publish middleware for other `spider-core` users
 
-If you only need to enable built-in middleware for an application, `spider-lib` is usually the better entry point.
+If your only goal is to enable built-in middleware in an app, the root crate is still the smoother path.
 
 ## Installation
 
@@ -21,28 +21,28 @@ If you only need to enable built-in middleware for an application, `spider-lib` 
 spider-middleware = "0.3.5"
 ```
 
-## Middleware Catalog
+## Built-in middleware
 
-### Core middleware
+Always available:
 
 | Type | Purpose |
 | --- | --- |
-| `RateLimitMiddleware` | Controls request throughput and smooths burst traffic. |
-| `RetryMiddleware` | Retries transient failures with retry policy. |
-| `RefererMiddleware` | Populates `Referer` for follow-up requests. |
+| `RateLimitMiddleware` | Smooths request throughput. |
+| `RetryMiddleware` | Retries failed requests according to retry policy. |
+| `RefererMiddleware` | Sets `Referer` for follow-up requests. |
 
-### Optional middleware
+Feature-gated modules:
 
-| Feature | Type | Primary use case |
+| Feature | Type | Use case |
 | --- | --- | --- |
 | `middleware-cache` | `HttpCacheMiddleware` | Reuse cached responses. |
-| `middleware-autothrottle` | `AutoThrottleMiddleware` | Adapt request pace based on observed conditions. |
-| `middleware-proxy` | `ProxyMiddleware` | Route requests through proxies. |
+| `middleware-autothrottle` | `AutoThrottleMiddleware` | Adapt crawl pace to observed conditions. |
+| `middleware-proxy` | `ProxyMiddleware` | Route traffic through proxies. |
 | `middleware-user-agent` | `UserAgentMiddleware` | Set or rotate user agents. |
-| `middleware-robots` | `RobotsTxtMiddleware` | Respect robots.txt policy. |
-| `middleware-cookies` | `CookieMiddleware` | Persist and attach cookies. |
+| `middleware-robots` | `RobotsTxtMiddleware` | Respect `robots.txt`. |
+| `middleware-cookies` | `CookieMiddleware` | Store and attach cookies. |
 
-## Core Usage
+## Runtime usage
 
 ```rust,ignore
 use spider_middleware::{
@@ -59,7 +59,7 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-## Build a Custom Middleware
+## Custom middleware example
 
 ```rust,ignore
 use async_trait::async_trait;
@@ -75,8 +75,8 @@ impl<C: Send + Sync> Middleware<C> for BlocklistMiddleware {
     }
 
     async fn process_request(
-        &mut self,
-        _client: &reqwest::Client,
+        &self,
+        _client: &C,
         request: Request,
     ) -> Result<MiddlewareAction<Request>, SpiderError> {
         if request.url.domain() == Some("blocked.example") {
@@ -88,27 +88,20 @@ impl<C: Send + Sync> Middleware<C> for BlocklistMiddleware {
 }
 ```
 
-Runtime integration:
+Wire it into the runtime with `CrawlerBuilder::add_middleware(...)`.
 
-```rust,ignore
-let crawler = spider_core::CrawlerBuilder::new(MySpider)
-    .add_middleware(BlocklistMiddleware)
-    .build()
-    .await?;
-```
-
-## Feature Flags
+## Feature flags
 
 ```toml
 [dependencies]
 spider-middleware = { version = "0.3.5", features = ["middleware-robots", "middleware-user-agent"] }
 ```
 
-When used through `spider-lib`, enable the same feature names on the root crate.
+When you depend on the root crate instead, enable the same feature names on `spider-lib`.
 
-## Middleware Ordering Guidance
+## Ordering matters
 
-A practical default order for many spiders:
+A reasonable default order for many crawlers is:
 
 1. `RefererMiddleware`
 2. `UserAgentMiddleware`
@@ -120,15 +113,9 @@ A practical default order for many spiders:
 8. `RobotsTxtMiddleware`
 9. `CookieMiddleware`
 
-Treat this as a sensible default, not a hard rule. The best order depends on whether you want policy, transport, retry, cache, or stateful concerns to happen first.
+That is only a starting point. Retry, cache, robots, and cookie behavior all depend on order, so it is worth being intentional.
 
-## Common Gotchas
-
-- Optional middleware is feature-gated and will not exist unless its feature is enabled.
-- Middleware ordering affects behavior, especially for retries, cache, robots, and cookies.
-- If you only want built-in middleware in an application, configuring it through `spider-lib` is simpler.
-
-## Related Crates
+## Related crates
 
 - [`spider-lib`](../README.md)
 - [`spider-core`](../spider-core/README.md)

@@ -1,73 +1,20 @@
 # spider-lib
 
-[![crates.io](https://img.shields.io/crates/v/spider-lib.svg)](https://crates.io/crates/spider-lib)
-[![docs.rs](https://docs.rs/spider-lib/badge.svg)](https://docs.rs/spider-lib)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+`spider-lib` is an async web scraping framework for Rust with a layout that will feel familiar if you have used Scrapy before: spiders define crawl logic, the runtime schedules and downloads requests, middleware can shape traffic, and pipelines handle extracted items.
 
-A modular Rust web scraping framework inspired by Scrapy.
+The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through `spider_lib::prelude::*`, so a normal application does not need to wire the lower-level crates by hand.
 
-`spider-lib` is the facade crate for this workspace. It re-exports the crawler runtime, downloader, middleware, pipelines, utility types, and macros so most users can get started with a single dependency and turn on extra features only when needed.
+## Why this crate exists
 
-## Table of Contents
+`spider-lib` is meant for projects that need more structure than a one-off `reqwest + scraper` script:
 
-- [Why `spider-lib`](#why-spider-lib)
-- [Workspace Crates](#workspace-crates)
-- [Architecture at a Glance](#architecture-at-a-glance)
-- [When to Use This Crate](#when-to-use-this-crate)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Feature Flag Cookbook](#feature-flag-cookbook)
-- [Middleware Overview](#middleware-overview)
-- [Pipeline Overview](#pipeline-overview)
-- [Examples](#examples)
-- [Development](#development)
-- [Documentation](#documentation)
-- [License](#license)
+- multiple follow-up requests from each page
+- shared crawl state
+- middleware for retries, rate limiting, cookies, robots, or proxying
+- pipelines for validation, deduplication, and output
+- a runtime that keeps the crawling loop organized
 
-## Why `spider-lib`
-
-Use `spider-lib` when you want the full framework surface:
-
-- A `Spider` trait for crawl logic.
-- A `CrawlerBuilder` for runtime composition.
-- Built-in reqwest downloader support.
-- Optional middleware for retries, throttling, robots.txt, cookies, proxies, cache, and user agents.
-- Optional pipelines for validation, deduplication, console output, and file/database export.
-
-If you only need one subsystem, the lower-level crates remain available and are documented individually below.
-
-## Workspace Crates
-
-- [`spider-core`](./spider-core/README.md): crawler runtime, spider trait, scheduler, builder, state, and stats.
-- [`spider-downloader`](./spider-downloader/README.md): downloader traits plus the default reqwest-based downloader.
-- [`spider-macro`](./spider-macro/README.md): procedural macros such as `#[scraped_item]`.
-- [`spider-middleware`](./spider-middleware/README.md): retry, rate limiting, robots, cookies, proxy, cache, and user-agent middleware.
-- [`spider-pipeline`](./spider-pipeline/README.md): item processing and export pipelines for JSON, JSONL, CSV, SQLite, and stream JSON.
-- [`spider-util`](./spider-util/README.md): shared request/response/item/error types and helper utilities.
-
-## Architecture at a Glance
-
-`Spider` produces initial requests and parses responses, while the crawler coordinates request execution and item processing.
-
-```text
-Spider::start_requests
-  -> Scheduler
-  -> Downloader (default: ReqwestClientDownloader)
-  -> Middleware chain
-  -> Spider::parse(Response) -> ParseOutput { requests, items }
-  -> Pipeline chain
-```
-
-## When to Use This Crate
-
-Prefer `spider-lib` if you want:
-
-- One dependency for the full framework.
-- Prelude imports for the common runtime types.
-- Built-in integration between core, middleware, pipelines, and macros.
-- Feature-flag control over optional capabilities.
-
-Use lower-level crates directly only when you are intentionally composing your own runtime or publishing an extension against one subsystem.
+If you only need to fetch one or two pages, the lower ceremony of plain `reqwest` may still be a better fit.
 
 ## Installation
 
@@ -78,28 +25,27 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-`serde` and `serde_json` must be direct dependencies when using `#[scraped_item]`.
+`serde` and `serde_json` are required when you use `#[scraped_item]`.
 
-## Quick Start
+## Quick start
 
-```rust,no_run
+This is the smallest useful shape of a spider in the current API:
+
+```rust,ignore
 use spider_lib::prelude::*;
 
 #[scraped_item]
-struct QuoteItem {
+struct Quote {
     text: String,
     author: String,
 }
 
-#[derive(Clone, Default)]
-struct QuoteState;
-
-struct QuoteSpider;
+struct QuotesSpider;
 
 #[async_trait]
-impl Spider for QuoteSpider {
-    type Item = QuoteItem;
-    type State = QuoteState;
+impl Spider for QuotesSpider {
+    type Item = Quote;
+    type State = ();
 
     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
         Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
@@ -126,7 +72,7 @@ impl Spider for QuoteSpider {
                 .map(|node| node.text().collect::<String>())
                 .unwrap_or_default();
 
-            output.add_item(QuoteItem { text, author });
+            output.add_item(Quote { text, author });
         }
 
         Ok(output)
@@ -135,133 +81,107 @@ impl Spider for QuoteSpider {
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
-    let crawler = CrawlerBuilder::new(QuoteSpider)
-        .limit(10)
-        .add_middleware(RateLimitMiddleware::default())
-        .add_middleware(RetryMiddleware::new())
-        .add_pipeline(ConsolePipeline::new())
-        .build()
-        .await?;
-
+    let crawler = CrawlerBuilder::new(QuotesSpider).build().await?;
     crawler.start_crawl().await
 }
 ```
 
-This example shows the common flow:
+## Run the examples
 
-- `start_requests` seeds the crawl.
-- `parse` converts a `Response` into `ParseOutput`.
-- middleware runs around request execution.
-- pipelines handle items after parsing.
-
-## Feature Flag Cookbook
-
-### Minimal crawler
-
-```toml
-[dependencies]
-spider-lib = "3.0.1"
-```
-
-### Robots.txt + JSONL export
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.1", features = ["middleware-robots", "pipeline-jsonl"] }
-```
-
-### Proxy + user-agent rotation + CSV export
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.1", features = ["middleware-proxy", "middleware-user-agent", "pipeline-csv"] }
-```
-
-### Cache + autothrottle + SQLite export
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.1", features = ["middleware-cache", "middleware-autothrottle", "pipeline-sqlite"] }
-```
-
-### Live stats + checkpoint support
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.1", features = ["live-stats", "checkpoint"] }
-```
-
-### Cookie-aware crawling
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.1", features = ["cookie-store"] }
-```
-
-`cookie-store` enables cookie store support in `spider-core` and pulls in cookie middleware transitively.
-
-## Middleware Overview
-
-Core middleware:
-
-- `RateLimitMiddleware`
-- `RetryMiddleware`
-- `RefererMiddleware`
-
-Optional middleware:
-
-- `HttpCacheMiddleware` via `middleware-cache`
-- `AutoThrottleMiddleware` via `middleware-autothrottle`
-- `ProxyMiddleware` via `middleware-proxy`
-- `UserAgentMiddleware` via `middleware-user-agent`
-- `RobotsTxtMiddleware` via `middleware-robots`
-- `CookieMiddleware` via `middleware-cookies`
-
-See the per-feature examples in [`spider-middleware`](./spider-middleware/README.md).
-
-## Pipeline Overview
-
-Core pipelines:
-
-- `TransformPipeline`
-- `ValidationPipeline`
-- `DeduplicationPipeline`
-- `ConsolePipeline`
-
-Optional output pipelines:
-
-- `JsonPipeline` via `pipeline-json`
-- `JsonlPipeline` via `pipeline-jsonl`
-- `CsvPipeline` via `pipeline-csv`
-- `SqlitePipeline` via `pipeline-sqlite`
-- `StreamJsonPipeline` via `pipeline-stream-json`
-
-See exporter examples and pipeline composition notes in [`spider-pipeline`](./spider-pipeline/README.md).
-
-## Examples
-
-Runnable examples in this repository:
+The repository ships with maintained examples that you can run as-is:
 
 ```bash
 cargo run --example books
-cargo run --example books_live --features live-stats,pipeline-csv
-cargo run --example kusonime --features live-stats,pipeline-stream-json
 ```
 
-## Development
+That example crawls `books.toscrape.com` and prints the final page and item counts.
+
+There are also two feature-gated examples:
+
+```bash
+cargo run --example books_live --features "live-stats pipeline-csv"
+cargo run --example kusonime --features "live-stats pipeline-stream-json"
+```
+
+`books_live` writes CSV output to `output/books_live.csv`.
+
+`kusonime` writes streaming JSON output to `output/kusonime-stream.json`.
+
+These examples depend on public sites being reachable, so they are good smoke runs but still network-dependent.
+
+## How the crawl loop fits together
+
+At a high level:
+
+1. `Spider::start_requests` seeds the crawl.
+2. The scheduler accepts and deduplicates requests.
+3. The downloader performs the HTTP work.
+4. Middleware can inspect or modify requests and responses.
+5. `Spider::parse` turns a `Response` into `ParseOutput`.
+6. Pipelines process emitted items.
+
+That separation is what makes the workspace easier to extend than a single-file scraper.
+
+## Feature flags
+
+Root crate features mirror the lower-level crates:
+
+| Feature | What it enables |
+| --- | --- |
+| `core` | Base runtime support. Enabled by default. |
+| `live-stats` | Live terminal crawl stats. |
+| `middleware-cache` | HTTP response cache middleware. |
+| `middleware-autothrottle` | Adaptive throttling middleware. |
+| `middleware-proxy` | Proxy middleware. |
+| `middleware-user-agent` | User-agent middleware. |
+| `middleware-robots` | `robots.txt` middleware. |
+| `middleware-cookies` | Cookie middleware. |
+| `pipeline-csv` | CSV output pipeline. |
+| `pipeline-json` | JSON array output pipeline. |
+| `pipeline-jsonl` | JSON Lines output pipeline. |
+| `pipeline-sqlite` | SQLite output pipeline. |
+| `pipeline-stream-json` | Streaming JSON output pipeline. |
+| `checkpoint` | Checkpoint and resume support. |
+| `cookie-store` | Cookie store integration in core state. |
+
+Example:
+
+```toml
+[dependencies]
+spider-lib = { version = "3.0.1", features = ["live-stats", "pipeline-csv"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+```
+
+## Workspace map
+
+- [`spider-core`](spider-core/README.md): crawler runtime, builder, scheduler, state, and stats
+- [`spider-downloader`](spider-downloader/README.md): downloader trait and the default reqwest implementation
+- [`spider-macro`](spider-macro/README.md): `#[scraped_item]`
+- [`spider-middleware`](spider-middleware/README.md): built-in middleware implementations
+- [`spider-pipeline`](spider-pipeline/README.md): item pipelines and output backends
+- [`spider-util`](spider-util/README.md): shared request, response, item, and error types
+
+## When to use the lower-level crates directly
+
+Stay on `spider-lib` if you are building an application spider.
+
+Reach for individual crates when you are:
+
+- publishing reusable middleware, pipeline, or downloader extensions
+- composing the runtime more explicitly
+- depending on shared types without pulling in the whole facade crate
+
+## Status
+
+The current workspace builds successfully with:
 
 ```bash
 cargo check --workspace --all-targets
-cargo fmt --all
-cargo clippy --workspace --all-features -- -D warnings
-make check-all-features
 ```
 
-## Documentation
-
-- API docs: <https://docs.rs/spider-lib>
-- Contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+That is a useful baseline when updating docs or examples.
 
 ## License
 
-MIT. See [LICENSE](./LICENSE).
+MIT. See [LICENSE](LICENSE).

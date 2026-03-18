@@ -1,19 +1,19 @@
 # spider-downloader
 
-Downloader traits and the default reqwest-based downloader for `spider-lib`.
+`spider-downloader` defines the downloader boundary used by the rest of the workspace and includes the default reqwest-based implementation, `ReqwestClientDownloader`.
 
-Use this crate directly when you want downloader-level control while staying compatible with the crawler runtime interfaces used by the rest of the workspace.
+This crate is mostly for people who want to control HTTP execution more directly without giving up the request and response types used across `spider-lib`.
 
-## When to Use This Crate Directly
+## When to use it directly
 
-Use `spider-downloader` if you need one or more of these:
+Reach for `spider-downloader` if you need:
 
-- Custom authentication or request signing.
-- Non-default transport behavior beyond the built-in reqwest setup.
-- Instrumentation or tracing at the request execution boundary.
-- Integration with external HTTP infrastructure while preserving `spider-*` request and response types.
+- custom authentication or request signing
+- special transport behavior that should happen below middleware
+- downloader-level tracing or instrumentation
+- a custom HTTP stack that still plugs into the existing crawler runtime
 
-If you want the integrated framework experience, prefer [`spider-lib`](../README.md).
+If you are happy with the default HTTP behavior, the root crate or `spider-core` will usually be simpler.
 
 ## Installation
 
@@ -23,24 +23,19 @@ spider-downloader = "1.0.2"
 reqwest = "0.13"
 ```
 
-## Key Exports
+## Main exports
 
-- `Downloader`: trait for request execution.
-- `HttpClient`: lightweight HTTP client trait re-export.
-- `ReqwestClientDownloader`: the built-in reqwest-based downloader.
+- `Downloader`: trait for request execution
+- `HttpClient`: shared client abstraction re-export
+- `ReqwestClientDownloader`: default downloader implementation
 
-## Downloader Contract
+## The contract
 
-A `Downloader` implementation is responsible for:
+A downloader receives a `spider_util::request::Request`, performs the HTTP transaction, and returns a `spider_util::response::Response` or a `SpiderError`.
 
-- receiving a `spider_util::request::Request`
-- executing the HTTP transaction
-- returning a `spider_util::response::Response` on success
-- mapping transport or protocol failures into `SpiderError`
+That sounds small, but it is an important seam: middleware and parsers can stay predictable because the transport logic is isolated here.
 
-That boundary keeps the rest of the runtime predictable for middleware and parser logic.
-
-## Build a Custom Downloader
+## Custom downloader example
 
 ```rust,ignore
 use async_trait::async_trait;
@@ -56,12 +51,10 @@ impl Downloader for MyDownloader {
     type Client = reqwest::Client;
 
     async fn download(&self, request: Request) -> Result<Response, SpiderError> {
-        let _req = request;
+        let _request = request;
 
-        // 1) map spider Request into an HTTP request
-        // 2) execute with self.client
-        // 3) map the HTTP response back into spider Response
-        // 4) convert transport errors into SpiderError
+        // Convert the spider Request into your transport layer,
+        // execute it, then map the result back into Response.
         todo!()
     }
 
@@ -71,9 +64,11 @@ impl Downloader for MyDownloader {
 }
 ```
 
-## Using the Built-In Downloader
+## Using the built-in downloader
 
-For most projects, `CrawlerBuilder` already uses the reqwest downloader by default. If you want to make that dependency explicit:
+`CrawlerBuilder` already uses the reqwest downloader by default, so in many projects you never need to mention this crate explicitly.
+
+If you want to make the dependency obvious in your runtime setup:
 
 ```rust,ignore
 use spider_core::CrawlerBuilder;
@@ -85,24 +80,15 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-If you provide your own downloader, wire it in the same place:
+The built-in downloader currently supports request bodies, request metadata, timeouts, and proxy-aware client selection.
 
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .downloader(MyDownloader {
-        client: reqwest::Client::new(),
-    })
-    .build()
-    .await?;
-```
+## Good to know
 
-## Common Gotchas
+- This crate is only the downloader layer, not a full crawler.
+- If your runtime relies on request metadata, a custom downloader should preserve it when building the returned `Response`.
+- If all you need is “download pages and parse them”, [`spider-lib`](../README.md) remains the better starting point.
 
-- `spider-downloader` gives you the trait boundary, not a full crawler on its own.
-- Custom downloaders must preserve request metadata if the runtime depends on it later.
-- If you only need the default behavior, using `spider-lib` or `spider-core` directly is usually simpler.
-
-## Related Crates
+## Related crates
 
 - [`spider-lib`](../README.md)
 - [`spider-core`](../spider-core/README.md)
