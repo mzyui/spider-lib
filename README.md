@@ -89,6 +89,7 @@ impl Spider for QuoteSpider {
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(QuoteSpider)
+        .limit(1)
         .add_middleware(RateLimitMiddleware::default())
         .add_middleware(RetryMiddleware::new())
         .add_pipeline(ConsolePipeline::new())
@@ -104,6 +105,15 @@ Try maintained examples:
 ```bash
 cargo run --example books
 cargo run --example books_live --features live-stats
+```
+
+Use `.limit(n)` when you want the crawl to stop as soon as `n` scraped items have been admitted for processing:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .limit(1)
+    .build()
+    .await?;
 ```
 
 ## Downloader Usage

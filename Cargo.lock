@@ -2197,6 +2197,7 @@ dependencies = [
  "spider-util",
  "time",
  "tokio",
+ "unicode-width",
  "url",
 ]
 
@@ -2209,10 +2210,7 @@ dependencies = [
  "log",
  "moka",
  "reqwest",
- "serde_json",
  "spider-util",
- "tokio",
- "url",
 ]
 
 [[package]]
@@ -2221,6 +2219,7 @@ version = "3.0.1"
 dependencies = [
  "dashmap 6.1.0",
  "log",
+ "scraper",
  "serde",
  "serde_json",
  "spider-core",
