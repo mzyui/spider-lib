@@ -1,15 +1,40 @@
 # spider-core
 
-Core crawling engine for `spider-lib`: spider trait, crawler runtime, scheduler, builder, state, and stats.
+Core crawling engine for `spider-lib`: the spider trait, crawler runtime, scheduler, builder, state, and stats.
 
-Most users should start with `spider-lib`. Use `spider-core` directly when you want lower-level control over runtime composition.
+Most users should start with [`spider-lib`](../README.md). Use `spider-core` directly when you want lower-level control over runtime composition while staying inside the same ecosystem.
+
+## When to Use This Crate Directly
+
+Use `spider-core` if you need one or more of these:
+
+- You want to build against the crawler runtime without the facade crate.
+- You are integrating a custom downloader, middleware stack, or pipeline stack.
+- You are publishing lower-level extensions that should depend on the core runtime API.
+
+If you just want to build a spider quickly, prefer `spider-lib`.
 
 ## Installation
 
 ```toml
 [dependencies]
-spider-core = "2.0.0"
+spider-core = "2.0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 ```
+
+`serde` and `serde_json` are still required if you use `#[scraped_item]`.
+
+## Core Runtime Lifecycle
+
+At a high level, `spider-core` drives this loop:
+
+1. `Spider::start_requests` seeds the crawl.
+2. The scheduler admits and de-duplicates requests.
+3. The downloader executes HTTP requests.
+4. Middleware can inspect or modify requests and responses.
+5. `Spider::parse` turns a `Response` into `ParseOutput`.
+6. Pipelines process emitted items.
 
 ## Main Components
 
@@ -41,9 +66,8 @@ impl Spider for MySpider {
     type Item = Item;
     type State = State;
 
-    fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
-        let req = spider_util::request::Request::new("https://example.com".parse()?);
-        Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
+    fn start_requests(&self) -> Result<spider_core::StartRequests<'_>, SpiderError> {
+        Ok(spider_core::StartRequests::Urls(vec!["https://example.com"]))
     }
 
     async fn parse(
@@ -63,26 +87,27 @@ async fn run() -> Result<(), SpiderError> {
 
     crawler.start_crawl().await
 }
-
 ```
 
 `CrawlerBuilder::limit(n)` stops the crawl after `n` scraped items have been admitted for processing, which is useful for previews and smoke runs.
 
 ## Feature Flags
 
-- `core` (default)
-- `live-stats`: enables in-place terminal stat updates.
-- `checkpoint`: enables checkpoint/resume support.
-- `cookie-store`: enables `cookie_store` integration.
+| Feature | Purpose |
+| --- | --- |
+| `core` | Base crawler runtime. Enabled by default. |
+| `live-stats` | In-place terminal statistics updates. |
+| `checkpoint` | Checkpoint and resume support. |
+| `cookie-store` | `cookie_store` integration for runtime state. |
 
 ```toml
 [dependencies]
-spider-core = { version = "2.0.0", features = ["checkpoint"] }
+spider-core = { version = "2.0.1", features = ["checkpoint"] }
 ```
 
-## Custom Extension Guides
+## Related Extension Crates
 
-For extension points built around crawler composition, see:
+Use these when extending the runtime:
 
 - Custom downloader guide: [`spider-downloader`](../spider-downloader/README.md)
 - Custom middleware guide: [`spider-middleware`](../spider-middleware/README.md)

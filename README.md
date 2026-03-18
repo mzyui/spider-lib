@@ -1,55 +1,84 @@
 # spider-lib
 
+[![crates.io](https://img.shields.io/crates/v/spider-lib.svg)](https://crates.io/crates/spider-lib)
+[![docs.rs](https://docs.rs/spider-lib/badge.svg)](https://docs.rs/spider-lib)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 A modular Rust web scraping framework inspired by Scrapy.
 
-`spider-lib` is the facade crate for this workspace. It re-exports crawler runtime, downloader, middleware, pipelines, utility types, and macros so you can start with one dependency and enable only the features you need.
+`spider-lib` is the facade crate for this workspace. It re-exports the crawler runtime, downloader, middleware, pipelines, utility types, and macros so most users can get started with a single dependency and turn on extra features only when needed.
 
 ## Table of Contents
 
+- [Why `spider-lib`](#why-spider-lib)
 - [Workspace Crates](#workspace-crates)
 - [Architecture at a Glance](#architecture-at-a-glance)
+- [When to Use This Crate](#when-to-use-this-crate)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Downloader Usage](#downloader-usage)
-- [Middleware Usage](#middleware-usage)
-- [Pipeline Usage](#pipeline-usage)
 - [Feature Flag Cookbook](#feature-flag-cookbook)
+- [Middleware Overview](#middleware-overview)
+- [Pipeline Overview](#pipeline-overview)
+- [Examples](#examples)
 - [Development](#development)
 - [Documentation](#documentation)
 - [License](#license)
 
+## Why `spider-lib`
+
+Use `spider-lib` when you want the full framework surface:
+
+- A `Spider` trait for crawl logic.
+- A `CrawlerBuilder` for runtime composition.
+- Built-in reqwest downloader support.
+- Optional middleware for retries, throttling, robots.txt, cookies, proxies, cache, and user agents.
+- Optional pipelines for validation, deduplication, console output, and file/database export.
+
+If you only need one subsystem, the lower-level crates remain available and are documented individually below.
+
 ## Workspace Crates
 
 - [`spider-core`](./spider-core/README.md): crawler runtime, spider trait, scheduler, builder, state, and stats.
-- [`spider-downloader`](./spider-downloader/README.md): downloader traits and reqwest-based downloader implementation.
+- [`spider-downloader`](./spider-downloader/README.md): downloader traits plus the default reqwest-based downloader.
 - [`spider-macro`](./spider-macro/README.md): procedural macros such as `#[scraped_item]`.
 - [`spider-middleware`](./spider-middleware/README.md): retry, rate limiting, robots, cookies, proxy, cache, and user-agent middleware.
-- [`spider-pipeline`](./spider-pipeline/README.md): item processing and output pipelines (JSON, JSONL, CSV, SQLite, stream JSON).
+- [`spider-pipeline`](./spider-pipeline/README.md): item processing and export pipelines for JSON, JSONL, CSV, SQLite, and stream JSON.
 - [`spider-util`](./spider-util/README.md): shared request/response/item/error types and helper utilities.
 
 ## Architecture at a Glance
 
-`Spider` generates initial URLs and parses responses, while the crawler orchestrates request execution and data flow.
+`Spider` produces initial requests and parses responses, while the crawler coordinates request execution and item processing.
 
 ```text
 Spider::start_requests
   -> Scheduler
-  -> Downloader (default: reqwest)
-  -> Middleware chain (before/after download)
+  -> Downloader (default: ReqwestClientDownloader)
+  -> Middleware chain
   -> Spider::parse(Response) -> ParseOutput { requests, items }
-  -> Pipeline chain (transform/validate/dedup/export)
+  -> Pipeline chain
 ```
+
+## When to Use This Crate
+
+Prefer `spider-lib` if you want:
+
+- One dependency for the full framework.
+- Prelude imports for the common runtime types.
+- Built-in integration between core, middleware, pipelines, and macros.
+- Feature-flag control over optional capabilities.
+
+Use lower-level crates directly only when you are intentionally composing your own runtime or publishing an extension against one subsystem.
 
 ## Installation
 
 ```toml
 [dependencies]
-spider-lib = "3.0.0"
+spider-lib = "3.0.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-`serde` and `serde_json` are required when using `#[scraped_item]`.
+`serde` and `serde_json` must be direct dependencies when using `#[scraped_item]`.
 
 ## Quick Start
 
@@ -73,23 +102,41 @@ impl Spider for QuoteSpider {
     type State = QuoteState;
 
     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
-        let req = Request::new("https://quotes.toscrape.com/".parse()?);
-        Ok(StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
+        Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
     }
 
     async fn parse(
         &self,
-        _response: Response,
+        response: Response,
         _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        Ok(ParseOutput::new())
+        let html = response.to_html()?;
+        let mut output = ParseOutput::new();
+
+        for quote in html.select(&".quote".to_selector()?) {
+            let text = quote
+                .select(&".text".to_selector()?)
+                .next()
+                .map(|node| node.text().collect::<String>())
+                .unwrap_or_default();
+
+            let author = quote
+                .select(&".author".to_selector()?)
+                .next()
+                .map(|node| node.text().collect::<String>())
+                .unwrap_or_default();
+
+            output.add_item(QuoteItem { text, author });
+        }
+
+        Ok(output)
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(QuoteSpider)
-        .limit(1)
+        .limit(10)
         .add_middleware(RateLimitMiddleware::default())
         .add_middleware(RetryMiddleware::new())
         .add_pipeline(ConsolePipeline::new())
@@ -100,303 +147,113 @@ async fn main() -> Result<(), SpiderError> {
 }
 ```
 
-Try maintained examples:
+This example shows the common flow:
 
-```bash
-cargo run --example books
-cargo run --example books_live --features live-stats
-```
-
-Use `.limit(n)` when you want the crawl to stop as soon as `n` scraped items have been admitted for processing:
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .limit(1)
-    .build()
-    .await?;
-```
-
-## Downloader Usage
-
-### Default downloader
-
-`CrawlerBuilder` uses a reqwest-based downloader by default, so no extra setup is needed for most projects.
-
-### Build a Custom Downloader
-
-Use a custom downloader when you need custom transport behavior (special auth, alternate HTTP stack, tracing, etc.).
-
-Trait contract (`Downloader`):
-
-```rust,ignore
-#[async_trait]
-pub trait Downloader: Send + Sync + 'static {
-    type Client: Send + Sync;
-    async fn download(&self, request: Request) -> Result<Response, SpiderError>;
-    fn client(&self) -> &Self::Client;
-}
-```
-
-```rust,ignore
-use async_trait::async_trait;
-use spider_lib::prelude::*;
-
-struct SignedDownloader {
-    client: reqwest::Client,
-}
-
-#[async_trait]
-impl Downloader for SignedDownloader {
-    type Client = reqwest::Client;
-
-    async fn download(&self, request: Request) -> Result<Response, SpiderError> {
-        let _req = request;
-        // Sign request, execute HTTP call, map response.
-        todo!()
-    }
-
-    fn client(&self) -> &Self::Client {
-        &self.client
-    }
-}
-```
-
-Runtime integration:
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .downloader(SignedDownloader {
-        client: reqwest::Client::new(),
-    })
-    .build()
-    .await?;
-```
-
-For trait details and lower-level integration, see [`spider-downloader`](./spider-downloader/README.md).
-
-## Middleware Usage
-
-Core middleware (always available):
-
-- `RateLimitMiddleware`: controls request throughput.
-- `RetryMiddleware`: retries failed/transient requests.
-- `RefererMiddleware`: populates `Referer` header for follow-up requests.
-
-Optional middleware (feature-gated):
-
-- `HttpCacheMiddleware` (`middleware-cache`)
-- `AutoThrottleMiddleware` (`middleware-autothrottle`)
-- `ProxyMiddleware` (`middleware-proxy`)
-- `UserAgentMiddleware` (`middleware-user-agent`)
-- `RobotsTxtMiddleware` (`middleware-robots`)
-- `CookieMiddleware` (`middleware-cookies`)
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_middleware(RateLimitMiddleware::default())
-    .add_middleware(RetryMiddleware::new())
-    .add_middleware(RefererMiddleware::new())
-    .build()
-    .await?;
-```
-
-### Build a Custom Middleware
-
-Trait contract (`Middleware<C>`):
-
-```rust,ignore
-#[async_trait]
-pub trait Middleware<C: Send + Sync>: Any + Send + Sync + 'static {
-    fn name(&self) -> &str;
-    async fn process_request(
-        &mut self,
-        client: &C,
-        request: Request,
-    ) -> Result<MiddlewareAction<Request>, SpiderError> {
-        Ok(MiddlewareAction::Continue(request))
-    }
-    async fn process_response(
-        &mut self,
-        response: Response,
-    ) -> Result<MiddlewareAction<Response>, SpiderError> {
-        Ok(MiddlewareAction::Continue(response))
-    }
-    async fn handle_error(
-        &mut self,
-        request: &Request,
-        error: &SpiderError,
-    ) -> Result<MiddlewareAction<Request>, SpiderError> {
-        Err(error.clone())
-    }
-}
-```
-
-Minimal implementation (override only what you need):
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-struct HeaderMiddleware;
-
-#[async_trait]
-impl<C: Send + Sync> Middleware<C> for HeaderMiddleware {
-    fn name(&self) -> &str {
-        "header_middleware"
-    }
-
-    async fn process_request(
-        &mut self,
-        _client: &reqwest::Client,
-        request: Request,
-    ) -> Result<MiddlewareAction<Request>, SpiderError> {
-        Ok(MiddlewareAction::Continue(request))
-    }
-}
-```
-
-Runtime integration:
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_middleware(HeaderMiddleware)
-    .build()
-    .await?;
-```
-
-See full per-feature middleware examples in [`spider-middleware`](./spider-middleware/README.md).
-
-## Pipeline Usage
-
-Core pipelines (always available):
-
-- `TransformPipeline`
-- `ValidationPipeline`
-- `DeduplicationPipeline`
-- `ConsolePipeline`
-
-Optional output pipelines (feature-gated):
-
-- `JsonPipeline` (`pipeline-json`)
-- `JsonlPipeline` (`pipeline-jsonl`)
-- `CsvPipeline` (`pipeline-csv`)
-- `SqlitePipeline` (`pipeline-sqlite`)
-- `StreamJsonPipeline` (`pipeline-stream-json`)
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(
-        TransformPipeline::new()
-            .with_operation(TransformOperation::Trim { field: "title".into() }),
-    )
-    .add_pipeline(
-        ValidationPipeline::new()
-            .with_rule("title", ValidationRule::Required)
-            .with_rule("title", ValidationRule::NonEmptyString),
-    )
-    .add_pipeline(DeduplicationPipeline::new(&["url"]))
-    .add_pipeline(ConsolePipeline::new())
-    .build()
-    .await?;
-```
-
-### Build a Custom Pipeline
-
-Trait contract (`Pipeline<I: ScrapedItem>`):
-
-```rust,ignore
-#[async_trait]
-pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
-    fn name(&self) -> &str;
-    async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError>;
-    async fn close(&self) -> Result<(), PipelineError> { Ok(()) }
-    async fn get_state(&self) -> Result<Option<serde_json::Value>, PipelineError> { Ok(None) }
-    async fn restore_state(&self, state: serde_json::Value) -> Result<(), PipelineError> { Ok(()) }
-}
-```
-
-Minimal implementation:
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-struct MetricsPipeline;
-
-#[async_trait]
-impl<I: ScrapedItem> Pipeline<I> for MetricsPipeline {
-    fn name(&self) -> &str {
-        "metrics_pipeline"
-    }
-
-    async fn process_item(&self, item: MyItem) -> Result<Option<MyItem>, PipelineError> {
-        // Record metrics, enrich, or filter items.
-        Ok(Some(item))
-    }
-}
-```
-
-Runtime integration:
-
-```rust,ignore
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(MetricsPipeline)
-    .build()
-    .await?;
-```
-
-See full per-feature pipeline examples in [`spider-pipeline`](./spider-pipeline/README.md).
+- `start_requests` seeds the crawl.
+- `parse` converts a `Response` into `ParseOutput`.
+- middleware runs around request execution.
+- pipelines handle items after parsing.
 
 ## Feature Flag Cookbook
 
-### Minimal core crawler
+### Minimal crawler
 
 ```toml
 [dependencies]
-spider-lib = "3.0.0"
+spider-lib = "3.0.1"
 ```
 
-### Robots + JSONL export
+### Robots.txt + JSONL export
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["middleware-robots", "pipeline-jsonl"] }
+spider-lib = { version = "3.0.1", features = ["middleware-robots", "pipeline-jsonl"] }
 ```
 
-### Proxy + user-agent rotation + CSV output
+### Proxy + user-agent rotation + CSV export
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["middleware-proxy", "middleware-user-agent", "pipeline-csv"] }
+spider-lib = { version = "3.0.1", features = ["middleware-proxy", "middleware-user-agent", "pipeline-csv"] }
 ```
 
-### Cache + autothrottle + SQLite output
+### Cache + autothrottle + SQLite export
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["middleware-cache", "middleware-autothrottle", "pipeline-sqlite"] }
+spider-lib = { version = "3.0.1", features = ["middleware-cache", "middleware-autothrottle", "pipeline-sqlite"] }
 ```
 
-### Live stats and resume support
+### Live stats + checkpoint support
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["live-stats", "checkpoint"] }
+spider-lib = { version = "3.0.1", features = ["live-stats", "checkpoint"] }
 ```
 
 ### Cookie-aware crawling
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["cookie-store"] }
+spider-lib = { version = "3.0.1", features = ["cookie-store"] }
 ```
 
-`cookie-store` enables `middleware-cookies` transitively.
+`cookie-store` enables cookie store support in `spider-core` and pulls in cookie middleware transitively.
+
+## Middleware Overview
+
+Core middleware:
+
+- `RateLimitMiddleware`
+- `RetryMiddleware`
+- `RefererMiddleware`
+
+Optional middleware:
+
+- `HttpCacheMiddleware` via `middleware-cache`
+- `AutoThrottleMiddleware` via `middleware-autothrottle`
+- `ProxyMiddleware` via `middleware-proxy`
+- `UserAgentMiddleware` via `middleware-user-agent`
+- `RobotsTxtMiddleware` via `middleware-robots`
+- `CookieMiddleware` via `middleware-cookies`
+
+See the per-feature examples in [`spider-middleware`](./spider-middleware/README.md).
+
+## Pipeline Overview
+
+Core pipelines:
+
+- `TransformPipeline`
+- `ValidationPipeline`
+- `DeduplicationPipeline`
+- `ConsolePipeline`
+
+Optional output pipelines:
+
+- `JsonPipeline` via `pipeline-json`
+- `JsonlPipeline` via `pipeline-jsonl`
+- `CsvPipeline` via `pipeline-csv`
+- `SqlitePipeline` via `pipeline-sqlite`
+- `StreamJsonPipeline` via `pipeline-stream-json`
+
+See exporter examples and pipeline composition notes in [`spider-pipeline`](./spider-pipeline/README.md).
+
+## Examples
+
+Runnable examples in this repository:
+
+```bash
+cargo run --example books
+cargo run --example books_live --features live-stats,pipeline-csv
+cargo run --example kusonime --features live-stats,pipeline-stream-json
+```
 
 ## Development
 
 ```bash
 cargo check --workspace --all-targets
-cargo fmt --check
-cargo clippy --all-features -- -D warnings
+cargo fmt --all
+cargo clippy --workspace --all-features -- -D warnings
 make check-all-features
 ```
 

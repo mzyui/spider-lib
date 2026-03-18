@@ -2,31 +2,45 @@
 
 Item pipelines for processing, filtering, and exporting scraped data in `spider-lib`.
 
-Use this crate directly when you need pipeline functionality without taking the full facade crate.
+Use this crate directly when you need pipeline functionality without taking the full facade crate, or when you want to build custom item processing stages against the lower-level API.
+
+## When to Use This Crate Directly
+
+Use `spider-pipeline` if you want to:
+
+- build or publish custom pipelines
+- work directly with pipeline composition primitives
+- use export pipelines without depending on the facade crate
+
+If you are building a normal application spider, `spider-lib` is usually the easiest entry point.
 
 ## Installation
 
 ```toml
 [dependencies]
-spider-pipeline = "0.3.4"
+spider-pipeline = "0.3.6"
 ```
 
 ## Pipeline Catalog
 
-### Core (always available)
+### Core pipelines
 
-- `TransformPipeline`: normalize/transform item fields.
-- `ValidationPipeline`: enforce field and type rules.
-- `DeduplicationPipeline`: drop duplicate items by key fields.
-- `ConsolePipeline`: print processed items for visibility/debugging.
+| Type | Purpose |
+| --- | --- |
+| `TransformPipeline` | Normalize or transform item fields. |
+| `ValidationPipeline` | Enforce field and type rules. |
+| `DeduplicationPipeline` | Drop duplicate items by key fields. |
+| `ConsolePipeline` | Print processed items for visibility and debugging. |
 
-### Optional output pipelines (feature-gated)
+### Optional output pipelines
 
-- `pipeline-json` -> `JsonPipeline`
-- `pipeline-jsonl` -> `JsonlPipeline`
-- `pipeline-csv` -> `CsvPipeline`
-- `pipeline-sqlite` -> `SqlitePipeline`
-- `pipeline-stream-json` -> `StreamJsonPipeline`
+| Feature | Type | Output |
+| --- | --- | --- |
+| `pipeline-json` | `JsonPipeline` | JSON array file |
+| `pipeline-jsonl` | `JsonlPipeline` | One JSON object per line |
+| `pipeline-csv` | `CsvPipeline` | CSV file |
+| `pipeline-sqlite` | `SqlitePipeline` | SQLite database |
+| `pipeline-stream-json` | `StreamJsonPipeline` | Streaming JSON output |
 
 ## Core Composition Example
 
@@ -56,8 +70,6 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 ## Build a Custom Pipeline
 
-Use a custom pipeline when your processing logic is domain-specific (custom scoring, external API enrichment, bespoke filtering, etc.).
-
 ```rust,ignore
 use async_trait::async_trait;
 use spider_pipeline::pipeline::Pipeline;
@@ -72,7 +84,6 @@ impl<I: ScrapedItem> Pipeline<I> for EnrichPipeline {
     }
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
-        // Enrich, validate, or drop item by returning Ok(None).
         Ok(Some(item))
     }
 }
@@ -87,87 +98,31 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-## Optional Output Pipelines (One by One)
+## Output Examples
 
-### `pipeline-json` (`JsonPipeline`)
+`JsonlPipeline` writes one item per line:
+
+```json
+{"title":"Example","url":"https://example.com"}
+{"title":"Another","url":"https://example.com/2"}
+```
+
+`CsvPipeline` produces standard tabular output:
+
+```csv
+title,url
+Example,https://example.com
+Another,https://example.com/2
+```
+
+## Feature Flags
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.0", features = ["pipeline-json"] }
+spider-pipeline = { version = "0.3.6", features = ["pipeline-jsonl", "pipeline-csv"] }
 ```
 
-```rust,ignore
-use spider_lib::prelude::*;
-
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(JsonPipeline::new("output/items.json")?)
-    .build()
-    .await?;
-```
-
-### `pipeline-jsonl` (`JsonlPipeline`)
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.0", features = ["pipeline-jsonl"] }
-```
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(JsonlPipeline::new("output/items.jsonl")?)
-    .build()
-    .await?;
-```
-
-### `pipeline-csv` (`CsvPipeline`)
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.0", features = ["pipeline-csv"] }
-```
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(CsvPipeline::new("output/items.csv")?)
-    .build()
-    .await?;
-```
-
-### `pipeline-sqlite` (`SqlitePipeline`)
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.0", features = ["pipeline-sqlite"] }
-```
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(SqlitePipeline::new("output/items.db", "items")?)
-    .build()
-    .await?;
-```
-
-### `pipeline-stream-json` (`StreamJsonPipeline`)
-
-```toml
-[dependencies]
-spider-lib = { version = "3.0.0", features = ["pipeline-stream-json"] }
-```
-
-```rust,ignore
-use spider_lib::prelude::*;
-
-let crawler = CrawlerBuilder::new(MySpider)
-    .add_pipeline(StreamJsonPipeline::new("output/items-stream.json")?)
-    .build()
-    .await?;
-```
+When used through `spider-lib`, enable the same feature names on the root crate.
 
 ## Pipeline Strategy
 
@@ -176,23 +131,13 @@ A common production sequence:
 1. `TransformPipeline` for cleanup.
 2. `ValidationPipeline` for schema checks.
 3. `DeduplicationPipeline` to control duplicates.
-4. One or more output pipelines (`JsonlPipeline`, `CsvPipeline`, etc.).
+4. One or more output pipelines such as `JsonlPipeline` or `CsvPipeline`.
 
-## Feature Flags
+## Common Gotchas
 
-- `core` (default)
-- `pipeline-csv`
-- `pipeline-json`
-- `pipeline-jsonl`
-- `pipeline-sqlite`
-- `pipeline-stream-json`
-
-```toml
-[dependencies]
-spider-pipeline = { version = "0.3.4", features = ["pipeline-jsonl", "pipeline-csv"] }
-```
-
-When using via `spider-lib`, enable root features with the same names.
+- Export pipelines are feature-gated.
+- Pipeline order matters: transform before validate, validate before export is a common default.
+- If you need framework integration plus middleware and runtime setup, starting from `spider-lib` is simpler.
 
 ## Related Crates
 
