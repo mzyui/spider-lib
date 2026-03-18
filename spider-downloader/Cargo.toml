@@ -13,11 +13,8 @@ readme = "README.md"
 async-trait.workspace = true
 reqwest.workspace = true
 spider-util = { version = "0.3.4", path = "../spider-util" }
-tokio.workspace = true
 log.workspace = true
 dashmap.workspace = true
 moka.workspace = true
 
 [dev-dependencies]
-serde_json.workspace = true
-url.workspace = true
