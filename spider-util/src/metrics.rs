@@ -89,6 +89,7 @@ pub struct MetricsSnapshot {
     pub recent_requests_per_second: f64,
     pub recent_responses_per_second: f64,
     pub recent_items_per_second: f64,
+    pub current_item_preview: String,
 }
 
 impl MetricsSnapshot {
@@ -222,6 +223,7 @@ pub fn format_plain_text_metrics<T: MetricsSnapshotProvider>(snapshot: &T) -> St
          response : received {}, cache {}, downloaded {}, bytes/s {}\n\
          delay    : retry in flight {} ms\n\
          items    : scraped {}, processed {}, dropped {}\n\
+         current  : {}\n\
          req time : avg {}, fastest {}, slowest {}, total {}\n\
          parsing  : avg {}, fastest {}, slowest {}, total {}\n\
          status   : {}",
@@ -248,6 +250,7 @@ pub fn format_plain_text_metrics<T: MetricsSnapshotProvider>(snapshot: &T) -> St
         snapshot.get_items_scraped(),
         snapshot.get_items_processed(),
         snapshot.get_items_dropped_by_pipeline(),
+        snapshot.get_current_item_preview(),
         snapshot.formatted_request_time(snapshot.get_average_request_time()),
         snapshot.formatted_request_time(snapshot.get_fastest_request_time()),
         snapshot.formatted_request_time(snapshot.get_slowest_request_time()),
@@ -327,6 +330,7 @@ pub trait MetricsSnapshotProvider {
     fn get_recent_requests_per_second(&self) -> f64;
     fn get_recent_responses_per_second(&self) -> f64;
     fn get_recent_items_per_second(&self) -> f64;
+    fn get_current_item_preview(&self) -> &str;
     fn formatted_duration(&self) -> String;
     fn formatted_request_time(&self, duration: Option<Duration>) -> String;
     fn formatted_bytes(&self) -> String;
@@ -439,6 +443,10 @@ impl MetricsSnapshotProvider for MetricsSnapshot {
 
     fn get_recent_items_per_second(&self) -> f64 {
         self.recent_items_per_second
+    }
+
+    fn get_current_item_preview(&self) -> &str {
+        &self.current_item_preview
     }
 
     fn formatted_duration(&self) -> String {
