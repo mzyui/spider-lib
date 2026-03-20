@@ -1,13 +1,8 @@
-//! Reqwest-based Downloader implementation for the `spider-lib` framework.
+//! Reqwest-backed downloader implementation.
 //!
-//! This module provides `ReqwestClientDownloader`, a concrete implementation
-//! of the `Downloader` trait that leverages the `reqwest` HTTP client library.
-//! It is responsible for executing HTTP requests defined by `Request` objects
-//! and converting the received HTTP responses into `Response` objects suitable
-//! for further processing by the crawler.
-//!
-//! This downloader handles various HTTP methods, request bodies (JSON, form data, bytes),
-//! and integrates with the framework's error handling.
+//! [`ReqwestClientDownloader`] is the default downloader used throughout the
+//! workspace. It maps runtime requests into reqwest calls and converts the
+//! result back into the shared response type.
 
 use crate::Downloader;
 use async_trait::async_trait;
@@ -19,7 +14,7 @@ use spider_util::request::{Body, Request};
 use spider_util::response::Response;
 use std::time::Duration;
 
-/// Concrete implementation of Downloader using reqwest client
+/// Downloader implementation backed by `reqwest::Client`.
 pub struct ReqwestClientDownloader {
     client: Client,
     timeout: Duration,
