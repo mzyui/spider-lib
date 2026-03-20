@@ -1,11 +1,8 @@
-//! A "prelude" for users of the `spider-lib` crate.
+//! Convenient re-exports for `spider-lib` applications.
 //!
-//! This prelude re-exports the most commonly used traits, structs, and macros
-//! from the entire spider framework so that they can be easily imported.
+//! Most example code in this workspace starts here:
 //!
-//! # Example
-//!
-//! ```
+//! ```rust
 //! use spider_lib::prelude::*;
 //! ```
 

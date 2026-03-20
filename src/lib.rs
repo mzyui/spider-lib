@@ -1,24 +1,29 @@
 //! # spider-lib
 //!
-//! A Rust-based web scraping framework inspired by Scrapy.
+//! `spider-lib` is the easiest way to use this workspace as an application
+//! framework. It re-exports the crawler runtime, common middleware and
+//! pipelines, shared request and response types, and the `#[scraped_item]`
+//! macro behind one crate.
 //!
-//! `spider-lib` is an asynchronous web scraping library for Rust.
-//! It integrates core engine, macros, middleware, and pipelines into a unified library.
+//! If you want the lower-level pieces individually, the workspace also exposes
+//! `spider-core`, `spider-middleware`, `spider-pipeline`, `spider-downloader`,
+//! `spider-macro`, and `spider-util`. Most users should start here.
 //!
-//! ## Quick Start
+//! ## Installation
 //!
 //! ```toml
 //! [dependencies]
-//! spider-lib = "1.1.1"
+//! spider-lib = "3.0.1"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
 //!
+//! `serde` and `serde_json` are required when you use [`scraped_item`].
+//!
+//! ## Quick start
+//!
 //! ```rust,ignore
 //! use spider_lib::prelude::*;
-//! use std::sync::Arc;
-//! use std::sync::atomic::{AtomicUsize, Ordering};
-//! use dashmap::DashMap;
 //!
 //! #[scraped_item]
 //! struct Quote {
@@ -28,47 +33,53 @@
 //!
 //! struct QuotesSpider;
 //!
-//! // State for tracking information during crawling
-//! #[derive(Clone, Default)]
-//! struct QuotesSpiderState {
-//!     page_count: Arc<AtomicUsize>,
-//!     visited_urls: Arc<DashMap<String, bool>>,
-//! }
-//!
-//! impl QuotesSpiderState {
-//!     fn increment_page_count(&self) {
-//!         self.page_count.fetch_add(1, Ordering::SeqCst);
-//!     }
-//!     
-//!     fn mark_url_visited(&self, url: String) {
-//!         self.visited_urls.insert(url, true);
-//!     }
-//! }
-//!
 //! #[async_trait]
 //! impl Spider for QuotesSpider {
 //!     type Item = Quote;
-//!     type State = QuotesSpiderState;
+//!     type State = ();
 //!
 //!     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
-//!         let req = Request::new("http://quotes.toscrape.com/".parse()?);
-//!         Ok(StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
+//!         Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
 //!     }
 //!
-//!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         // Update state - can be done concurrently without blocking the spider
-//!         state.increment_page_count();
-//!         state.mark_url_visited(response.url.to_string());
-//!         
-//!         // parsing logic
-//!         todo!()
+//!     async fn parse(
+//!         &self,
+//!         response: Response,
+//!         _state: &Self::State,
+//!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+//!         let html = response.to_html()?;
+//!         let mut output = ParseOutput::new();
+//!
+//!         for quote in html.select(&".quote".to_selector()?) {
+//!             let text = quote
+//!                 .select(&".text".to_selector()?)
+//!                 .next()
+//!                 .map(|node| node.text().collect::<String>())
+//!                 .unwrap_or_default();
+//!
+//!             let author = quote
+//!                 .select(&".author".to_selector()?)
+//!                 .next()
+//!                 .map(|node| node.text().collect::<String>())
+//!                 .unwrap_or_default();
+//!
+//!             output.add_item(Quote { text, author });
+//!         }
+//!
+//!         Ok(output)
 //!     }
+//! }
+//!
+//! #[tokio::main]
+//! async fn main() -> Result<(), SpiderError> {
+//!     let crawler = CrawlerBuilder::new(QuotesSpider).build().await?;
+//!     crawler.start_crawl().await
 //! }
 //! ```
 //!
-//! **Note**: Notice that the `Spider` implementation now uses an immutable reference (`&self`)
-//! and receives a separate state parameter (`state: &Self::State`). This enables more efficient
-//! concurrent crawling by eliminating the need for mutex locks on the spider itself.
+//! [`Spider::parse`] takes `&self` and a separate shared state parameter.
+//! That design keeps the spider itself immutable while still allowing
+//! concurrent parsing with user-defined shared state.
 
 pub mod prelude;
 pub use prelude::*;
