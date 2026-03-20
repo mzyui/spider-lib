@@ -1,6 +1,7 @@
-//! Data structures for scraped items in `spider-lib`.
+//! Item traits and parse results.
 //!
-//! Defines the `ScrapedItem` trait and `ParseOutput` for spider results.
+//! [`ParseOutput`] is what a spider returns after parsing a page. It carries the
+//! emitted items plus any follow-up requests discovered on that page.
 //!
 //! ## Example
 //!
@@ -24,7 +25,7 @@ use serde_json::Value;
 use std::any::Any;
 use std::fmt::Debug;
 
-/// The output of a spider's `parse` method.
+/// The output returned by a spider's `parse` method.
 #[derive(Debug, Clone)]
 pub struct ParseOutput<I> {
     items: Vec<I>,
@@ -72,7 +73,7 @@ impl<I> Default for ParseOutput<I> {
     }
 }
 
-/// A trait representing a scraped item.
+/// Trait implemented by item types emitted from spiders.
 pub trait ScrapedItem: Debug + Send + Sync + Any + 'static {
     /// Returns the item as a `dyn Any` for downcasting.
     fn as_any(&self) -> &dyn Any;

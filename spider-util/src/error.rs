@@ -1,17 +1,7 @@
-//! Custom error types for the spider framework.
+//! Shared error types for the workspace.
 //!
-//! This module defines comprehensive error types used throughout the spider ecosystem:
-//!
-//! - **[`SpiderError`]**: The main error type for the spider framework, covering
-//!   network failures, URL parsing problems, I/O errors, configuration issues,
-//!   and pipeline errors.
-//! - **[`PipelineError`]**: Specialized errors for item processing pipelines.
-//! - **[`ReqwestError`]**: A simplified wrapper around reqwest errors with
-//!   additional context about connection and timeout issues.
-//!
-//! By centralizing error definitions, the module provides a consistent and
-//! semantic way to report and handle errors, improving the robustness and
-//! maintainability of web scraping applications.
+//! The runtime keeps transport, parsing, configuration, and pipeline failures in
+//! a small set of error enums so applications can match on them consistently.
 //!
 //! ## Example
 //!
@@ -34,11 +24,7 @@ use serde_json::Error as SerdeJsonError;
 use std::str::Utf8Error;
 use thiserror::Error;
 
-/// A wrapper around reqwest errors with additional context.
-///
-/// [`ReqwestError`] provides simplified error information by extracting
-/// key details from reqwest errors, such as whether the error was related
-/// to connection failures or timeouts.
+/// Simplified wrapper around `reqwest::Error`.
 #[derive(Debug, Clone, Error)]
 #[error("Reqwest error: {message}")]
 pub struct ReqwestError {
@@ -60,10 +46,7 @@ impl From<reqwest::Error> for ReqwestError {
     }
 }
 
-/// The main error type for the spider framework.
-///
-/// [`SpiderError`] encompasses all possible errors that can occur during
-/// web scraping operations, from network failures to data processing issues.
+/// Main runtime error type used across the crawler stack.
 ///
 /// ## Variants
 ///
@@ -168,11 +151,7 @@ impl From<SerdeJsonError> for SpiderError {
     }
 }
 
-/// Error type for item processing pipelines.
-///
-/// [`PipelineError`] represents errors that can occur during the processing
-/// of scraped items in pipelines, including I/O errors, database errors,
-/// serialization failures, and CSV operations.
+/// Error type used by item pipelines.
 ///
 /// ## Variants
 ///

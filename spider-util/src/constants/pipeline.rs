@@ -1,4 +1,4 @@
-//! Pipeline/output constants.
+//! Default values used by built-in pipelines.
 
 /// Buffer size for CSV export pipeline.
 pub const CSV_BUFFER_SIZE: usize = 8192;

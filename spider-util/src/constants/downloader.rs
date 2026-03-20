@@ -1,4 +1,4 @@
-//! Downloader/network constants.
+//! Default values used by downloader and client setup code.
 
 /// Default request timeout in seconds.
 pub const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;

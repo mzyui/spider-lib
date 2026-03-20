@@ -1,4 +1,4 @@
-//! Scheduler and duplicate-detection constants.
+//! Defaults used by the scheduler and duplicate-detection path.
 
 /// Capacity of the visited URL cache in the scheduler.
 pub const VISITED_URL_CACHE_CAPACITY: u64 = 500_000;

@@ -1,4 +1,4 @@
-//! Middleware constants.
+//! Default values used by built-in middleware.
 
 /// Initial delay for adaptive rate limiting (500ms).
 pub const RATE_LIMIT_INITIAL_DELAY_MS: u64 = 500;

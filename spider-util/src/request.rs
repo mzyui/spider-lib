@@ -1,16 +1,8 @@
-//! Data structures for representing HTTP requests in `spider-lib`.
+//! Request types used by the crawler runtime.
 //!
-//! This module defines the [`Request`] struct, which is a central component
-//! for constructing and managing outgoing HTTP requests within the
-//! `spider-lib` framework. It encapsulates all necessary details of an
-//! HTTP request, including:
-//! - The target URL and HTTP method
-//! - Request headers and an optional request body (supporting JSON, form data, or raw bytes)
-//! - Metadata for tracking retry attempts or other custom information
-//!
-//! Additionally, the module provides methods for building requests,
-//! incrementing retry counters, and generating unique fingerprints
-//! for request deduplication and caching.
+//! [`Request`] is the runtime's transport-neutral request model. It stores the
+//! URL, method, headers, optional body, and a lazily allocated metadata map used
+//! by middleware and runtime internals.
 //!
 //! ## Example
 //!
@@ -43,16 +35,7 @@ use twox_hash::XxHash64;
 
 use crate::error::SpiderError;
 
-/// The body of an HTTP request.
-///
-/// [`Body`] encapsulates the different types of request bodies that can be sent
-/// with an HTTP request. It supports JSON payloads, form data, and raw bytes.
-///
-/// ## Variants
-///
-/// - `Json`: A JSON value (typically an object or array)
-/// - `Form`: Key-value form data encoded as `application/x-www-form-urlencoded`
-/// - `Bytes`: Raw binary data
+/// Request body variants supported by the default downloader.
 ///
 /// ## Example
 ///
@@ -157,18 +140,7 @@ impl<'de> Deserialize<'de> for Body {
     }
 }
 
-/// An HTTP request to be processed by the crawler.
-///
-/// [`Request`] is the primary data structure for representing outgoing HTTP
-/// requests in the spider framework. It contains all information needed to
-/// execute an HTTP request, including the URL, method, headers, body, and
-/// optional metadata.
-///
-/// ## Memory Efficiency
-///
-/// The `meta` field uses lazy initialization - the metadata map is only
-/// allocated when actually used. This reduces memory overhead for simple
-/// requests that don't need metadata.
+/// Outgoing HTTP request used by the crawler runtime.
 ///
 /// ## Example
 ///

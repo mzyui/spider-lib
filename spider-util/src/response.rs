@@ -1,15 +1,8 @@
-//! Data structures and utilities for handling HTTP responses in `spider-lib`.
+//! Response types and response-side helpers.
 //!
-//! This module defines the [`Response`] struct, which represents an HTTP response
-//! received from a web server. It encapsulates crucial information such as
-//! the URL, status code, headers, and body of the response, along with any
-//! associated metadata.
-//!
-//! Additionally, this module provides:
-//! - Helper methods for [`Response`] to facilitate common tasks like parsing
-//!   the body as HTML or JSON, and reconstructing the original [`Request`]
-//! - [`Link`] and [`LinkType`] enums for structured representation and extraction
-//!   of hyperlinks found within the response content
+//! [`Response`] wraps the downloaded body together with the final URL, status,
+//! headers, and request metadata. It also provides convenience methods for
+//! parsing HTML or JSON and for extracting links.
 //!
 //! ## Example
 //!
@@ -57,10 +50,7 @@ thread_local! {
     static HTML_CACHE: RefCell<HashMap<u64, Html>> = RefCell::new(HashMap::new());
 }
 
-/// Represents the type of a discovered link.
-///
-/// [`LinkType`] categorizes links found on web pages to enable
-/// specialized handling based on the resource type.
+/// Classification for links discovered in a response.
 ///
 /// ## Variants
 ///
@@ -86,10 +76,7 @@ pub enum LinkType {
     Other(String),
 }
 
-/// Represents a link discovered on a web page.
-///
-/// [`Link`] encapsulates both the URL and the type of a discovered link,
-/// enabling type-aware link processing during crawling.
+/// A link discovered while extracting URLs from a response.
 ///
 /// ## Example
 ///
@@ -110,10 +97,7 @@ pub struct Link {
     pub link_type: LinkType,
 }
 
-/// Defines an HTML source used for link extraction.
-///
-/// Each source pairs a CSS selector with the attribute that contains the URL.
-/// An optional [`LinkType`] can be provided to override the inferred type.
+/// One selector/attribute pair used during link extraction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkSource {
     /// CSS selector used to find candidate elements.
@@ -141,7 +125,7 @@ impl LinkSource {
     }
 }
 
-/// Options that control how links are extracted from a [`Response`].
+/// Options that control link extraction from a [`Response`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkExtractOptions {
     /// Restrict discovered links to the same registered domain.

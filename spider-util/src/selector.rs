@@ -1,45 +1,7 @@
-//! # Selector Cache Module
+//! Cached CSS selector helpers.
 //!
-//! Provides a global cache for compiled CSS selectors to improve parsing performance.
-//!
-//! ## Overview
-//!
-//! The selector cache module implements a global caching mechanism for compiled
-//! CSS selectors used in HTML parsing. Since selector compilation can be expensive,
-//! especially when the same selectors are used repeatedly during crawling,
-//! this module caches compiled selectors to avoid repeated compilation overhead.
-//! The cache uses a thread-safe approach to allow concurrent access from multiple
-//! crawler threads.
-//!
-//! ## Key Components
-//!
-//! - **SELECTOR_CACHE**: Global static cache using Lazy initialization
-//! - **get_cached_selector**: Main function to retrieve or compile selectors
-//! - **prewarm_cache**: Function to pre-populate the cache with common selectors
-//! - **Thread Safety**: Uses RwLock for concurrent read/write access
-//!
-//! ## Performance Benefits
-//!
-//! The selector cache provides significant performance improvements when processing
-//! many pages with similar HTML structures. By caching compiled selectors,
-//! the system avoids the computational cost of parsing the same CSS selector
-//! expressions repeatedly. The cache uses a read-write lock to allow multiple
-//! concurrent readers while ensuring thread safety during cache updates.
-//!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use spider_util::selector_cache::get_cached_selector;
-//!
-//! // Get a cached selector (compiles and caches if not already present)
-//! if let Some(selector) = get_cached_selector("div.content > p") {
-//!     // Use the selector for parsing HTML
-//!     // The selector is now cached for future use
-//! }
-//!
-//! // Pre-warm the cache with commonly used selectors
-//! spider_util::selector_cache::prewarm_cache();
-//! ```
+//! HTML-heavy crawls often reuse the same selectors across thousands of pages.
+//! This module keeps compiled selectors cached so repeated parsing work stays low.
 
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
@@ -50,7 +12,7 @@ use std::collections::HashMap;
 static SELECTOR_CACHE: Lazy<RwLock<HashMap<String, Selector>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
-/// Get a compiled selector from the cache or compile and store it if not present
+/// Returns a compiled selector from the cache, compiling it on first use.
 pub fn get_cached_selector(selector_str: &str) -> Option<Selector> {
     {
         let cache = SELECTOR_CACHE.read();
@@ -74,7 +36,7 @@ pub fn get_cached_selector(selector_str: &str) -> Option<Selector> {
     }
 }
 
-/// Pre-warm the selector cache with commonly used selectors
+/// Pre-warms the selector cache with a small set of common selectors.
 pub fn prewarm_cache() {
     let common_selectors = vec![
         "a[href]",

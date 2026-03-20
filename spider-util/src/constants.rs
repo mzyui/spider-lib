@@ -1,8 +1,7 @@
-//! Global constants used across the spider-lib workspace.
+//! Workspace-wide public constants.
 //!
-//! This module is a facade that re-exports domain-specific constant groups.
-//! Keep cross-crate and publicly tunable values here; keep local implementation
-//! details near their usage sites.
+//! This module re-exports the constant groups used by the crawler, downloader,
+//! middleware, pipelines, and scheduler.
 
 mod crawler;
 mod downloader;

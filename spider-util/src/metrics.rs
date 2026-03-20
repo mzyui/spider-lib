@@ -1,6 +1,4 @@
-//! # Metrics Utilities
-//!
-//! Common metrics-related utilities and structures for the spider framework.
+//! Metrics helpers shared by runtime reporting code.
 
 use parking_lot::RwLock;
 use std::sync::Arc;

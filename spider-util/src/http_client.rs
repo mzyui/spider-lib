@@ -1,7 +1,4 @@
-//! HTTP Client trait for fetching web content.
-//!
-//! This module provides the `HttpClient` trait, which is a simple abstraction
-//! for HTTP clients used throughout the spider framework.
+//! Small HTTP client abstraction used by middleware.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -10,7 +7,7 @@ use std::time::Duration;
 
 use crate::error::SpiderError;
 
-/// A simple HTTP client trait for fetching web content.
+/// Minimal HTTP client trait for middleware that needs direct fetches.
 #[async_trait]
 pub trait HttpClient: Send + Sync {
     /// Fetches the content of a URL as text.

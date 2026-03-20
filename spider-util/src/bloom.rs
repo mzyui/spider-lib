@@ -1,51 +1,6 @@
-//! # Bloom Filter Module
-//!
-//! Implements a memory-efficient Bloom Filter for duplicate URL detection.
-//!
-//! ## Overview
-//!
-//! The Bloom Filter module provides an efficient probabilistic data structure
-//! for testing whether an element is a member of a set. In the context of web
-//! crawling, it's used to quickly check if a URL has potentially been visited
-//! before, significantly reducing the need for expensive lookups in the main
-//! visited URLs cache. The filter trades a small probability of false positives
-//! for substantial memory savings and performance gains.
-//!
-//! ## Key Components
-//!
-//! - **BloomFilter**: Main struct implementing the Bloom Filter algorithm
-//! - **Bit Vector**: Memory-efficient storage using a vector of 64-bit integers
-//! - **Hash Functions**: Multiple hash functions using double hashing technique
-//! - **Might Contain**: Probabilistic membership testing method
-//!
-//! ## Algorithm Details
-//!
-//! The implementation uses a bit vector for memory efficiency and applies double
-//! hashing to generate multiple hash values from two initial hash functions.
-//! This approach reduces the computational overhead of calculating multiple
-//! independent hash functions while maintaining good distribution properties.
-//! The filter supports configurable size and number of hash functions.
-//!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use spider_util::bloom_filter::BloomFilter;
-//!
-//! // Create a Bloom Filter with capacity for ~1M items and 5 hash functions
-//! let mut bloom_filter = BloomFilter::new(5_000_000, 5);
-//!
-//! // Add items to the filter
-//! bloom_filter.add("https://example.com/page1");
-//! bloom_filter.add("https://example.com/page2");
-//!
-//! // Check if items might be in the set (with possibility of false positives)
-//! assert_eq!(bloom_filter.might_contain("https://example.com/page1"), true);
-//! assert_eq!(bloom_filter.might_contain("https://example.com/nonexistent"), false); // Likely, but not guaranteed
-//! ```
+//! Bloom filter used by the scheduler for cheap duplicate checks.
 
-/// A proper Bloom Filter implementation using a bit vector for memory efficiency.
-/// This is used for efficiently checking if a URL has potentially been visited before,
-/// reducing the need for expensive lookups in the main visited URLs cache.
+/// Bloom filter implementation backed by a bitset.
 pub struct BloomFilter {
     bit_set: Vec<u64>,
     num_bits: u64,

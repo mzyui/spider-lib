@@ -1,7 +1,4 @@
-//! Utility functions for the `spider-lib` framework.
-//!
-//! This module provides utility functions that are used across different
-//! components of the framework.
+//! Small utility helpers shared across the workspace.
 
 use psl::{List, Psl};
 use scraper::Selector;

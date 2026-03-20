@@ -1,4 +1,4 @@
-//! Crawler orchestration constants.
+//! Defaults used by crawler orchestration internals.
 
 /// Default channel capacity for crawler communication.
 pub const CRAWLER_DEFAULT_CHANNEL_CAPACITY: usize = 1000;

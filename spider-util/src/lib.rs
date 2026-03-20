@@ -1,21 +1,20 @@
 //! # spider-util
 //!
-//! Utility types and traits for the `spider-lib` framework.
+//! Shared types and helper modules used across the `spider-*` workspace.
+//!
+//! This crate is where request and response models, error types, selector
+//! helpers, formatting helpers, metrics helpers, and other common utilities
+//! live.
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_util::{request::Request, item::ScrapedItem};
+//! use spider_util::request::Request;
 //! use url::Url;
 //!
 //! let url = Url::parse("https://example.com").unwrap();
 //! let request = Request::new(url);
-//!
-//! #[spider_macro::scraped_item]
-//! struct Article {
-//!     title: String,
-//!     content: String,
-//! }
+//! let _ = request;
 //! ```
 
 pub mod bloom;

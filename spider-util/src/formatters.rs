@@ -1,7 +1,4 @@
-//! Formatting utilities for the spider framework.
-//!
-//! This module provides traits and implementations for formatting
-//! durations, byte sizes, and rates in a consistent manner.
+//! Formatting helpers for metrics and runtime output.
 
 use std::time::Duration;
 
