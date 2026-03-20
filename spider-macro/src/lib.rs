@@ -1,36 +1,16 @@
 //! # spider-macro
 //!
-//! Provides procedural macros for the `spider-lib` framework to reduce boilerplate code.
+//! Procedural macros used by the `spider-*` workspace.
 //!
-//! ## Overview
-//!
-//! The `spider-macro` crate contains procedural macros that automate the
-//! implementation of common traits and patterns used in the spider framework.
-//! These macros significantly reduce the amount of boilerplate code required
-//! when defining custom data structures for scraped items and spider state.
-//!
-//! ## Key Macros
-//!
-//! - **`#[scraped_item]`**: Derives the `ScrapedItem` trait along with necessary
-//!   implementations for serialization, deserialization, cloning, and type
-//!   conversions.
-//!
-//! ## Features
-//!
-//! - **Automatic Trait Derivation**: Implements `Serialize`, `Deserialize`,
-//!   `Clone`, and `Debug` traits automatically
-//! - **ScrapedItem Implementation**: Provides the complete implementation of
-//!   the `ScrapedItem` trait required by the framework
-//! - **Type Safety**: Maintains type safety while reducing boilerplate
-//! - **Performance**: Generates efficient code without runtime overhead
+//! Right now this crate is intentionally small: it mainly provides
+//! [`scraped_item`], the attribute macro used to turn plain structs into item
+//! types that fit the crawler and pipeline APIs.
 //!
 //! ## Dependencies
 //!
-//! When using this macro, your project must include the following dependencies:
-//!
 //! ```toml
 //! [dependencies]
-//! spider-lib = "1.1.1"
+//! spider-macro = "0.1.11"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
@@ -38,20 +18,16 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_lib::prelude::*;
+//! use spider_macro::scraped_item;
 //!
 //! #[scraped_item]
 //! struct Article {
 //!     title: String,
 //!     content: String,
-//!     author: String,
-//!     published_date: String,
 //! }
 //!
-//! // The macro generates all necessary implementations automatically
-//! // including serialization, deserialization, and the ScrapedItem trait
-//! //
-//! // Note: Make sure your Cargo.toml includes serde and serde_json as dependencies
+//! // `Article` now implements Serialize, Deserialize, Clone, Debug,
+//! // and the ScrapedItem trait expected by the rest of the workspace.
 //! ```
 
 extern crate proc_macro;
@@ -60,12 +36,12 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{ItemStruct, parse_macro_input};
 
-/// A procedural macro to derive the `ScrapedItem` trait.
+/// Attribute macro for defining a scraped item type.
 ///
 /// This macro:
-/// 1. Implements the ScrapedItem trait
-/// 2. Adds serde Serialize and Deserialize derives
-/// 3. Makes use of items that should be in scope via prelude import
+/// 1. Implements `ScrapedItem`
+/// 2. Adds `Serialize` and `Deserialize`
+/// 3. Adds `Clone` and `Debug`
 ///
 /// # Dependencies
 ///
