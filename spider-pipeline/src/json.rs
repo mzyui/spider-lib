@@ -1,18 +1,7 @@
-//! Item Pipeline for exporting scraped items to a single JSON file.
+//! JSON array output pipeline.
 //!
-//! This module provides the `JsonPipeline`, an item pipeline designed
-//! to collect all `ScrapedItem`s processed by the crawler and then, upon
-//! the pipeline's closure (e.g., at the end of a crawl), write them as a
-//! single, pretty-printed JSON array to a specified output file.
-//!
-//! Key features include:
-//! - Aggregation of all scraped items into an in-memory collection.
-//! - Asynchronous writing of the complete JSON array to disk, performed
-//!   on a dedicated blocking thread to prevent event loop blocking.
-//! - Support for state persistence, allowing the pipeline to save and
-//!   restore its collected items for checkpointing.
-//! - Produces a well-formed JSON document suitable for direct consumption
-//!   by other applications or for human readability.
+//! [`JsonPipeline`] keeps items in memory and writes a pretty-printed JSON
+//! array when the pipeline is closed.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;

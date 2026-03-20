@@ -1,17 +1,4 @@
-//! Item Pipeline for deduplicating scraped items.
-//!
-//! This module provides the `DeduplicationPipeline`, an essential component
-//! in ensuring the uniqueness of scraped data. This pipeline intercepts items
-//! after they have been scraped by a spider and before they are passed to
-//! subsequent pipelines or exporters.
-//!
-//! The pipeline works by:
-//! - Configuring a set of `unique_fields` within an item (e.g., product SKU, article URL).
-//! - Generating a unique hash for each item based on the values of these fields.
-//! - Storing previously seen hashes to identify and drop duplicate items,
-//!   preventing redundant data from being processed or stored.
-//! - Supporting state persistence, allowing the set of seen hashes to be
-//!   saved and restored across crawler runs.
+//! Pipeline that drops duplicate items by selected fields.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
@@ -24,7 +11,7 @@ use std::collections::HashSet;
 use std::hash::Hasher;
 use std::marker::PhantomData;
 
-/// A pipeline that filters out duplicate items based on a configurable set of fields.
+/// Pipeline that filters duplicate items based on a configurable field set.
 pub struct DeduplicationPipeline<I: ScrapedItem> {
     unique_fields: Vec<String>,
     seen_hashes: DashSet<u64>,

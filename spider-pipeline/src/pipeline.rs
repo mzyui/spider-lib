@@ -1,27 +1,15 @@
-//! Trait for defining item processing pipelines in `spider-pipeline`.
+//! Pipeline trait and lifecycle hooks.
 //!
-//! This module provides the `Pipeline` trait, which is a fundamental abstraction
-//! for post-processing `ScrapedItem`s after they have been extracted by a spider.
-//! Pipelines allow for a modular approach to handling scraped data, enabling
-//! operations such as:
-//! - Storing items in databases or files.
-//! - Validating and cleaning data.
-//! - Deduplicating entries.
-//! - Performing further transformations.
-//!
-//! Implementors of this trait define the `process_item` method, which receives
-//! a `ScrapedItem` and can modify, drop, or pass it along the pipeline.
-//! Pipelines also support state management for checkpointing and cleanup operations.
+//! A pipeline receives each scraped item after parsing. It may keep the item,
+//! transform it, drop it, write it somewhere, or preserve its own state for
+//! checkpointing.
 
 use async_trait::async_trait;
 use serde_json::Value;
 use spider_util::error::PipelineError;
 use spider_util::item::ScrapedItem;
 
-/// The `Pipeline` trait defines the contract for item processing pipelines.
-///
-/// Pipelines are responsible for processing scraped items, such as storing them in a database,
-/// writing them to a file, or performing data validation.
+/// Contract implemented by item-processing pipelines.
 #[async_trait]
 pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
     /// Returns the name of the pipeline.

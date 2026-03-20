@@ -1,15 +1,7 @@
-//! Item Pipeline for persisting scraped items to a SQLite database.
+//! SQLite output pipeline.
 //!
-//! This module provides the `SqlitePipeline`, an item pipeline that
-//! efficiently stores `ScrapedItem`s in a SQLite database. It offloads all
-//! blocking database I/O operations to a dedicated Tokio blocking thread,
-//! ensuring the asynchronous event loop remains non-blocked.
-//!
-//! Key features include:
-//! - Dynamic table schema creation based on the fields of the first processed item.
-//! - Asynchronous insertion of subsequent items into the database.
-//! - Support for various data types mapping to SQLite's type system.
-//! - Graceful handling of database connections and shutdown.
+//! [`SqlitePipeline`] writes items to a SQLite table and offloads the blocking
+//! database work to a dedicated blocking task.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;

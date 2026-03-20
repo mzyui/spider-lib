@@ -1,14 +1,7 @@
-//! Stream Item Pipeline for exporting scraped items to a JSON file.
+//! Streaming JSON output pipeline.
 //!
-//! This module provides the `StreamJsonPipeline`, an item pipeline designed
-//! to stream `ScrapedItem`s directly to a JSON file without collecting them in memory.
-//! This approach significantly reduces memory usage when processing large numbers of items.
-//!
-//! Key features include:
-//! - Stream processing: Items are written to the output file as they arrive
-//! - Low memory footprint: No accumulation of items in memory
-//! - Chunked writing: Items are written in batches to improve I/O performance
-//! - Proper JSON formatting: Maintains valid JSON array structure
+//! [`StreamJsonPipeline`] writes items to a JSON array incrementally instead of
+//! holding the full result set in memory.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;

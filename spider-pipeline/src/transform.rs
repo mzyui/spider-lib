@@ -1,7 +1,7 @@
-//! Item Pipeline for transforming scraped items.
+//! Item transformation pipeline.
 //!
-//! This module provides `TransformPipeline`, which applies declarative
-//! transformation operations and custom closures to item JSON payloads.
+//! [`TransformPipeline`] works on the JSON form of a scraped item and can apply
+//! a sequence of built-in field edits or custom closures.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 type TransformFn = dyn Fn(&mut Value) -> Result<(), String> + Send + Sync + 'static;
 
-/// Built-in transformation operations for top-level object fields.
+/// Built-in operations applied to top-level object fields.
 #[derive(Debug, Clone)]
 pub enum TransformOperation {
     Trim { field: String },
@@ -27,7 +27,7 @@ pub enum TransformOperation {
     SetDefault { field: String, value: Value },
 }
 
-/// A pipeline that transforms items and forwards transformed items downstream.
+/// Pipeline that transforms items and forwards successful results downstream.
 pub struct TransformPipeline<I>
 where
     I: ScrapedItem + Serialize + DeserializeOwned,

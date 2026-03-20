@@ -1,7 +1,7 @@
-//! Item Pipeline for validating scraped items.
+//! Item validation pipeline.
 //!
-//! This module provides `ValidationPipeline`, a configurable pipeline that
-//! validates items using declarative field rules and custom validator closures.
+//! [`ValidationPipeline`] drops items that do not satisfy configured rules or
+//! custom validator callbacks.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 type ValidatorFn<I> = dyn Fn(&I, &Value) -> Result<(), String> + Send + Sync + 'static;
 
-/// JSON value type matcher for field validation.
+/// JSON value type used by [`ValidationRule::Type`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JsonType {
     Null,
@@ -25,7 +25,7 @@ pub enum JsonType {
     Object,
 }
 
-/// Declarative rules for validating fields in an item.
+/// Declarative rules for validating top-level item fields.
 #[derive(Debug, Clone)]
 pub enum ValidationRule {
     Required,
@@ -37,7 +37,7 @@ pub enum ValidationRule {
     MaxNumber(f64),
 }
 
-/// A pipeline that validates items and drops invalid entries.
+/// Pipeline that validates items and drops invalid ones.
 pub struct ValidationPipeline<I: ScrapedItem> {
     rules: HashMap<String, Vec<ValidationRule>>,
     validators: Vec<Arc<ValidatorFn<I>>>,

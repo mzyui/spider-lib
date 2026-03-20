@@ -1,15 +1,7 @@
-//! Item Pipeline for exporting scraped items to JSON Lines (.jsonl) files.
+//! JSON Lines output pipeline.
 //!
-//! This module provides the `JsonlPipeline`, an item pipeline designed
-//! for efficient storage of scraped data in a line-delimited JSON format.
-//! Each `ScrapedItem` processed by this pipeline is serialized into a single
-//! JSON object, followed by a newline character, and appended to the specified
-//! output file.
-//!
-//! This format is particularly useful for streaming data, processing with
-//! command-line tools (like `jq`), and integrating with big data platforms.
-//! The pipeline ensures that the output directory exists and handles file
-//! writing asynchronously to avoid blocking the main event loop.
+//! [`JsonlPipeline`] appends one serialized item per line, which makes it a
+//! good fit for streaming workflows and shell-based processing.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;

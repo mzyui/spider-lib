@@ -1,18 +1,10 @@
-//! Item Pipeline for writing scraped items to the console.
-//!
-//! This module provides the `ConsolePipeline`, a basic and useful
-//! item pipeline for debugging and immediate inspection of scraped data.
-//! When integrated into a crawler, this pipeline simply logs the received
-//! `ScrapedItem`s to the console (or configured tracing output).
-//!
-//! It serves as a straightforward way to verify that spiders are extracting
-//! data correctly and that items are flowing through the pipeline as expected.
+//! Pipeline that logs items as they pass through.
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;
 use log::info;
 use spider_util::{error::PipelineError, item::ScrapedItem};
 
-/// A pipeline that prints scraped items to the console.
+/// Pipeline that logs each scraped item with `log::info!`.
 pub struct ConsolePipeline;
 
 impl ConsolePipeline {

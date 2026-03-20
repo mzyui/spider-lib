@@ -1,19 +1,7 @@
-//! Item Pipeline for exporting scraped items to CSV files.
+//! CSV output pipeline.
 //!
-//! This module provides the `CsvPipeline`, an item pipeline designed
-//! for writing `ScrapedItem`s to a Comma Separated Values (CSV) file.
-//!
-//! Key features include:
-//! - Dynamic header generation: The column headers of the CSV file are
-//!   automatically inferred from the keys of the first `ScrapedItem`
-//!   processed by the pipeline.
-//! - Asynchronous writing: All file I/O operations are performed on a
-//!   dedicated blocking thread, preventing blocking of the main asynchronous
-//!   event loop.
-//! - State persistence: The pipeline can save and restore its internal state
-//!   (specifically, the determined headers) to support crawler checkpointing.
-//! - Handling of complex data: Nested JSON objects or arrays within an item
-//!   are serialized to JSON strings within their respective CSV cells.
+//! [`CsvPipeline`] writes items to a CSV file, inferring headers from the first
+//! item and serializing nested values into JSON strings when needed.
 
 use crate::pipeline::Pipeline;
 use async_trait::async_trait;

@@ -1,8 +1,10 @@
 //! # spider-pipeline
 //!
-//! Built-in pipeline implementations for the `spider-lib` framework.
+//! Item pipelines for cleanup, validation, deduplication, and output.
 //!
-//! Processes, filters, transforms, and stores scraped data.
+//! Pipelines run after parsing. This crate contains both in-memory stages such
+//! as transforms and validators, and output backends such as CSV, JSON, SQLite,
+//! and streaming JSON.
 //!
 //! ## Example
 //!
