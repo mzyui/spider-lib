@@ -1,28 +1,7 @@
-//! # Statistics Module
+//! Runtime statistics and reporting helpers.
 //!
-//! Collects and stores various metrics and statistics about the crawler's operation.
-//!
-//! ## Overview
-//!
-//! The [`StatCollector`] tracks important metrics throughout the crawling process,
-//! including request counts, response statistics, item processing metrics, and
-//! performance indicators. This data is essential for monitoring crawl progress,
-//! diagnosing issues, and optimizing performance.
-//!
-//! ## Key Metrics Tracked
-//!
-//! - **Request Metrics**: Enqueued, sent, succeeded, failed, retried, and dropped requests
-//! - **Response Metrics**: Received, cached, and status code distributions
-//! - **Item Metrics**: Scraped, processed, and dropped items
-//! - **Performance Metrics**: Throughput, response times, and bandwidth usage
-//! - **Timing Metrics**: Elapsed time and processing rates
-//!
-//! ## Features
-//!
-//! - **Thread-Safe**: Uses atomic operations for concurrent metric updates
-//! - **Real-Time Monitoring**: Provides live statistics during crawling
-//! - **Export Formats**: Supports JSON and Markdown export formats
-//! - **Snapshot Capability**: Captures consistent state for reporting
+//! [`StatCollector`] records request counts, response status codes, cache hits,
+//! timings, bandwidth, and item throughput while a crawl is running.
 //!
 //! ## Example
 //!

@@ -1,11 +1,6 @@
-//! A "prelude" for users of the `spider-core` crate.
+//! Convenient re-exports for code that depends on `spider-core` directly.
 //!
-//! This prelude re-exports the most commonly used traits, structs, and macros
-//! so that they can be easily imported.
-//!
-//! # Example
-//!
-//! ```
+//! ```rust
 //! use spider_core::prelude::*;
 //! ```
 

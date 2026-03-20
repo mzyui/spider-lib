@@ -1,20 +1,8 @@
-//! # Configuration Module
+//! Configuration types used by the crawler runtime.
 //!
-//! Provides configuration structs for the crawler and its components.
-//!
-//! ## Overview
-//!
-//! This module defines configuration structs that group related parameters
-//! together, following the Parameter Object pattern. Each configuration struct
-//! implements a builder pattern for ergonomic construction.
-//!
-//! ## Key Structs
-//!
-//! - [`CrawlerConfig`]: Core crawler concurrency and channel settings
-//! - [`CheckpointConfig`]: Checkpoint save/load configuration
-//! - [`ParserConfig`]: Parser worker configuration
-//! - [`DownloaderConfig`]: Downloader concurrency configuration
-//! - [`ItemProcessorConfig`]: Item processing pipeline configuration
+//! Most users touch these settings indirectly through [`crate::CrawlerBuilder`],
+//! but they are public because they are also useful for explicit configuration
+//! and inspection.
 //!
 //! ## Example
 //!
@@ -37,10 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// Core configuration for the crawler's concurrency settings.
-///
-/// This struct holds tunable parameters that control the parallelism
-/// and throughput of the crawler.
+/// Core runtime configuration for the crawler.
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
     /// The maximum number of concurrent downloads.

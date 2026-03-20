@@ -1,28 +1,8 @@
-//! # Checkpoint Module
+//! Checkpoint save and restore types.
 //!
-//! Manages crawler checkpoints for saving and restoring crawl state.
-//!
-//! ## Overview
-//!
-//! The checkpoint module provides functionality for saving and restoring the
-//! complete state of a crawler. This enables crawlers to gracefully recover
-//! from interruptions, resume interrupted crawls, and persist progress across
-//! sessions. Checkpoints capture the state of various crawler components
-//! including the scheduler, item pipelines, and cookie stores.
-//!
-//! ## Key Components
-//!
-//! - **SchedulerCheckpoint**: Captures the state of the request scheduler
-//! - **Checkpoint**: Complete crawler state snapshot including scheduler, pipelines, and cookies
-//! - **save_checkpoint**: Function to serialize and save crawler state to disk
-//! - **Feature Integration**: Conditional compilation support for cookie stores
-//!
-//! ## Implementation Details
-//!
-//! The checkpoint system uses MessagePack (msgpack) serialization for efficient
-//! binary storage of crawler state. It handles the serialization of complex
-//! data structures like request queues, visited URL sets, and pipeline states.
-//! The system also manages temporary file creation to ensure atomic saves.
+//! When the `checkpoint` feature is enabled, the runtime can serialize enough
+//! state to resume a crawl later. That includes the scheduler frontier and any
+//! pipeline state that opts into checkpoint support.
 //!
 //! ## Example
 //!

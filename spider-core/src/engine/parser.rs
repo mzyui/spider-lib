@@ -1,29 +1,8 @@
-//! # Response Parser Module
+//! Response parsing stage for the crawler engine.
 //!
-//! Contains the response parsing functionality for the crawler.
-//!
-//! ## Overview
-//!
-//! The response parser module handles the processing of HTTP responses received
-//! from the downloader. It orchestrates the parsing of responses through the
-//! spider's logic, extracting scraped items and new requests to follow.
-//! The module implements a concurrent processing model with multiple parser
-//! workers to efficiently handle the parsing workload.
-//!
-//! ## Key Components
-//!
-//! - **spawn_parser_task**: Creates the main parser coordinator task and worker tasks
-//! - **process_crawl_outputs**: Handles the distribution of spider outputs (items and requests)
-//! - **Parser Workers**: Multiple concurrent tasks that process individual responses
-//! - **Coordinator**: Manages the distribution of responses to available workers
-//!
-//! ## Architecture
-//!
-//! The parser uses a coordinator-worker pattern where a coordinator task receives
-//! responses from the downloader and distributes them to multiple worker tasks.
-//! Each worker task processes responses through the spider's parsing logic,
-//! extracting items and new requests. This design allows for concurrent parsing
-//! while maintaining proper coordination and backpressure handling.
+//! This module fans downloaded responses out to parser workers, runs
+//! [`Spider::parse`](crate::spider::Spider::parse), and forwards emitted items
+//! and follow-up requests deeper into the runtime.
 //!
 //! ## Example
 //!

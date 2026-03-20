@@ -1,18 +1,8 @@
-//! Contains the request handling logic for the spider crawler.
+//! Request download stage for the crawler engine.
 //!
-//! This module implements the core request processing pipeline that manages the flow of requests
-//! and responses through the crawling system. It handles:
-//!
-//! - Receiving requests from the scheduler
-//! - Managing concurrent downloads with configurable limits
-//! - Processing requests through middleware chains
-//! - Applying backpressure mechanisms to prevent overload
-//! - Handling response transmission back to the processing pipeline
-//! - Coordinating with the scheduler for shutdown procedures
-//!
-//! The main entry point is the `spawn_downloader_task` function which creates an async task
-//! responsible for continuously processing requests from a receiver channel, downloading them,
-//! and sending responses to a transmitter channel.
+//! This module pulls scheduled requests, runs request middleware, performs the
+//! actual download, runs response/error middleware, and forwards accepted
+//! responses to the parser side of the runtime.
 
 use crate::Downloader;
 use crate::engine::SharedMiddlewareManager;

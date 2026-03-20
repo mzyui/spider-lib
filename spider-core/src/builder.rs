@@ -1,23 +1,8 @@
-//! # Builder Module
+//! Builder API for assembling a [`Crawler`].
 //!
-//! Provides the [`CrawlerBuilder`], a fluent API for constructing and configuring
-//! [`Crawler`](crate::Crawler) instances with customizable settings and components.
-//!
-//! ## Overview
-//!
-//! The [`CrawlerBuilder`] simplifies the process of assembling various `spider-core`
-//! components into a fully configured web crawler. It provides a flexible,
-//! ergonomic interface for setting up all aspects of the crawling process.
-//!
-//! ## Key Features
-//!
-//! - **Concurrency Configuration**: Control the number of concurrent downloads,
-//!   parsing workers, and pipeline processors
-//! - **Component Registration**: Attach custom downloaders, middlewares, and pipelines
-//! - **Checkpoint Management**: Configure automatic saving and loading of crawl state
-//!   (requires `checkpoint` feature)
-//! - **Statistics Integration**: Initialize and connect the [`StatCollector`](crate::stats::StatCollector)
-//! - **Default Handling**: Automatic addition of essential middlewares when needed
+//! [`CrawlerBuilder`] is where runtime composition happens: concurrency,
+//! downloader selection, middleware, pipelines, item limits, logging, and
+//! optional checkpointing all start here.
 //!
 //! ## Example
 //!
@@ -72,10 +57,6 @@ use rmp_serde;
 use std::fs;
 
 /// A fluent builder for constructing [`Crawler`] instances.
-///
-/// `CrawlerBuilder` provides a chainable API for configuring all aspects
-/// of a web crawler, including concurrency settings, middleware, pipelines,
-/// and checkpoint options.
 ///
 /// ## Type Parameters
 ///

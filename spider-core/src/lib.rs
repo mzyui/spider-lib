@@ -1,38 +1,45 @@
 //! # spider-core
 //!
-//! Core engine of the `spider-lib` web scraping framework.
+//! `spider-core` is the runtime crate behind the rest of the workspace.
+//! It owns the crawler loop, scheduling, shared runtime state, statistics, and
+//! the [`Spider`] trait used to describe crawl behavior.
 //!
-//! Provides the main components: `Crawler`, `Scheduler`, `Spider` trait, and infrastructure.
+//! If you are building an application, `spider-lib` is usually the easier
+//! starting point. Depend on `spider-core` directly when you want the runtime
+//! API without the facade crate.
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_core::{Crawler, CrawlerBuilder, Spider};
+//! use spider_core::{async_trait, CrawlerBuilder, Spider};
 //! use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
 //!
 //! #[spider_macro::scraped_item]
-//! struct MyItem {
+//! struct Item {
 //!     title: String,
-//!     url: String,
 //! }
 //!
 //! struct MySpider;
 //!
-//! #[async_trait::async_trait]
+//! #[async_trait]
 //! impl Spider for MySpider {
-//!     type Item = MyItem;
+//!     type Item = Item;
 //!     type State = ();
-//!     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
-//!         let req = spider_util::request::Request::new("https://example.com".parse()?);
-//!         Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
+//!
+//!     fn start_requests(&self) -> Result<spider_core::StartRequests<'_>, SpiderError> {
+//!         Ok(spider_core::StartRequests::Urls(vec!["https://example.com"]))
 //!     }
-//!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         let _ = (response, state);
-//!         todo!()
+//!
+//!     async fn parse(
+//!         &self,
+//!         _response: Response,
+//!         _state: &Self::State,
+//!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+//!         Ok(ParseOutput::new())
 //!     }
 //! }
 //!
-//! async fn run_crawler() -> Result<(), SpiderError> {
+//! async fn run() -> Result<(), SpiderError> {
 //!     let crawler = CrawlerBuilder::new(MySpider).build().await?;
 //!     crawler.start_crawl().await
 //! }

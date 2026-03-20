@@ -1,28 +1,8 @@
-//! # Spider Module
+//! The spider trait and request bootstrap types.
 //!
-//! Defines the core [`Spider`] trait and related components for implementing custom web scrapers.
-//!
-//! ## Overview
-//!
-//! The [`Spider`] trait is the primary interface for defining custom scraping logic.
-//! It specifies how to start a crawl (via start URLs) and how to process responses
-//! to extract data and discover new URLs to follow. This trait follows the Scrapy
-//! pattern of spiders that define the crawling behavior.
-//!
-//! ## Key Components
-//!
-//! - **[`Spider`] Trait**: The main trait for implementing custom scraping logic
-//! - **[`ParseOutput`]**: Container for returning scraped items and new requests
-//! - **Associated Types**: Define the item type and state type that the spider uses
-//!
-//! ## Implementation
-//!
-//! Implementors must define:
-//! - [`start_urls`](Spider::start_urls): Optional static seed URLs
-//! - [`start_requests`](Spider::start_requests): Initial request source definition
-//! - [`parse`](Spider::parse): Logic for extracting data and discovering new URLs from responses
-//! - `Item`: The type of data structure to store scraped information
-//! - `State`: The type of state that the spider uses (must implement `Default`)
+//! [`Spider`] is the main contract every crawler implements. It defines how
+//! a crawl starts and how each downloaded response turns into scraped items and
+//! follow-up requests.
 //!
 //! ## Example
 //!
@@ -177,11 +157,7 @@ fn start_requests_from_file<P: AsRef<Path>>(
     Ok(Box::new(iter))
 }
 
-/// Defines the contract for a web spider.
-///
-/// This trait is the core abstraction for implementing custom web scraping logic.
-/// Implementors define how to generate initial requests and how to parse responses
-/// to extract structured data and discover new URLs to crawl.
+/// Defines the contract for a spider.
 ///
 /// ## Type Parameters
 ///

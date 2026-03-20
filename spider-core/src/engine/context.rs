@@ -1,25 +1,11 @@
-//! Aggregated context shared across all crawler tasks.
-//!
-//! This module provides the `CrawlerContext` struct, which bundles together
-//! all the shared state that needs to be passed between different crawler tasks.
-//! By wrapping this context in an Arc, we can clone it cheaply (just incrementing
-//! the reference count) instead of cloning each individual component.
-//!
-//! ## Benefits
-//!
-//! - **Reduced cloning overhead**: Single Arc::clone() instead of 5+ individual clones
-//! - **Better code organization**: Related state is grouped together
-//! - **Easier refactoring**: Adding new shared state only requires one change
+//! Shared task context used inside the crawler engine.
 
 use crate::{Scheduler, spider::Spider, stats::StatCollector};
 use spider_pipeline::pipeline::Pipeline;
 use spider_util::item::ScrapedItem;
 use std::sync::Arc;
 
-/// Inner data shared across all crawler tasks.
-///
-/// This struct contains all the Arc-wrapped components that need to be
-/// shared between the crawler's various async tasks.
+/// Inner data shared across crawler tasks.
 pub struct CrawlerContextInner<S, I>
 where
     S: Spider<Item = I>,
@@ -32,10 +18,7 @@ where
     pub pipelines: Arc<Vec<Box<dyn Pipeline<I>>>>,
 }
 
-/// Aggregated context shared across all crawler tasks.
-///
-/// This struct wraps CrawlerContextInner in a single Arc, allowing
-/// efficient cloning with just one atomic reference count operation.
+/// Cheaply cloneable wrapper around the engine's shared context payload.
 pub struct CrawlerContext<S, I>(pub Arc<CrawlerContextInner<S, I>>)
 where
     S: Spider<Item = I>,

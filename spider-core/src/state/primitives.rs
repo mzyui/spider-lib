@@ -1,22 +1,7 @@
-//! # State Primitives Module
+//! Thread-safe building blocks for custom spider state.
 //!
-//! Provides ready-to-use thread-safe primitives for building Spider state structures.
-//!
-//! ## Overview
-//!
-//! This module offers a collection of thread-safe types that can be used to build
-//! custom Spider state without worrying about concurrency issues. All types are
-//! designed for high-performance concurrent access with minimal locking overhead.
-//!
-//! ## Key Types
-//!
-//! - [`Counter`]: Thread-safe atomic counter
-//! - [`Counter64`]: 64-bit thread-safe counter for large counts
-//! - [`Flag`]: Thread-safe boolean flag
-//! - [`VisitedUrls`]: Thread-safe URL tracking with DashMap
-//! - [`ConcurrentMap<K, V>`]: Thread-safe key-value map
-//! - [`ConcurrentVec<T>`]: Thread-safe dynamic vector
-//! - [`StateAccessMetrics`]: Metrics for tracking state access patterns
+//! These types are intentionally small and practical: counters, flags, and a
+//! few concurrent collections that are handy when parse tasks run in parallel.
 //!
 //! ## Example
 //!

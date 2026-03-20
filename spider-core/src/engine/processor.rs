@@ -1,5 +1,7 @@
-//! Contains the item processor functionality for the crawler.
-//! This module handles the processing of scraped items through configured pipelines concurrently.
+//! Item processing stage for the crawler engine.
+//!
+//! This module sends parsed items through the configured pipeline chain while
+//! respecting the runtime's configured pipeline concurrency.
 
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;

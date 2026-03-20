@@ -1,29 +1,9 @@
-//! # Scheduler Module
+//! Request scheduling and duplicate detection.
 //!
-//! Implements the request scheduler for managing the crawling frontier and duplicate detection.
-//!
-//! ## Overview
-//!
-//! The [`Scheduler`] is a central component that coordinates the web crawling process
-//! by managing the queue of pending requests and tracking visited URLs to prevent
-//! duplicate processing. It uses an actor-like design pattern with internal message
-//! processing for thread-safe operations.
-//!
-//! ## Key Responsibilities
-//!
-//! - **Request Queue Management**: Maintains a queue of pending requests to be processed
-//! - **Duplicate Detection**: Tracks visited URLs using a [`BloomFilter`](spider_util::bloom::BloomFilter)
-//!   and LRU cache for efficiency
-//! - **Request Salvaging**: Handles failed enqueuing attempts to prevent request loss
-//! - **State Snapshots**: Provides checkpointing capabilities for crawl resumption
-//! - **Concurrent Access**: Thread-safe operations for multi-threaded crawling
-//!
-//! ## Architecture
-//!
-//! The scheduler operates asynchronously using an internal message queue to handle
-//! operations like request enqueuing, URL marking, and state snapshots. It combines
-//! a Bloom Filter for fast preliminary duplicate checks with an LRU cache for
-//! definitive tracking, optimizing performance when handling millions of URLs.
+//! The scheduler is the crawler's frontier manager. It accepts requests,
+//! applies backpressure when too many are outstanding, tracks visited
+//! fingerprints, and hands accepted requests to the downloader side of the
+//! runtime.
 //!
 //! ## Example
 //!
@@ -83,7 +63,7 @@ use spider_util::bloom::BloomFilter;
 use parking_lot::Mutex;
 use tokio::sync::Notify;
 
-/// Manages the request queue and tracks visited URLs to prevent duplicate crawling.
+/// Manages the crawl frontier and tracks visited request fingerprints.
 ///
 /// The [`Scheduler`] is responsible for:
 /// - Maintaining a queue of pending requests

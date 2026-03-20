@@ -1,26 +1,7 @@
-//! # State Module
+//! Runtime state helpers.
 //!
-//! Provides state tracking primitives for the spider-lib framework.
-//!
-//! ## Overview
-//!
-//! This module offers two categories of state management:
-//!
-//! 1. **Crawler Internal State**: [`CrawlerState`] for tracking operational metrics
-//! 2. **Thread-Safe Primitives**: Ready-to-use types for building custom Spider state
-//!
-//! ## Thread-Safe Primitives
-//!
-//! The following types are designed for building custom Spider state structures
-//! with safe concurrent access:
-//!
-//! - [`Counter`]: Thread-safe atomic counter
-//! - [`Counter64`]: 64-bit thread-safe counter for large counts
-//! - [`Flag`]: Thread-safe boolean flag
-//! - [`VisitedUrls`]: Thread-safe URL tracking with DashMap
-//! - [`ConcurrentMap<K, V>`]: Thread-safe key-value map
-//! - [`ConcurrentVec<T>`]: Thread-safe dynamic vector
-//! - [`StateAccessMetrics`]: Metrics for tracking state access patterns
+//! This module exposes the internal crawler state plus a small set of
+//! thread-safe primitives that are useful in user-defined spider state.
 //!
 //! ## Example
 //!
@@ -59,16 +40,7 @@ pub use primitives::{
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-/// Represents the shared state of the crawler's various actors.
-///
-/// This struct provides a centralized mechanism for monitoring the real-time
-/// activity of the web crawler. It utilizes atomic counters to keep track of:
-/// - The number of HTTP requests currently in flight (being downloaded).
-/// - The number of responses actively being parsed by spiders.
-/// - The number of scraped items currently being processed by pipelines.
-///
-/// This state information is crucial for determining when the crawler is idle
-/// and can be gracefully shut down, or when to trigger checkpointing.
+/// Internal shared state used by the runtime.
 #[derive(Debug, Default)]
 pub struct CrawlerState {
     /// The number of requests currently being downloaded.

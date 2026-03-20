@@ -1,14 +1,4 @@
-//! The core Crawler implementation for the `spider-lib` framework.
-//!
-//! This module defines the `Crawler` struct, which acts as the central orchestrator
-//! for the web scraping process. It ties together the scheduler, downloader,
-//! middlewares, spiders, and item pipelines to execute a crawl. The crawler
-//! manages the lifecycle of requests and items, handles concurrency, supports
-//! checkpointing for fault tolerance, and collects statistics for monitoring.
-//!
-//! It utilizes a task-based asynchronous model, spawning distinct tasks for
-//! handling initial requests, downloading web pages, parsing responses, and
-//! processing scraped items.
+//! The concrete crawler runtime.
 
 use crate::Downloader;
 use crate::config::CrawlerConfig;
@@ -55,7 +45,7 @@ use tokio::time::MissedTickBehavior;
 #[cfg(feature = "cookie-store")]
 use cookie_store::CookieStore;
 
-/// The central orchestrator for the web scraping process, handling requests, responses, items, concurrency, checkpointing, and statistics collection.
+/// The running crawler instance.
 pub struct Crawler<S: Spider, C> {
     scheduler: Arc<Scheduler>,
     req_rx: AsyncReceiver<Request>,
