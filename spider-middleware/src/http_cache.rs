@@ -1,14 +1,7 @@
-//! HTTP Cache Middleware for caching web responses.
+//! On-disk HTTP response cache middleware.
 //!
-//! This module provides the `HttpCacheMiddleware`, which intercepts HTTP requests and
-//! responses to implement a caching mechanism. It stores successful HTTP responses (e.g., 200 OK)
-//! to a local directory, and for subsequent identical requests, it serves the cached response
-//! instead of making a new network request. This can significantly reduce network traffic,
-//! improve crawling speed, and enable offline processing or replay of crawls.
-//!
-//! The cache uses request fingerprints to identify unique requests and associates them
-//! with their corresponding cached responses. Responses are serialized and deserialized
-//! using `bincode`.
+//! This middleware stores successful responses by request fingerprint and can
+//! short-circuit later requests by returning cached responses directly.
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -87,7 +80,7 @@ where
     Url::parse(&s).map_err(serde::de::Error::custom)
 }
 
-/// Represents a cached response, including enough information to reconstruct a `Response` object.
+/// Serialized response data used for cache storage.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct CachedResponse {
     #[serde(serialize_with = "serialize_url", deserialize_with = "deserialize_url")]
@@ -133,7 +126,7 @@ impl From<CachedResponse> for Response {
     }
 }
 
-/// Builder for `HttpCacheMiddleware`.
+/// Builder for [`HttpCacheMiddleware`].
 #[derive(Default)]
 pub struct HttpCacheMiddlewareBuilder {
     cache_dir: Option<PathBuf>,

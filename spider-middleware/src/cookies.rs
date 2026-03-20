@@ -1,7 +1,7 @@
-//! Cookie Middleware to manage the Set-Cookie header
+//! Cookie persistence middleware.
 //!
-//! This middleware is responsible for managing cookies during the scraping process,
-//! persisting them across requests to simulate a browser-like session.
+//! [`CookieMiddleware`] stores cookies from responses and attaches matching
+//! cookies to later requests, which is useful for session-based crawls.
 
 use async_trait::async_trait;
 use cookie::Cookie;
@@ -19,7 +19,7 @@ use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
 
-/// Middleware for managing cookies across requests.
+/// Middleware that keeps a shared cookie store across requests.
 pub struct CookieMiddleware {
     pub store: Arc<RwLock<CookieStore>>,
 }

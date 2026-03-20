@@ -1,7 +1,7 @@
-//! Commonly used items from the `spider-middleware` crate.
+//! Common `spider-middleware` re-exports.
 //!
-//! This module provides a convenient way to import the most commonly used types
-//! and traits from the `spider-middleware` crate in a single import.
+//! Useful when you depend on this crate directly and want the trait plus the
+//! built-in middleware types in one import.
 
 pub use spider_util::request::Request;
 pub use spider_util::response::Response;

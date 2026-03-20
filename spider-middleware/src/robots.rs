@@ -1,13 +1,7 @@
-//! Robots.txt Middleware for respecting website crawling policies.
+//! `robots.txt` middleware.
 //!
-//! This module provides the `RobotsTxtMiddleware`, which automatically
-//! fetches, caches, and interprets `robots.txt` files from websites.
-//! Before each outgoing request, this middleware checks if the request's
-//! URL and User-Agent are permitted by the target host's `robots.txt` rules.
-//!
-//! This ensures that the crawler adheres to the website's specified crawling
-//! policies, preventing access to disallowed paths and promoting polite web scraping.
-//! It uses a caching mechanism to avoid repeatedly fetching `robots.txt` files.
+//! [`RobotsTxtMiddleware`] fetches and caches `robots.txt` per origin and blocks
+//! requests that are disallowed for the outgoing user agent.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -23,7 +17,7 @@ use spider_util::error::SpiderError;
 use spider_util::http_client::HttpClient;
 use spider_util::request::Request;
 
-/// Robots.txt middleware
+/// Middleware that enforces `robots.txt` rules before download.
 #[derive(Debug)]
 pub struct RobotsTxtMiddleware {
     cache_ttl: Duration,

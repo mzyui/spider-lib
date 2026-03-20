@@ -1,14 +1,15 @@
 //! # spider-middleware
 //!
-//! Built-in middleware implementations for the `spider-lib` framework.
+//! Built-in middleware for the crawler runtime.
 //!
-//! Provides middlewares for rate limiting, retries, user-agent rotation, cookies, and more.
+//! This crate contains the request/response hooks that sit between scheduling,
+//! downloading, and parsing. It is the right layer for retry policy, rate
+//! limiting, cookies, proxies, user agents, `robots.txt`, and caching.
 //!
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_middleware::rate_limit::RateLimitMiddleware;
-//! use spider_middleware::retry::RetryMiddleware;
+//! use spider_middleware::{rate_limit::RateLimitMiddleware, retry::RetryMiddleware};
 //!
 //! let crawler = CrawlerBuilder::new(MySpider)
 //!     .add_middleware(RateLimitMiddleware::default())

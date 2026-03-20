@@ -1,8 +1,7 @@
-//! Auto-Rotate Proxy Middleware for rotating proxies during crawling.
+//! Proxy middleware.
 //!
-//! This middleware manages and rotates proxy URLs for outgoing requests.
-//! It supports loading proxies from a list or a file and offers different
-//! rotation strategies.
+//! [`ProxyMiddleware`] attaches proxy metadata to outgoing requests so the
+//! downloader can route traffic through rotating or fixed proxy endpoints.
 
 use async_trait::async_trait;
 use log::{info, warn};

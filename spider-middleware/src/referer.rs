@@ -1,15 +1,4 @@
-//! Referer Middleware for managing HTTP Referer headers.
-//!
-//! This module provides the `RefererMiddleware`, which automatically sets
-//! the `Referer` HTTP header for outgoing requests. Its primary purpose
-//! is to simulate natural browsing behavior, making web crawls appear
-//! more legitimate and potentially bypassing certain anti-scraping measures.
-//!
-//! Key features include:
-//! - Automatic tracking of the request chain to determine the appropriate referer.
-//! - Configuration options for enforcing same-origin referers, limiting the
-//!   referer chain length, and controlling the inclusion of URL fragments.
-//! - Dynamic insertion of the `Referer` header into outgoing requests.
+//! Middleware that fills `Referer` headers for follow-up requests.
 
 use async_trait::async_trait;
 use dashmap::DashMap;
@@ -23,8 +12,7 @@ use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
 
-/// Referer middleware that automatically sets Referer headers
-/// based on the navigation chain
+/// Middleware that derives `Referer` values from request metadata and history.
 #[derive(Debug, Clone)]
 pub struct RefererMiddleware {
     /// Whether to use same-origin only referer
@@ -54,7 +42,7 @@ impl Default for RefererMiddleware {
 }
 
 impl RefererMiddleware {
-    /// Create a new RefererMiddleware with default config
+    /// Creates a middleware with default settings.
     pub fn new() -> Self {
         Self::default()
     }

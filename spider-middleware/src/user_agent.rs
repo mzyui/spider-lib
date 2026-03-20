@@ -1,8 +1,7 @@
-//! User-Agent Middleware for rotating User-Agents during crawling.
+//! User-agent middleware.
 //!
-//! This module provides `UserAgentMiddleware` for managing and rotating User-Agent strings for
-//! outgoing requests. It supports various rotation strategies and allows for detailed
-//! configuration on a per-domain basis.
+//! [`UserAgentMiddleware`] selects and rotates outgoing user-agent values using
+//! built-in lists, custom lists, or per-domain configuration.
 
 use async_trait::async_trait;
 use dashmap::DashMap;

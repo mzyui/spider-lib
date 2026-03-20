@@ -1,9 +1,7 @@
-//! AutoThrottle middleware for adaptive request pacing.
+//! Adaptive throttling middleware.
 //!
-//! This middleware adapts per-request delays based on observed response latency
-//! and status codes. It targets a configurable concurrency level by setting
-//! delay roughly to `latency / target_concurrency`, then smooths the transition
-//! and applies penalties for throttling/error responses.
+//! [`AutoThrottleMiddleware`] adjusts request pacing from observed latency and
+//! response status so a crawl can speed up or slow down automatically.
 
 use async_trait::async_trait;
 use log::debug;

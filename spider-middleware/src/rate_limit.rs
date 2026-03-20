@@ -1,17 +1,7 @@
-//! Rate Limit Middleware for controlling request frequency.
+//! Rate-limiting middleware.
 //!
-//! This module provides the `RateLimitMiddleware`, designed to manage the rate
-//! at which HTTP requests are sent to target servers. It helps prevent
-//! overloading websites and respects server-side rate limits, making crawls
-//! more robust and polite.
-//!
-//! The middleware supports:
-//! - **Different scopes:** Applying rate limits globally or per-domain.
-//! - **Pluggable limiters:** Offering an `AdaptiveLimiter` that dynamically adjusts
-//!   delays based on response status (e.g., increasing delay on errors, decreasing on success),
-//!   and a `TokenBucketLimiter` for enforcing a fixed requests-per-second rate.
-//!
-//! This flexibility allows for fine-tuned control over crawl speed and server interaction.
+//! This module provides both adaptive and fixed-rate limiters and wraps them in
+//! [`RateLimitMiddleware`], which can be applied globally or per domain.
 
 use async_trait::async_trait;
 use log::{debug, info};
@@ -37,7 +27,7 @@ use spider_util::error::SpiderError;
 use spider_util::request::Request;
 use spider_util::response::Response;
 
-/// Determines the scope at which rate limits are applied.
+/// Scope at which the middleware applies rate limits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Scope {
     /// A single global rate limit for all requests.
@@ -46,7 +36,7 @@ pub enum Scope {
     Domain,
 }
 
-/// A trait for asynchronous, stateful rate limiters.
+/// Trait for asynchronous, stateful rate limiters.
 #[async_trait]
 pub trait RateLimiter: Send + Sync {
     /// Blocks until a request is allowed to proceed.
@@ -70,7 +60,7 @@ struct AdaptiveState {
     next_allowed_at: Instant,
 }
 
-/// An adaptive rate limiter that adjusts the delay based on response status.
+/// Adaptive limiter that reacts to response outcomes.
 pub struct AdaptiveLimiter {
     state: Mutex<AdaptiveState>,
     jitter: bool,
@@ -157,7 +147,7 @@ impl RateLimiter for AdaptiveLimiter {
     }
 }
 
-/// A rate limiter that uses a token bucket algorithm for a fixed rate.
+/// Fixed-rate limiter backed by a token bucket.
 pub struct TokenBucketLimiter {
     limiter: Arc<GovernorRateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
 }

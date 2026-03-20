@@ -1,12 +1,7 @@
-//! Retry Middleware for handling failed requests.
+//! Retry middleware.
 //!
-//! This module provides the `RetryMiddleware`, which automatically retries requests
-//! that fail due to specific HTTP status codes or network errors (e.g., connection issues, timeouts).
-//! It implements an exponential backoff strategy to space out retry attempts,
-//! respecting a configurable maximum number of retries and a maximum delay between attempts.
-//!
-//! The middleware intercepts responses and errors, deciding whether to re-enqueue
-//! the request for another attempt or to drop it if the retry limit is exceeded.
+//! [`RetryMiddleware`] retries selected HTTP responses and request failures using
+//! exponential backoff and a configurable retry limit.
 
 use async_trait::async_trait;
 use log::{info, trace, warn};
