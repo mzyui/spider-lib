@@ -143,7 +143,7 @@ impl Scheduler {
         #[cfg(not(feature = "checkpoint"))] _initial_state: Option<()>,
         max_pending_requests: usize,
     ) -> (Arc<Self>, AsyncReceiver<Request>) {
-        let max_pending = max_pending_requests.max(1).min(MAX_PENDING_REQUESTS);
+        let max_pending = max_pending_requests.clamp(1, MAX_PENDING_REQUESTS);
         let (tx, rx_internal) = bounded_async(max_pending.saturating_mul(2).max(1));
         let output_capacity = (max_pending / 8).clamp(256, 2048);
         let (tx_out, rx_out) = bounded_async(output_capacity);

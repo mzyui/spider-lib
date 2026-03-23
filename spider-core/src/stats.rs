@@ -578,8 +578,7 @@ impl StatCollector {
             .unwrap_or_else(|| {
                 serde_json::to_string(&json).unwrap_or_else(|_| format!("{:?}", item))
             })
-            .replace('\n', " ")
-            .replace('\r', " ");
+            .replace(['\n', '\r'], " ");
         let preview = truncate_preview(&preview, 160);
         *self.current_item_preview.write() = preview;
     }

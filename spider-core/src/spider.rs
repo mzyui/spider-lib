@@ -87,6 +87,11 @@ use url::Url;
 pub type StartRequestIter<'a> = Box<dyn Iterator<Item = Result<Request, SpiderError>> + Send + 'a>;
 
 /// Initial request source returned by [`Spider::start_requests`].
+///
+/// Use [`StartRequests::Urls`] for simple static seeds, [`StartRequests::Iter`]
+/// when you need to construct full [`Request`] values or generate seeds
+/// lazily, and [`StartRequests::File`] when you want to keep large seed lists
+/// outside compiled code.
 pub enum StartRequests<'a> {
     /// Fixed list of seed URLs.
     Urls(Vec<&'a str>),
@@ -98,11 +103,19 @@ pub enum StartRequests<'a> {
 
 impl<'a> StartRequests<'a> {
     /// Creates a file-based source from a path string.
+    ///
+    /// The file is expected to contain one URL per line. Empty lines and lines
+    /// starting with `#` are ignored.
     pub fn file(path: &'a str) -> Self {
         StartRequests::File(path)
     }
 
     /// Resolves this source into a concrete request iterator.
+    #[allow(clippy::should_implement_trait)]
+    ///
+    /// URL strings are parsed eagerly as the iterator is consumed. Invalid file
+    /// entries become `SpiderError::ConfigurationError` items that preserve the
+    /// original line number.
     pub fn into_iter(self) -> Result<StartRequestIter<'a>, SpiderError> {
         match self {
             StartRequests::Urls(urls) => {
@@ -171,6 +184,13 @@ fn start_requests_from_file<P: AsRef<Path>>(
 /// by eliminating the need for mutex locks when accessing the spider from multiple
 /// async tasks. State that needs mutation should be stored in the associated
 /// `State` type using thread-safe primitives like `Arc<AtomicUsize>` or `DashMap`.
+///
+/// A typical crawl lifecycle looks like this:
+///
+/// 1. [`start_requests`](Spider::start_requests) produces the initial requests
+/// 2. the runtime schedules and downloads them
+/// 3. [`parse`](Spider::parse) turns each [`Response`] into a [`ParseOutput`]
+/// 4. emitted items go to pipelines and emitted requests go back to the scheduler
 #[async_trait]
 pub trait Spider: Send + Sync + 'static {
     /// The type of item that the spider scrapes.
@@ -207,6 +227,11 @@ pub trait Spider: Send + Sync + 'static {
     /// This method is optional and useful for simple spiders. The default
     /// [`start_requests`](Spider::start_requests) implementation converts these
     /// URLs into a request iterator.
+    ///
+    /// Prefer this method when plain URL strings are enough. Override
+    /// [`start_requests`](Spider::start_requests) instead when you need custom
+    /// headers, methods, request metadata, seed-file loading, or dynamic seed
+    /// generation.
     fn start_urls(&self) -> Vec<&'static str> {
         Vec::new()
     }
@@ -219,6 +244,10 @@ pub trait Spider: Send + Sync + 'static {
     /// To load from seed file, return `StartRequests::file(path)`.
     /// To use a fixed list of URL strings, return `StartRequests::Urls(...)`.
     /// To use custom generation logic, return `StartRequests::Iter(...)`.
+    ///
+    /// This method is the better override point whenever initial requests need
+    /// more than a URL string, such as per-request metadata, POST bodies, or
+    /// custom headers.
     ///
     /// ## Example
     ///
@@ -265,6 +294,13 @@ pub trait Spider: Send + Sync + 'static {
     /// Returns a [`ParseOutput`] containing:
     /// - Scraped items of type `Self::Item`
     /// - New [`Request`] objects to be enqueued
+    ///
+    /// The usual pattern is:
+    /// - call [`ParseOutput::new`]
+    /// - add zero or more items with [`ParseOutput::add_item`] or `add_items`
+    /// - add zero or more follow-up requests with [`ParseOutput::add_request`]
+    ///   or `add_requests`
+    /// - return the accumulated output
     ///
     /// ## Design Notes
     ///

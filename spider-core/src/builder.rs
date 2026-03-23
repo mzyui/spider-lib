@@ -49,7 +49,7 @@ use super::Crawler;
 use crate::stats::StatCollector;
 use log::LevelFilter;
 #[cfg(feature = "checkpoint")]
-use log::{debug, warn};
+use log::{info, warn};
 
 #[cfg(feature = "checkpoint")]
 use rmp_serde;
@@ -211,24 +211,40 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     }
 
     /// Sets the parser output batch size.
+    ///
+    /// Larger batches can reduce coordination overhead when pages emit many
+    /// items or follow-up requests, while smaller batches tend to improve
+    /// latency and memory locality.
     pub fn output_batch_size(mut self, batch_size: usize) -> Self {
         self.config.output_batch_size = batch_size;
         self
     }
 
     /// Sets the downloader response-channel backpressure threshold.
+    ///
+    /// When the downloader-to-parser channel reaches this threshold, the
+    /// runtime starts applying backpressure so downloaded responses do not pile
+    /// up unboundedly in memory.
     pub fn response_backpressure_threshold(mut self, threshold: usize) -> Self {
         self.config.response_backpressure_threshold = threshold;
         self
     }
 
     /// Sets the parser item-channel backpressure threshold.
+    ///
+    /// This primarily matters when parsing is faster than downstream pipeline
+    /// processing. Lower thresholds keep memory tighter; higher thresholds let
+    /// parsers run further ahead.
     pub fn item_backpressure_threshold(mut self, threshold: usize) -> Self {
         self.config.item_backpressure_threshold = threshold;
         self
     }
 
     /// Controls whether retries release downloader permits before waiting.
+    ///
+    /// Enabling this is usually better for throughput because a sleeping retry
+    /// does not occupy scarce downloader concurrency. Disabling it can be
+    /// useful when you want retries to count fully against download capacity.
     pub fn retry_release_permit(mut self, enabled: bool) -> Self {
         self.config.retry_release_permit = enabled;
         self
@@ -244,6 +260,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     }
 
     /// Sets the refresh interval for live statistics updates.
+    ///
+    /// Shorter intervals make the terminal view feel more responsive, while
+    /// longer intervals reduce redraw overhead.
     pub fn live_stats_interval(mut self, interval: Duration) -> Self {
         self.config.live_stats_interval = interval;
         self
@@ -265,12 +284,18 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     }
 
     /// Sets the maximum grace period for crawler shutdown before forcing task abort.
+    ///
+    /// This gives pipelines, checkpoint writes, and other in-flight work time
+    /// to finish cleanly after shutdown begins.
     pub fn shutdown_grace_period(mut self, grace_period: Duration) -> Self {
         self.config.shutdown_grace_period = grace_period;
         self
     }
 
     /// Stops the crawl after `limit` scraped items have been admitted for processing.
+    ///
+    /// This is especially useful for smoke runs, local previews, and
+    /// documentation examples where you want predictable bounded work.
     pub fn limit(mut self, limit: usize) -> Self {
         self.config.item_limit = Some(limit);
         self
@@ -280,6 +305,10 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     ///
     /// Use this method to provide a custom [`Downloader`] implementation
     /// instead of the default [`ReqwestClientDownloader`].
+    ///
+    /// Reach for this when transport behavior itself needs to change, such as
+    /// request signing, alternate HTTP stacks, downloader-level tracing, or
+    /// protocol-specific request execution.
     pub fn downloader(mut self, downloader: D) -> Self {
         self.downloader = downloader;
         self
@@ -290,6 +319,10 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Middlewares intercept and modify requests before they are sent and
     /// responses after they are received. They are executed in the order
     /// they are added.
+    ///
+    /// Middleware is the right layer for cross-cutting HTTP behavior such as
+    /// retry policy, rate limiting, cookies, user-agent management, cache
+    /// lookup, or `robots.txt` enforcement.
     ///
     /// ## Example
     ///
@@ -313,6 +346,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Pipelines process scraped items after they are extracted by the spider.
     /// They can be used for validation, transformation, deduplication, or
     /// storage (e.g., writing to files or databases).
+    ///
+    /// Pipelines are ordered. A common pattern is transform first, validate
+    /// second, deduplicate next, and write to outputs last.
     ///
     /// ## Example
     ///
@@ -366,6 +402,9 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// allowing crawls to be resumed after interruption.
     ///
     /// Requires the `checkpoint` feature to be enabled.
+    ///
+    /// If a checkpoint file already exists at build time, the builder will
+    /// attempt to restore scheduler and pipeline state from it.
     pub fn with_checkpoint_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.checkpoint_config.path = Some(path.as_ref().to_path_buf());
         self
@@ -388,6 +427,12 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// This method finalizes the crawler configuration and initializes all
     /// components. It performs validation and sets up default values where
     /// necessary.
+    ///
+    /// Build time is where the runtime:
+    /// - validates concurrency and channel settings
+    /// - initializes logging and live-stats behavior
+    /// - restores checkpoint state if configured
+    /// - constructs the scheduler and runtime handles
     ///
     /// # Errors
     ///

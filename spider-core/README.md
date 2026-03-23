@@ -18,7 +18,7 @@ If your goal is simply “write a spider and run it”, `spider-lib` is usually 
 
 ```toml
 [dependencies]
-spider-core = "2.0.1"
+spider-core = "2.0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -44,6 +44,17 @@ The runtime loop is intentionally simple:
 4. Middleware can alter requests, responses, or retry behavior.
 5. `Spider::parse` returns a `ParseOutput` containing items and follow-up requests.
 6. Pipelines process emitted items.
+
+## API landmarks
+
+If you are skimming docs.rs, these are the most useful entry points:
+
+- `Spider`: define crawl behavior
+- `StartRequests`: describe how the crawl is seeded
+- `CrawlerBuilder`: tune concurrency and attach middleware/pipelines
+- `Crawler`: start and monitor the running crawl
+- `StatCollector`: inspect runtime stats
+- `state::*`: thread-safe primitives for shared parse-time state
 
 ## Minimal example
 
@@ -91,6 +102,14 @@ async fn run() -> Result<(), SpiderError> {
 
 `limit(1)` is handy for previews and smoke runs because it stops after the first admitted item.
 
+## Where decisions usually belong
+
+- Use `Spider::start_urls` for simple static seeds.
+- Use `Spider::start_requests` when seeds need full `Request` values, metadata, or file-backed loading.
+- Use middleware for HTTP lifecycle policy.
+- Use pipelines for item lifecycle policy.
+- Use a custom downloader when transport execution itself must change.
+
 ## Feature flags
 
 | Feature | Purpose |
@@ -102,7 +121,7 @@ async fn run() -> Result<(), SpiderError> {
 
 ```toml
 [dependencies]
-spider-core = { version = "2.0.1", features = ["checkpoint"] }
+spider-core = { version = "2.0.2", features = ["checkpoint"] }
 ```
 
 ## Practical note
