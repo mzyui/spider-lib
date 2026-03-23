@@ -29,6 +29,10 @@
 //! // Extract links from the response
 //! let links = response.links();
 //! ```
+//!
+//! In the crawler lifecycle, a [`Response`] is produced by the downloader,
+//! optionally rewritten by middleware, and then handed to
+//! [`Spider::parse`](spider_core::Spider::parse).
 
 use crate::request::Request;
 use crate::selector::get_cached_selector;
@@ -98,6 +102,9 @@ pub struct Link {
 }
 
 /// One selector/attribute pair used during link extraction.
+///
+/// This is useful when the default HTML link sources are not enough for the
+/// target site and you need to teach the extractor about custom attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkSource {
     /// CSS selector used to find candidate elements.
@@ -126,6 +133,10 @@ impl LinkSource {
 }
 
 /// Options that control link extraction from a [`Response`].
+///
+/// The defaults are intentionally conservative for crawler use: same-site
+/// filtering is enabled, text links are included, and common HTML elements are
+/// scanned for navigable URLs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkExtractOptions {
     /// Restrict discovered links to the same registered domain.
@@ -190,6 +201,12 @@ impl LinkExtractOptions {
 /// the final URL (after redirects), status code, headers, body content,
 /// and metadata carried over from the original request.
 ///
+/// The type is designed for parse-time ergonomics:
+/// - [`Response::to_html`] parses the body as HTML
+/// - [`Response::json`] deserializes JSON payloads
+/// - [`Response::links`] and related helpers extract follow-up links
+/// - [`Response::to_request`] reconstructs the originating request context
+///
 /// ## Example
 ///
 /// ```rust,ignore
@@ -234,6 +251,10 @@ pub struct Response {
 
 impl Response {
     /// Creates a new response with an empty HTML cache.
+    ///
+    /// Most application code receives responses from the runtime rather than
+    /// constructing them directly. This constructor is mainly useful for custom
+    /// downloaders and lower-level integrations.
     pub fn new(
         url: Url,
         status: StatusCode,
@@ -422,8 +443,7 @@ impl Response {
     /// assert!(!links.is_empty());
     /// ```
     pub fn links_iter(&self, options: LinkExtractOptions) -> impl Iterator<Item = Link> {
-        let links = self.parse_links(options).unwrap_or_default().into_iter();
-        links
+        self.parse_links(options).unwrap_or_default().into_iter()
     }
 
     /// Extracts all unique, same-site links from the response body.

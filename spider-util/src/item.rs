@@ -19,6 +19,10 @@
 //! // output.add_item(Article { title: "...", content: "..." });
 //! // Ok(output)
 //! ```
+//!
+//! `ParseOutput` is intentionally small: it is just the handoff object between
+//! parsing and the rest of the runtime. Use it to emit items, schedule new
+//! requests, or both from the same page.
 
 use crate::request::Request;
 use serde_json::Value;
@@ -34,6 +38,9 @@ pub struct ParseOutput<I> {
 
 impl<I> ParseOutput<I> {
     /// Creates a new, empty `ParseOutput`.
+    ///
+    /// Most spiders start each parse call with this and then append items and
+    /// follow-up requests as they discover them.
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -42,16 +49,25 @@ impl<I> ParseOutput<I> {
     }
 
     /// Consumes the `ParseOutput` and returns its inner items and requests.
+    ///
+    /// This is mainly used by the runtime, but can also be handy in isolated
+    /// parsing helpers.
     pub fn into_parts(self) -> (Vec<I>, Vec<Request>) {
         (self.items, self.requests)
     }
 
     /// Adds a scraped item to the output.
+    ///
+    /// Use this when the current page produced one structured result that
+    /// should continue through the configured pipeline chain.
     pub fn add_item(&mut self, item: I) {
         self.items.push(item);
     }
 
     /// Adds a new request to be crawled.
+    ///
+    /// Requests emitted here are handed back to the scheduler after the parse
+    /// step completes.
     pub fn add_request(&mut self, request: Request) {
         self.requests.push(request);
     }
@@ -74,6 +90,10 @@ impl<I> Default for ParseOutput<I> {
 }
 
 /// Trait implemented by item types emitted from spiders.
+///
+/// In normal application code you usually do not implement this trait by hand.
+/// Prefer annotating the item struct with `#[scraped_item]`, which wires up the
+/// required serialization and cloning behavior automatically.
 pub trait ScrapedItem: Debug + Send + Sync + Any + 'static {
     /// Returns the item as a `dyn Any` for downcasting.
     fn as_any(&self) -> &dyn Any;

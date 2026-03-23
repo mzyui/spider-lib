@@ -142,6 +142,11 @@ impl<'de> Deserialize<'de> for Body {
 
 /// Outgoing HTTP request used by the crawler runtime.
 ///
+/// [`Request`] is the handoff type between spiders, middleware, the scheduler,
+/// and the downloader. It is transport-neutral enough to be shared across the
+/// workspace, but expressive enough for custom methods, headers, bodies, and
+/// request-scoped metadata.
+///
 /// ## Example
 ///
 /// ```rust,ignore
@@ -344,7 +349,9 @@ impl Default for Request {
 impl Request {
     /// Creates a new [`Request`] with the given URL.
     ///
-    /// Does not allocate memory for metadata unless [`with_meta`](Request::with_meta) is called.
+    /// This is the most common constructor used by spiders when enqueueing
+    /// follow-up pages. It does not allocate metadata storage unless
+    /// [`with_meta`](Request::with_meta) is called.
     ///
     /// ## Example
     ///
@@ -366,6 +373,9 @@ impl Request {
 
     /// Sets the HTTP method for the request.
     ///
+    /// Use this together with one of the body helpers for POST, PUT, or PATCH
+    /// workflows.
+    ///
     /// ## Example
     ///
     /// ```rust,ignore
@@ -381,6 +391,8 @@ impl Request {
     }
 
     /// Adds a header to the request.
+    ///
+    /// Returns an error if the header name or value is invalid.
     ///
     /// # Errors
     ///
@@ -427,6 +439,9 @@ impl Request {
     }
 
     /// Sets the body of the request to a JSON value and defaults the method to POST.
+    ///
+    /// This helper stores the payload body only. Add content-type headers
+    /// explicitly when the target service expects them.
     ///
     /// ## Example
     ///
@@ -480,7 +495,9 @@ impl Request {
 
     /// Adds a value to the request's metadata.
     ///
-    /// Lazily allocates the metadata map on first use.
+    /// Lazily allocates the metadata map on first use. Metadata is commonly
+    /// used to carry crawl context such as pagination state, source URLs, or
+    /// retry bookkeeping across middleware and parsing stages.
     ///
     /// ## Example
     ///
@@ -502,7 +519,9 @@ impl Request {
 
     /// Gets a reference to a metadata value, if it exists.
     ///
-    /// Returns `None` if the key doesn't exist or if metadata hasn't been set.
+    /// Returns a cloned JSON value because metadata is stored in a shared
+    /// concurrent map. Returns `None` if the key doesn't exist or if metadata
+    /// hasn't been set.
     pub fn get_meta(&self, key: &str) -> Option<serde_json::Value> {
         self.meta
             .as_ref()
@@ -591,6 +610,9 @@ impl Request {
     }
 
     /// Generates a unique fingerprint for the request based on its URL, method, and body.
+    ///
+    /// This is the stable identity used by runtime deduplication and related
+    /// components that need to recognize equivalent requests.
     ///
     /// The fingerprint is used for duplicate detection and caching. It combines:
     /// - The request URL
