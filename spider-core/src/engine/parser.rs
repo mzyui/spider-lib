@@ -39,6 +39,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tokio::time::Instant;
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_parser_worker<S>(
     internal_parse_rx: AsyncReceiver<Response>,
     spider: Arc<S>,
@@ -182,17 +183,16 @@ pub async fn process_crawl_outputs<S>(
             continue;
         }
 
-        if let Some(limit) = item_limit {
-            if state
+        if let Some(limit) = item_limit
+            && state
                 .admitted_items
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                     (current < limit).then_some(current + 1)
                 })
                 .is_err()
-            {
-                item_limit_hit = true;
-                break;
-            }
+        {
+            item_limit_hit = true;
+            break;
         }
 
         item_batch_len += 1;
