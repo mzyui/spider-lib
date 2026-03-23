@@ -35,7 +35,7 @@ Feature-gated modules:
 
 | Feature | Type | Use case |
 | --- | --- | --- |
-| `middleware-cache` | `HttpCacheMiddleware` | Reuse cached responses. |
+| `middleware-cache` | `HttpCacheMiddleware` | Reuse cached responses and honor per-response cache expiration. |
 | `middleware-autothrottle` | `AutoThrottleMiddleware` | Adapt crawl pace to observed conditions. |
 | `middleware-proxy` | `ProxyMiddleware` | Route traffic through proxies. |
 | `middleware-user-agent` | `UserAgentMiddleware` | Set or rotate user agents. |

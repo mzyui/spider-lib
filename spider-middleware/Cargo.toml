@@ -38,7 +38,7 @@ spider-util = { version = "0.3.5", path = "../spider-util" }
 [features]
 default = ["core"]
 core = []
-middleware-cache = ["dep:bincode", "dep:dirs"]
+middleware-cache = ["dep:bincode", "dep:dirs", "dep:time"]
 middleware-autothrottle = []
 middleware-proxy = []
 middleware-user-agent = ["dep:ua_generator"]

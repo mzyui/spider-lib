@@ -2,13 +2,17 @@
 //!
 //! This middleware stores successful responses by request fingerprint and can
 //! short-circuit later requests by returning cached responses directly.
+//! Cache freshness is evaluated per response from HTTP caching headers.
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use log::{debug, info, trace, warn};
 use reqwest::StatusCode;
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{CACHE_CONTROL, EXPIRES, HeaderMap, HeaderName, HeaderValue};
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc2822;
 use tokio::fs;
 
 use crate::middleware::{Middleware, MiddlewareAction};
@@ -98,6 +102,10 @@ struct CachedResponse {
     body: Vec<u8>,
     #[serde(serialize_with = "serialize_url", deserialize_with = "deserialize_url")]
     request_url: Url,
+    #[serde(default)]
+    cached_at_unix_secs: u64,
+    #[serde(default)]
+    expires_at_unix_secs: Option<u64>,
 }
 
 impl From<Response> for CachedResponse {
@@ -108,6 +116,8 @@ impl From<Response> for CachedResponse {
             headers: response.headers,
             body: response.body.to_vec(),
             request_url: response.request_url,
+            cached_at_unix_secs: now_unix_secs(),
+            expires_at_unix_secs: None,
         }
     }
 }
@@ -122,6 +132,21 @@ impl From<CachedResponse> for Response {
             request_url: cached_response.request_url,
             meta: Default::default(),
             cached: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CachePolicy {
+    DoNotStore,
+    Store { expires_at_unix_secs: Option<u64> },
+}
+
+impl CachedResponse {
+    fn is_fresh_at(&self, now_unix_secs: u64) -> bool {
+        match self.expires_at_unix_secs {
+            Some(expires_at_unix_secs) => now_unix_secs < expires_at_unix_secs,
+            None => true,
         }
     }
 }
@@ -187,6 +212,58 @@ impl HttpCacheMiddleware {
     }
 }
 
+fn now_unix_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs()
+}
+
+fn parse_cache_policy(headers: &HeaderMap, cached_at_unix_secs: u64) -> CachePolicy {
+    if let Some(policy) = parse_cache_control(headers, cached_at_unix_secs) {
+        return policy;
+    }
+
+    CachePolicy::Store {
+        expires_at_unix_secs: parse_expires(headers),
+    }
+}
+
+fn parse_cache_control(headers: &HeaderMap, cached_at_unix_secs: u64) -> Option<CachePolicy> {
+    let cache_control = headers.get(CACHE_CONTROL)?.to_str().ok()?;
+    let mut max_age_secs = None;
+
+    for directive in cache_control.split(',') {
+        let directive = directive.trim();
+        if directive.eq_ignore_ascii_case("no-store") {
+            return Some(CachePolicy::DoNotStore);
+        }
+
+        let Some((name, value)) = directive.split_once('=') else {
+            continue;
+        };
+
+        if !name.trim().eq_ignore_ascii_case("max-age") {
+            continue;
+        }
+
+        let value = value.trim().trim_matches('"');
+        if let Ok(parsed) = value.parse::<u64>() {
+            max_age_secs = Some(parsed);
+        }
+    }
+
+    max_age_secs.map(|max_age_secs| CachePolicy::Store {
+        expires_at_unix_secs: cached_at_unix_secs.checked_add(max_age_secs),
+    })
+}
+
+fn parse_expires(headers: &HeaderMap) -> Option<u64> {
+    let expires = headers.get(EXPIRES)?.to_str().ok()?;
+    let parsed = OffsetDateTime::parse(expires, &Rfc2822).ok()?;
+    u64::try_from(parsed.unix_timestamp()).ok()
+}
+
 #[async_trait]
 impl<C: Send + Sync> Middleware<C> for HttpCacheMiddleware {
     fn name(&self) -> &str {
@@ -210,6 +287,15 @@ impl<C: Send + Sync> Middleware<C> for HttpCacheMiddleware {
             match fs::read(&cache_file_path).await {
                 Ok(cached_bytes) => match bincode::deserialize::<CachedResponse>(&cached_bytes) {
                     Ok(cached_resp) => {
+                        let now_unix_secs = now_unix_secs();
+                        if !cached_resp.is_fresh_at(now_unix_secs) {
+                            debug!(
+                                "Cached response expired for {} at {:?}, refreshing from network",
+                                request.url, cached_resp.expires_at_unix_secs
+                            );
+                            return Ok(MiddlewareAction::Continue(request));
+                        }
+
                         trace!(
                             "Successfully deserialized cached response for {}",
                             request.url
@@ -261,12 +347,29 @@ impl<C: Send + Sync> Middleware<C> for HttpCacheMiddleware {
         if response.status.is_success() {
             let original_request_fingerprint = response.request_from_response().fingerprint();
             let cache_file_path = self.get_cache_file_path(&original_request_fingerprint);
+            let cached_at_unix_secs = now_unix_secs();
+            let cache_policy = parse_cache_policy(&response.headers, cached_at_unix_secs);
+
+            if matches!(cache_policy, CachePolicy::DoNotStore) {
+                debug!(
+                    "Skipping cache storage for {} due to Cache-Control: no-store",
+                    response.url
+                );
+                return Ok(MiddlewareAction::Continue(response));
+            }
 
             trace!(
                 "Serializing response for caching to: {}",
                 cache_file_path.display()
             );
-            let cached_response: CachedResponse = response.clone().into();
+            let mut cached_response: CachedResponse = response.clone().into();
+            cached_response.cached_at_unix_secs = cached_at_unix_secs;
+            cached_response.expires_at_unix_secs = match cache_policy {
+                CachePolicy::Store {
+                    expires_at_unix_secs,
+                } => expires_at_unix_secs,
+                CachePolicy::DoNotStore => None,
+            };
             match bincode::serialize(&cached_response) {
                 Ok(serialized_bytes) => {
                     let bytes_count = serialized_bytes.len();
