@@ -20,12 +20,25 @@ If you only need to fetch one or two pages, the lower ceremony of plain `reqwest
 
 ```toml
 [dependencies]
-spider-lib = "3.0.1"
+spider-lib = "3.0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
 `serde` and `serde_json` are required when you use `#[scraped_item]`.
+
+## Recommended path
+
+For most projects, the smoothest path is:
+
+1. start with `use spider_lib::prelude::*;`
+2. implement `Spider`
+3. build a runtime with `CrawlerBuilder`
+4. add middleware for HTTP behavior
+5. add pipelines for item shaping and output
+
+Only drop to the lower-level crates when you need deeper runtime control or
+want to publish reusable extensions.
 
 ## Quick start
 
@@ -122,6 +135,14 @@ At a high level:
 
 That separation is what makes the workspace easier to extend than a single-file scraper.
 
+## Where to add behavior
+
+- Put page extraction logic in `Spider::parse`.
+- Put shared crawl state in `Spider::State`.
+- Put cross-cutting request/response behavior in middleware.
+- Put item cleanup, validation, deduplication, and output in pipelines.
+- Put transport-specific behavior in a custom downloader only when middleware is too high-level.
+
 ## Feature flags
 
 Root crate features mirror the lower-level crates:
@@ -148,7 +169,7 @@ Example:
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.1", features = ["live-stats", "pipeline-csv"] }
+spider-lib = { version = "3.0.2", features = ["live-stats", "pipeline-csv"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -171,6 +192,9 @@ Reach for individual crates when you are:
 - publishing reusable middleware, pipeline, or downloader extensions
 - composing the runtime more explicitly
 - depending on shared types without pulling in the whole facade crate
+
+The most common next step down is [`spider-core`](spider-core/README.md), which
+keeps the runtime API but drops the facade re-exports.
 
 ## Status
 
