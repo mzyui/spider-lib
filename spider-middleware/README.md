@@ -18,7 +18,7 @@ If your only goal is to enable built-in middleware in an app, the root crate is 
 
 ```toml
 [dependencies]
-spider-middleware = "0.3.5"
+spider-middleware = "0.3.6"
 ```
 
 ## Built-in middleware
@@ -90,11 +90,21 @@ impl<C: Send + Sync> Middleware<C> for BlocklistMiddleware {
 
 Wire it into the runtime with `CrawlerBuilder::add_middleware(...)`.
 
+## Hook lifecycle
+
+Middleware is easier to reason about if you treat it as three distinct hooks:
+
+1. `process_request` runs before download and can rewrite, drop, or short-circuit a request.
+2. `process_response` runs after a successful download and can rewrite, drop, or retry.
+3. `handle_error` runs on download failure and can propagate, drop, or retry.
+
+In practice, request-shaping concerns belong in `process_request`, status/body-based policy belongs in `process_response`, and recovery policy belongs in `handle_error`.
+
 ## Feature flags
 
 ```toml
 [dependencies]
-spider-middleware = { version = "0.3.5", features = ["middleware-robots", "middleware-user-agent"] }
+spider-middleware = { version = "0.3.6", features = ["middleware-robots", "middleware-user-agent"] }
 ```
 
 When you depend on the root crate instead, enable the same feature names on `spider-lib`.
