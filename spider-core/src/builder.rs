@@ -74,7 +74,7 @@ use std::fs;
 /// #     type Item = String;
 /// #     type State = ();
 /// #     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
-/// #         Ok(spider_core::spider::StartRequests::Iter(Box::new(std::iter::empty())))
+/// #         Ok(spider_core::spider::StartRequests::iter(std::iter::empty()))
 /// #     }
 /// #     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> { todo!() }
 /// # }

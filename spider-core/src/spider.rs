@@ -47,7 +47,7 @@
 //!
 //!     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
 //!         let req = Request::new("https://example.com/articles".parse()?);
-//!         Ok(StartRequests::Iter(Box::new(std::iter::once(Ok(req)))))
+//!         Ok(StartRequests::iter(std::iter::once(Ok(req))))
 //!     }
 //!
 //!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
@@ -102,6 +102,14 @@ pub enum StartRequests<'a> {
 }
 
 impl<'a> StartRequests<'a> {
+    /// Creates an iterator-based source from any compatible request iterator.
+    pub fn iter<I>(iter: I) -> Self
+    where
+        I: Iterator<Item = Result<Request, SpiderError>> + Send + 'a,
+    {
+        StartRequests::Iter(Box::new(iter))
+    }
+
     /// Creates a file-based source from a path string.
     ///
     /// The file is expected to contain one URL per line. Empty lines and lines
@@ -127,6 +135,15 @@ impl<'a> StartRequests<'a> {
             StartRequests::Iter(iter) => Ok(iter),
             StartRequests::File(path) => start_requests_from_file(path),
         }
+    }
+}
+
+impl<'a, I> From<I> for StartRequests<'a>
+where
+    I: Iterator<Item = Result<Request, SpiderError>> + Send + 'a,
+{
+    fn from(iter: I) -> Self {
+        StartRequests::iter(iter)
     }
 }
 
@@ -243,7 +260,7 @@ pub trait Spider: Send + Sync + 'static {
     ///
     /// To load from seed file, return `StartRequests::file(path)`.
     /// To use a fixed list of URL strings, return `StartRequests::Urls(...)`.
-    /// To use custom generation logic, return `StartRequests::Iter(...)`.
+    /// To use custom generation logic, return `StartRequests::iter(...)`.
     ///
     /// This method is the better override point whenever initial requests need
     /// more than a URL string, such as per-request metadata, POST bodies, or
@@ -332,7 +349,7 @@ pub trait Spider: Send + Sync + 'static {
     /// #     type Item = ExampleItem;
     /// #     type State = MySpiderState;
     /// #     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
-    /// #         Ok(StartRequests::Iter(Box::new(std::iter::empty())))
+    /// #         Ok(StartRequests::iter(std::iter::empty()))
     /// #     }
     /// async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
     ///     let mut output = ParseOutput::new();
