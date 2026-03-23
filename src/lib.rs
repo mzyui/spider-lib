@@ -9,11 +9,22 @@
 //! `spider-core`, `spider-middleware`, `spider-pipeline`, `spider-downloader`,
 //! `spider-macro`, and `spider-util`. Most users should start here.
 //!
+//! ## What you get from the facade crate
+//!
+//! The root crate is optimized for application authors:
+//!
+//! - [`prelude`] re-exports the common types needed to define and run a spider
+//! - [`Spider`] describes crawl behavior
+//! - [`CrawlerBuilder`] assembles the runtime
+//! - [`Request`], [`Response`], and [`ParseOutput`] are the core runtime data types
+//! - middleware and pipelines can be enabled with feature flags and then added
+//!   through the builder
+//!
 //! ## Installation
 //!
 //! ```toml
 //! [dependencies]
-//! spider-lib = "3.0.1"
+//! spider-lib = "3.0.2"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
@@ -80,8 +91,30 @@
 //! [`Spider::parse`] takes `&self` and a separate shared state parameter.
 //! That design keeps the spider itself immutable while still allowing
 //! concurrent parsing with user-defined shared state.
+//!
+//! ## Typical next steps
+//!
+//! After the minimal spider works, the next additions are usually:
+//!
+//! 1. add one or more middleware with [`CrawlerBuilder::add_middleware`]
+//! 2. add one or more pipelines with [`CrawlerBuilder::add_pipeline`]
+//! 3. move repeated parse-time state into [`Spider::State`]
+//! 4. enable optional features such as `live-stats`, `pipeline-csv`, or
+//!    `middleware-robots`
+//!
+//! If you find yourself needing transport-level customization, custom
+//! middleware contracts, or lower-level runtime control, move down to the
+//! crate-specific APIs in `spider-core`, `spider-downloader`,
+//! `spider-middleware`, or `spider-pipeline`.
 
 pub mod prelude;
+/// Re-export the application-facing prelude.
+///
+/// Most examples and first integrations start with:
+///
+/// ```rust
+/// use spider_lib::prelude::*;
+/// ```
 pub use prelude::*;
 
 // Re-export procedural macros
