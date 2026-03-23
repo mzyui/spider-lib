@@ -16,7 +16,7 @@ Use `spider-pipeline` if you want to:
 
 ```toml
 [dependencies]
-spider-pipeline = "0.3.6"
+spider-pipeline = "0.3.7"
 ```
 
 ## Built-in pipelines
@@ -68,6 +68,10 @@ let crawler = spider_core::CrawlerBuilder::new(MySpider)
 
 That ordering is a good default: clean first, validate second, deduplicate next, then export or log.
 
+## Pipeline contract in one sentence
+
+Each pipeline receives an item, optionally mutates it, either forwards it with `Ok(Some(item))` or drops it with `Ok(None)`, and may persist side effects along the way.
+
 ## Custom pipeline example
 
 ```rust,ignore
@@ -99,11 +103,16 @@ cargo run --example books_live --features "live-stats pipeline-csv"
 
 That example uses `CsvPipeline` and writes output to `output/books_live.csv`.
 
+## When to choose a pipeline instead of middleware
+
+Choose a pipeline when the concern is about scraped items after parsing.
+Choose middleware when the concern is about requests, responses, retries, or other HTTP lifecycle behavior.
+
 ## Feature flags
 
 ```toml
 [dependencies]
-spider-pipeline = { version = "0.3.6", features = ["pipeline-jsonl", "pipeline-csv"] }
+spider-pipeline = { version = "0.3.7", features = ["pipeline-jsonl", "pipeline-csv"] }
 ```
 
 When used through the root crate, enable the same feature names on `spider-lib`.

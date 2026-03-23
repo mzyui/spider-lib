@@ -10,6 +10,11 @@ use spider_util::error::PipelineError;
 use spider_util::item::ScrapedItem;
 
 /// Contract implemented by item-processing pipelines.
+///
+/// Pipelines receive items after parsing and before final output is considered
+/// complete. A pipeline may transform an item and pass it on, drop it by
+/// returning `Ok(None)`, persist it externally, or keep internal state for
+/// checkpoint/resume.
 #[async_trait]
 pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
     /// Returns the name of the pipeline.
@@ -19,6 +24,10 @@ pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
     ///
     /// This method can perform any processing on the item, such as storing it, validating it,
     /// or passing it to another pipeline. It can also choose to drop the item by returning `Ok(None)`.
+    ///
+    /// Pipelines are ordered. Returning `Ok(Some(item))` forwards the item to
+    /// the next pipeline, while `Ok(None)` stops the item from moving further
+    /// down the chain without treating it as an error.
     ///
     /// # Errors
     ///
@@ -42,6 +51,9 @@ pub trait Pipeline<I: ScrapedItem>: Send + Sync + 'static {
     /// This method is called during checkpointing to save the pipeline's state.
     /// The returned state should be sufficient to restore the pipeline to its current
     /// state using `restore_state`.
+    ///
+    /// Pipelines that do not need checkpoint support can keep the default
+    /// implementation and return `Ok(None)`.
     ///
     /// # Errors
     ///
