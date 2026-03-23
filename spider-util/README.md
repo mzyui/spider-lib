@@ -19,7 +19,7 @@ If you are only writing an application spider, these types are often easier to a
 
 ```toml
 [dependencies]
-spider-util = "0.3.4"
+spider-util = "0.3.5"
 ```
 
 ## What it contains
