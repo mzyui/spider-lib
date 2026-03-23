@@ -104,17 +104,24 @@ async fn main() -> Result<(), SpiderError> {
 The repository ships with maintained examples that you can run as-is:
 
 ```bash
+cargo run --example minimal
 cargo run --example books
 ```
+
+`minimal` is the quickest smoke example.
 
 That example crawls `books.toscrape.com` and prints the final page and item counts.
 
 There are also two feature-gated examples:
 
 ```bash
+cargo run --example all_features --all-features
 cargo run --example books_live --features "live-stats pipeline-csv"
 cargo run --example kusonime --features "live-stats pipeline-stream-json"
 ```
+
+`all_features` is a compile-first showcase that demonstrates facade usage, shared
+state primitives, and feature-gated middleware/pipelines in one place.
 
 `books_live` writes CSV output to `output/books_live.csv`.
 

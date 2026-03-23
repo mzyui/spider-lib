@@ -124,6 +124,14 @@ name = "books"
 path = "examples/books.rs"
 
 [[example]]
+name = "minimal"
+path = "examples/minimal.rs"
+
+[[example]]
+name = "all_features"
+path = "examples/all_features.rs"
+
+[[example]]
 name = "books_live"
 path = "examples/books_live.rs"
 required-features = ["live-stats", "pipeline-csv"]
