@@ -19,7 +19,7 @@ If you are happy with the default HTTP behavior, the root crate or `spider-core`
 
 ```toml
 [dependencies]
-spider-downloader = "1.0.2"
+spider-downloader = "1.0.3"
 reqwest = "0.13"
 ```
 
@@ -81,6 +81,17 @@ let crawler = CrawlerBuilder::new(MySpider)
 ```
 
 The built-in downloader currently supports request bodies, request metadata, timeouts, and proxy-aware client selection.
+
+## When custom downloader is the right tool
+
+Reach for a custom downloader only when behavior belongs below middleware, such as:
+
+- a non-standard HTTP client stack
+- request signing tightly coupled to transport execution
+- downloader-level tracing or instrumentation
+- alternate protocol behavior that still maps into `Request` and `Response`
+
+If normal HTTP concerns can be expressed as request/response policy, middleware is usually the better seam.
 
 ## Good to know
 
