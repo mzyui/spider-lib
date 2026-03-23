@@ -10,7 +10,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! spider-macro = "0.1.11"
+//! spider-macro = "0.1.12"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
