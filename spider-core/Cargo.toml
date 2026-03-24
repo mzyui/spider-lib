@@ -29,9 +29,11 @@ serde_json.workspace = true
 tokio.workspace = true
 log.workspace = true
 env_logger.workspace = true
+http.workspace = true
 url.workspace = true
 crossterm = { workspace = true, optional = true }
 unicode-width.workspace = true
+quick-xml.workspace = true
 
 spider-macro = { version = "0.1.12", path = "../spider-macro" }
 spider-util = { version = "0.3.5", path = "../spider-util" }

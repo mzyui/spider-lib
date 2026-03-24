@@ -7,6 +7,10 @@
 pub use crate::{
     // Core structs
     Crawler,
+    CrawlerBuilder,
+    CrawlerConfig,
+    DiscoveryConfig,
+    DiscoveryMode,
     // Core traits
     Downloader,
     Spider,
@@ -23,4 +27,5 @@ pub use spider_middleware::middleware::{Middleware, MiddlewareAction};
 pub use spider_util::{
     error::{PipelineError, SpiderError},
     request::Request,
+    response::{Link, LinkExtractOptions, LinkSource, LinkType, PageMetadata, Response},
 };

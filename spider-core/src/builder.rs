@@ -28,11 +28,12 @@
 
 use crate::Downloader;
 use crate::ReqwestClientDownloader;
-use crate::config::{CheckpointConfig, CrawlerConfig};
+use crate::config::{CheckpointConfig, CrawlerConfig, DiscoveryConfig, DiscoveryMode};
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
+use spider_util::response::LinkExtractOptions;
 
 #[cfg(feature = "checkpoint")]
 type RestoreResult = (
@@ -298,6 +299,42 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// documentation examples where you want predictable bounded work.
     pub fn limit(mut self, limit: usize) -> Self {
         self.config.item_limit = Some(limit);
+        self
+    }
+
+    /// Sets the runtime-managed discovery mode.
+    pub fn discovery_mode(mut self, mode: DiscoveryMode) -> Self {
+        self.config.discovery.mode = mode;
+        self
+    }
+
+    /// Replaces the full discovery configuration.
+    pub fn discovery(mut self, discovery: DiscoveryConfig) -> Self {
+        self.config.discovery = discovery;
+        self
+    }
+
+    /// Enables or disables sitemap parsing.
+    pub fn enable_sitemaps(mut self, enabled: bool) -> Self {
+        self.config.discovery.discover_sitemaps = enabled;
+        self
+    }
+
+    /// Enables or disables page metadata extraction.
+    pub fn extract_page_metadata(mut self, enabled: bool) -> Self {
+        self.config.discovery.extract_page_metadata = enabled;
+        self
+    }
+
+    /// Sets the maximum nested sitemap depth.
+    pub fn max_sitemap_depth(mut self, depth: usize) -> Self {
+        self.config.discovery.max_sitemap_depth = depth;
+        self
+    }
+
+    /// Overrides the link extraction options used by runtime discovery.
+    pub fn discovery_link_options(mut self, options: LinkExtractOptions) -> Self {
+        self.config.discovery.link_extract_options = options;
         self
     }
 

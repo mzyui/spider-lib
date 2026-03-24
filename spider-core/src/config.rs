@@ -25,6 +25,108 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use spider_util::response::{LinkExtractOptions, LinkType};
+
+/// Runtime discovery mode applied to each downloaded response.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DiscoveryMode {
+    /// Disable framework-managed discovery.
+    Disabled,
+    /// Discover navigational HTML links only.
+    HtmlLinks,
+    /// Discover navigational HTML links and inject page metadata into response metadata.
+    HtmlAndMetadata,
+    /// Discover all supported resource types from HTML plus optional metadata.
+    FullResources,
+    /// Only process sitemap responses for follow-up URLs.
+    SitemapOnly,
+}
+
+/// Discovery-specific runtime configuration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryConfig {
+    /// How the runtime should discover follow-up work from responses.
+    pub mode: DiscoveryMode,
+    /// Whether sitemap XML should be parsed into follow-up requests.
+    pub discover_sitemaps: bool,
+    /// Maximum recursion depth for nested sitemap indexes.
+    pub max_sitemap_depth: usize,
+    /// Whether page metadata should be extracted and attached to response metadata.
+    pub extract_page_metadata: bool,
+    /// Base link extraction options used for HTML discovery.
+    pub link_extract_options: LinkExtractOptions,
+}
+
+impl Default for DiscoveryConfig {
+    fn default() -> Self {
+        Self {
+            mode: DiscoveryMode::Disabled,
+            discover_sitemaps: false,
+            max_sitemap_depth: 4,
+            extract_page_metadata: false,
+            link_extract_options: LinkExtractOptions::default(),
+        }
+    }
+}
+
+impl DiscoveryConfig {
+    /// Creates a new discovery config with default values.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Sets the discovery mode.
+    pub fn with_mode(mut self, mode: DiscoveryMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Enables or disables sitemap parsing.
+    pub fn with_sitemaps(mut self, enabled: bool) -> Self {
+        self.discover_sitemaps = enabled;
+        self
+    }
+
+    /// Sets the maximum nested sitemap depth.
+    pub fn with_max_sitemap_depth(mut self, depth: usize) -> Self {
+        self.max_sitemap_depth = depth;
+        self
+    }
+
+    /// Enables or disables page metadata extraction.
+    pub fn with_page_metadata(mut self, enabled: bool) -> Self {
+        self.extract_page_metadata = enabled;
+        self
+    }
+
+    /// Replaces the base link extraction options.
+    pub fn with_link_extract_options(mut self, options: LinkExtractOptions) -> Self {
+        self.link_extract_options = options;
+        self
+    }
+
+    /// Returns the effective link extraction options for the configured mode.
+    pub fn effective_link_extract_options(&self) -> Option<LinkExtractOptions> {
+        let mut options = self.link_extract_options.clone();
+
+        match self.mode {
+            DiscoveryMode::Disabled | DiscoveryMode::SitemapOnly => None,
+            DiscoveryMode::HtmlLinks | DiscoveryMode::HtmlAndMetadata => {
+                if options.allowed_link_types.is_none() {
+                    options.allowed_link_types = Some(vec![LinkType::Page]);
+                }
+                Some(options)
+            }
+            DiscoveryMode::FullResources => Some(options),
+        }
+    }
+
+    /// Returns `true` when metadata extraction should run.
+    pub fn should_extract_metadata(&self) -> bool {
+        self.extract_page_metadata || matches!(self.mode, DiscoveryMode::HtmlAndMetadata)
+    }
+}
+
 /// Core runtime configuration for the crawler.
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
@@ -56,6 +158,8 @@ pub struct CrawlerConfig {
     pub shutdown_grace_period: Duration,
     /// Maximum number of scraped items to process before stopping the crawl.
     pub item_limit: Option<usize>,
+    /// Response discovery behavior such as sitemap parsing and HTML link extraction.
+    pub discovery: DiscoveryConfig,
 }
 
 impl Default for CrawlerConfig {
@@ -81,6 +185,7 @@ impl Default for CrawlerConfig {
             live_stats_preview_fields: None,
             shutdown_grace_period: Duration::from_secs(5),
             item_limit: None,
+            discovery: DiscoveryConfig::default(),
         }
     }
 }
@@ -184,6 +289,12 @@ impl CrawlerConfig {
         self
     }
 
+    /// Sets the discovery configuration.
+    pub fn with_discovery(mut self, discovery: DiscoveryConfig) -> Self {
+        self.discovery = discovery;
+        self
+    }
+
     /// Validates the configuration.
     pub fn validate(&self) -> Result<(), String> {
         if self.max_concurrent_downloads == 0 {
@@ -218,6 +329,9 @@ impl CrawlerConfig {
         }
         if matches!(self.item_limit, Some(0)) {
             return Err("item_limit must be greater than 0".to_string());
+        }
+        if self.discovery.max_sitemap_depth == 0 {
+            return Err("discovery.max_sitemap_depth must be greater than 0".to_string());
         }
         Ok(())
     }
