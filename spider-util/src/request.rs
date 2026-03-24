@@ -12,13 +12,17 @@
 //! use serde_json::json;
 //!
 //! // Create a simple GET request
-//! let url = Url::parse("https://example.com").unwrap();
+//! let url = Url::parse("https://example.com")?;
 //! let request = Request::new(url);
 //!
+//! // Parse the URL as part of request construction
+//! let parsed_request = Request::try_new("https://example.com")?;
+//!
 //! // Create a POST request with JSON body
-//! let post_request = Request::new(Url::parse("https://api.example.com/data").unwrap())
+//! let post_request = Request::new(Url::parse("https://api.example.com/data")?)
 //!     .with_method(reqwest::Method::POST)
 //!     .with_json(json!({"key": "value"}));
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 use bytes::Bytes;
@@ -154,13 +158,17 @@ impl<'de> Deserialize<'de> for Body {
 /// use url::Url;
 ///
 /// // Create a basic GET request
-/// let request = Request::new(Url::parse("https://example.com").unwrap());
+/// let request = Request::new(Url::parse("https://example.com")?);
+///
+/// // Or parse a string into a request directly
+/// let request = Request::try_new("https://example.com")?;
 ///
 /// // Build a request with headers and method
-/// let post_request = Request::new(Url::parse("https://api.example.com").unwrap())
+/// let post_request = Request::new(Url::parse("https://api.example.com")?)
 ///     .with_method(reqwest::Method::POST)
 ///     .with_header("Accept", "application/json")
-///     .unwrap();
+///     ?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Clone)]
 pub struct Request {
@@ -359,7 +367,8 @@ impl Request {
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
-    /// let request = Request::new(Url::parse("https://example.com").unwrap());
+    /// let request = Request::new(Url::parse("https://example.com")?);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(url: Url) -> Self {
         Request {
@@ -369,6 +378,30 @@ impl Request {
             body: None,
             meta: None,
         }
+    }
+
+    /// Creates a new [`Request`] from any value that can be converted into a [`Url`].
+    ///
+    /// This is a fallible companion to [`Request::new`] for callers that want to
+    /// pass URL strings directly.
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// use spider_util::request::Request;
+    ///
+    /// let request = Request::try_new("https://example.com")?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn try_new<U>(url: U) -> Result<Self, SpiderError>
+    where
+        U: TryInto<Url>,
+        U::Error: Into<url::ParseError>,
+    {
+        let url = url
+            .try_into()
+            .map_err(|e| SpiderError::UrlParseError(e.into()))?;
+        Ok(Self::new(url))
     }
 
     /// Sets the HTTP method for the request.
@@ -382,8 +415,9 @@ impl Request {
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
-    /// let request = Request::new(Url::parse("https://example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://example.com")?)
     ///     .with_method(reqwest::Method::POST);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_method(mut self, method: reqwest::Method) -> Self {
         self.method = method;
@@ -391,6 +425,10 @@ impl Request {
     }
 
     /// Adds a header to the request.
+    ///
+    /// Accepts any types that can be converted into [`reqwest::header::HeaderName`]
+    /// and [`reqwest::header::HeaderValue`], including `&str`, `String`, and
+    /// standard header constants such as [`http::header::CONTENT_TYPE`].
     ///
     /// Returns an error if the header name or value is invalid.
     ///
@@ -404,18 +442,25 @@ impl Request {
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
-    /// let request = Request::new(Url::parse("https://example.com").unwrap())
-    ///     .with_header("Accept", "application/json")
-    ///     .unwrap();
+    /// let request = Request::new(Url::parse("https://example.com")?)
+    ///     .with_header(http::header::ACCEPT, "application/json")
+    ///     ?
+    ///     .with_header("X-Trace-Id".to_string(), "abc-123".to_string())?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_header(mut self, name: &str, value: &str) -> Result<Self, SpiderError> {
-        let header_name =
-            reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
-                SpiderError::HeaderValueError(format!("Invalid header name '{}': {}", name, e))
-            })?;
-        let header_value = reqwest::header::HeaderValue::from_str(value).map_err(|e| {
-            SpiderError::HeaderValueError(format!("Invalid header value '{}': {}", value, e))
-        })?;
+    pub fn with_header<N, V>(mut self, name: N, value: V) -> Result<Self, SpiderError>
+    where
+        N: TryInto<reqwest::header::HeaderName>,
+        N::Error: std::fmt::Display,
+        V: TryInto<reqwest::header::HeaderValue>,
+        V::Error: std::fmt::Display,
+    {
+        let header_name = name
+            .try_into()
+            .map_err(|e| SpiderError::HeaderValueError(format!("Invalid header name: {}", e)))?;
+        let header_value = value
+            .try_into()
+            .map_err(|e| SpiderError::HeaderValueError(format!("Invalid header value: {}", e)))?;
 
         self.headers.insert(header_name, header_value);
         Ok(self)
@@ -430,8 +475,9 @@ impl Request {
     /// use url::Url;
     /// use serde_json::json;
     ///
-    /// let request = Request::new(Url::parse("https://api.example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://api.example.com")?)
     ///     .with_body(Body::Json(json!({"key": "value"})));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_body(mut self, body: Body) -> Self {
         self.body = Some(body);
@@ -450,8 +496,9 @@ impl Request {
     /// use url::Url;
     /// use serde_json::json;
     ///
-    /// let request = Request::new(Url::parse("https://api.example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://api.example.com")?)
     ///     .with_json(json!({"name": "test"}));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_json(self, json: serde_json::Value) -> Self {
         self.with_body(Body::Json(json))
@@ -469,8 +516,9 @@ impl Request {
     /// let mut form = DashMap::new();
     /// form.insert("key".to_string(), "value".to_string());
     ///
-    /// let request = Request::new(Url::parse("https://api.example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://api.example.com")?)
     ///     .with_form(form);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_form(self, form: DashMap<String, String>) -> Self {
         self.with_body(Body::Form(form))
@@ -486,8 +534,9 @@ impl Request {
     /// use bytes::Bytes;
     ///
     /// let data = Bytes::from("binary data");
-    /// let request = Request::new(Url::parse("https://api.example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://api.example.com")?)
     ///     .with_bytes(data);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_bytes(self, bytes: bytes::Bytes) -> Self {
         self.with_body(Body::Bytes(bytes))
@@ -506,9 +555,10 @@ impl Request {
     /// use url::Url;
     /// use serde_json::json;
     ///
-    /// let request = Request::new(Url::parse("https://example.com").unwrap())
+    /// let request = Request::new(Url::parse("https://example.com")?)
     ///     .with_meta("priority", json!(1))
     ///     .with_meta("source", json!("manual"));
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_meta(mut self, key: &str, value: serde_json::Value) -> Self {
         self.meta
@@ -625,8 +675,9 @@ impl Request {
     /// use spider_util::request::Request;
     /// use url::Url;
     ///
-    /// let request = Request::new(Url::parse("https://example.com").unwrap());
+    /// let request = Request::new(Url::parse("https://example.com")?);
     /// let fingerprint = request.fingerprint();
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn fingerprint(&self) -> String {
         let mut hasher = XxHash64::default();
