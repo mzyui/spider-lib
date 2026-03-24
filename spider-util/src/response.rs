@@ -43,6 +43,7 @@ use reqwest::StatusCode;
 use scraper::{ElementRef, Html};
 use seahash::SeaHasher;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -195,6 +196,32 @@ impl LinkExtractOptions {
     }
 }
 
+/// Structured page metadata extracted from an HTML response.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PageMetadata {
+    /// Contents of the `<title>` element.
+    pub title: Option<String>,
+    /// Contents of `<meta name="description">`.
+    pub description: Option<String>,
+    /// Canonical URL from `<link rel="canonical">`.
+    pub canonical_url: Option<Url>,
+    /// Open Graph metadata such as `og:title` or `og:image`.
+    pub open_graph: HashMap<String, String>,
+    /// Feed URLs discovered from alternate RSS/Atom link tags.
+    pub feed_urls: Vec<Url>,
+}
+
+impl PageMetadata {
+    /// Returns `true` when no metadata fields were extracted.
+    pub fn is_empty(&self) -> bool {
+        self.title.is_none()
+            && self.description.is_none()
+            && self.canonical_url.is_none()
+            && self.open_graph.is_empty()
+            && self.feed_urls.is_empty()
+    }
+}
+
 /// Represents an HTTP response received from a server.
 ///
 /// [`Response`] contains all information about an HTTP response, including
@@ -301,6 +328,25 @@ impl Response {
         let mut request = Request::new(self.request_url.clone());
         request.set_meta_from_option(self.meta.clone());
         request
+    }
+
+    /// Returns a cloned metadata value by key.
+    pub fn get_meta(&self, key: &str) -> Option<serde_json::Value> {
+        self.meta
+            .as_ref()
+            .and_then(|m| m.get(key).map(|entry| entry.value().clone()))
+    }
+
+    /// Inserts a metadata value, lazily allocating the map if needed.
+    pub fn insert_meta(&mut self, key: String, value: serde_json::Value) {
+        self.meta
+            .get_or_insert_with(|| Arc::new(DashMap::new()))
+            .insert(key, value);
+    }
+
+    /// Returns a clone of the internal metadata map, if present.
+    pub fn clone_meta(&self) -> Option<Arc<DashMap<String, serde_json::Value>>> {
+        self.meta.clone()
     }
 
     /// Deserializes the response body as JSON.
@@ -414,6 +460,92 @@ impl Response {
     /// ```
     pub fn lazy_html(&self) -> Result<impl Fn() -> Result<Html, Utf8Error> + '_, Utf8Error> {
         Ok(move || self.to_html())
+    }
+
+    /// Returns the response body as UTF-8 text.
+    pub fn text(&self) -> Result<&str, Utf8Error> {
+        from_utf8(&self.body)
+    }
+
+    /// Extracts structured page metadata from HTML responses.
+    pub fn page_metadata(&self) -> Result<PageMetadata, Utf8Error> {
+        let html = self.to_html()?;
+        let mut metadata = PageMetadata::default();
+
+        if let Some(selector) = get_cached_selector("title") {
+            metadata.title = html
+                .select(&selector)
+                .next()
+                .map(|node| node.text().collect::<String>().trim().to_string())
+                .filter(|value| !value.is_empty());
+        }
+
+        if let Some(selector) = get_cached_selector("meta[name], meta[property], meta[content]") {
+            for element in html.select(&selector) {
+                let Some(content) = element.value().attr("content") else {
+                    continue;
+                };
+                let content = content.trim();
+                if content.is_empty() {
+                    continue;
+                }
+
+                if let Some(name) = element.value().attr("name")
+                    && name.eq_ignore_ascii_case("description")
+                    && metadata.description.is_none()
+                {
+                    metadata.description = Some(content.to_string());
+                }
+
+                if let Some(property) = element.value().attr("property")
+                    && property.len() >= 3
+                    && property[..3].eq_ignore_ascii_case("og:")
+                {
+                    metadata
+                        .open_graph
+                        .entry(property.to_string())
+                        .or_insert_with(|| content.to_string());
+                }
+            }
+        }
+
+        if let Some(selector) = get_cached_selector("link[href]") {
+            for element in html.select(&selector) {
+                let Some(href) = element.value().attr("href") else {
+                    continue;
+                };
+                let rel = element.value().attr("rel").unwrap_or_default();
+
+                if rel
+                    .split_ascii_whitespace()
+                    .any(|token| token.eq_ignore_ascii_case("canonical"))
+                    && metadata.canonical_url.is_none()
+                {
+                    if let Ok(url) = self.url.join(href) {
+                        metadata.canonical_url = Some(url);
+                    }
+                }
+
+                let is_alternate = rel
+                    .split_ascii_whitespace()
+                    .any(|token| token.eq_ignore_ascii_case("alternate"));
+                let ty = element.value().attr("type").unwrap_or_default();
+                let is_feed = ty.eq_ignore_ascii_case("application/rss+xml")
+                    || ty.eq_ignore_ascii_case("application/atom+xml")
+                    || ty.eq_ignore_ascii_case("application/xml")
+                    || ty.eq_ignore_ascii_case("text/xml");
+
+                if is_alternate
+                    && is_feed
+                    && let Ok(url) = self.url.join(href)
+                    && !metadata.feed_urls.contains(&url)
+                {
+                    metadata.feed_urls.push(url);
+                }
+            }
+        }
+
+        Ok(metadata)
     }
 
     /// Returns a customizable iterator of links discovered in the response body.
