@@ -71,6 +71,7 @@ linkify = "0.10.0"
 psl = "2.1.183"
 robotstxt = "0.3.0"
 ua_generator = "0.5.46"
+quick-xml = "0.38"
 
 # Cookies
 cookie = "0.17"

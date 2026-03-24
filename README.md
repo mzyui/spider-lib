@@ -106,9 +106,12 @@ The repository ships with maintained examples that you can run as-is:
 ```bash
 cargo run --example minimal
 cargo run --example books
+cargo run --example sitemap
 ```
 
 `minimal` is the quickest smoke example.
+
+`sitemap` shows runtime-managed sitemap discovery and page metadata extraction.
 
 That example crawls `books.toscrape.com` and prints the final page and item counts.
 
@@ -171,6 +174,27 @@ Root crate features mirror the lower-level crates:
 | `pipeline-stream-json` | Streaming JSON output pipeline. |
 | `checkpoint` | Checkpoint and resume support. |
 | `cookie-store` | Cookie store integration in core state. |
+
+## Runtime discovery
+
+The crawler can now add follow-up requests without manual spider boilerplate for
+common discovery flows:
+
+- `DiscoveryMode::HtmlLinks` for same-site page links
+- `DiscoveryMode::HtmlAndMetadata` for page links plus injected page metadata
+- `DiscoveryMode::FullResources` for scripts, stylesheets, images, and other resources
+- `DiscoveryMode::SitemapOnly` for sitemap-driven crawling
+
+Example:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .discovery_mode(DiscoveryMode::SitemapOnly)
+    .enable_sitemaps(true)
+    .extract_page_metadata(true)
+    .build()
+    .await?;
+```
 
 Example:
 
