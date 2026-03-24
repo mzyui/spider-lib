@@ -15,6 +15,9 @@ pub use spider_core::{
     // Core structs
     Crawler,
     CrawlerBuilder,
+    CrawlerConfig,
+    DiscoveryConfig,
+    DiscoveryMode,
     // Core traits
     Downloader,
     ReqwestClientDownloader,
@@ -48,7 +51,7 @@ pub use spider_middleware::middleware::{Middleware, MiddlewareAction};
 pub use spider_util::{
     error::{PipelineError, SpiderError},
     request::Request,
-    response::Response,
+    response::{Link, LinkExtractOptions, LinkSource, LinkType, PageMetadata, Response},
     util::{ToSelector, create_dir, is_same_site, normalize_origin, validate_output_dir},
 };
 
