@@ -31,6 +31,10 @@ use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
+use crate::{
+    config::DiscoveryConfig,
+    discovery::{attach_page_metadata, discover_response},
+};
 use kanal::{AsyncReceiver, AsyncSender};
 use log::{debug, error, info, trace, warn};
 use spider_util::item::{ParseOutput, ScrapedItem};
@@ -47,6 +51,7 @@ fn spawn_parser_worker<S>(
     scheduler: Arc<Scheduler>,
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
+    discovery_config: DiscoveryConfig,
     output_batch_size: usize,
     item_limit: Option<usize>,
     stats: Arc<StatCollector>,
@@ -55,8 +60,13 @@ fn spawn_parser_worker<S>(
     S::Item: ScrapedItem,
 {
     tokio::spawn(async move {
-        while let Ok(response) = internal_parse_rx.recv().await {
+        while let Ok(mut response) = internal_parse_rx.recv().await {
             debug!("Parsing response from {}", response.url);
+
+            let discovery = discover_response(&response, &discovery_config);
+            if let Some(metadata) = discovery.metadata.as_ref() {
+                attach_page_metadata(&mut response, metadata);
+            }
 
             let start_time = Instant::now();
             let parse_output = spider.parse(response, &spider_state).await;
@@ -66,7 +76,10 @@ fn spawn_parser_worker<S>(
             stats.record_parsing_time(elapsed);
 
             match parse_output {
-                Ok(outputs) => {
+                Ok(mut outputs) => {
+                    if !discovery.requests.is_empty() {
+                        outputs.add_requests(discovery.requests);
+                    }
                     process_crawl_outputs::<S>(
                         outputs,
                         scheduler.clone(),
@@ -95,6 +108,7 @@ pub fn spawn_parser_task<S>(
     res_rx: AsyncReceiver<Response>,
     item_tx: AsyncSender<S::Item>,
     parser_workers: usize,
+    discovery_config: DiscoveryConfig,
     output_batch_size: usize,
     item_backpressure_threshold: usize,
     item_limit: Option<usize>,
@@ -115,6 +129,7 @@ where
             Arc::clone(&scheduler),
             item_tx.clone(),
             Arc::clone(&state),
+            discovery_config.clone(),
             output_batch_size,
             item_limit,
             Arc::clone(&stats),

@@ -177,6 +177,7 @@ where
             res_rx,
             item_tx.clone(),
             config.parser_workers,
+            config.discovery.clone(),
             config.output_batch_size.max(1),
             config.item_backpressure_threshold.max(1),
             config.item_limit,
