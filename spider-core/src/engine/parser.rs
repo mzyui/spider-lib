@@ -182,6 +182,10 @@ pub async fn process_crawl_outputs<S>(
     S: Spider + 'static,
     S::Item: ScrapedItem,
 {
+    let item_limit_shutdown = || {
+        state.item_limit_reached.load(Ordering::SeqCst)
+            && scheduler.is_shutting_down.load(Ordering::SeqCst)
+    };
     let (items, requests) = outputs.into_parts();
     let items_len = items.len();
     let requests_len = requests.len();
@@ -203,6 +207,9 @@ pub async fn process_crawl_outputs<S>(
     for item in items {
         if scheduler.is_shutting_down.load(Ordering::SeqCst) {
             item_error_total += 1;
+            if item_limit_shutdown() {
+                state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
+            }
             continue;
         }
 
@@ -220,8 +227,13 @@ pub async fn process_crawl_outputs<S>(
 
         item_batch_len += 1;
         if item_tx.is_closed() {
-            warn!("Item channel is closed, stopping item processing");
+            if !item_limit_shutdown() {
+                warn!("Item channel is closed, stopping item processing");
+            }
             item_error_total += 1;
+            if item_limit_shutdown() {
+                state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
+            }
             if item_limit.is_some() {
                 state.admitted_items.fetch_sub(1, Ordering::AcqRel);
             }
@@ -229,8 +241,13 @@ pub async fn process_crawl_outputs<S>(
             stats.record_current_item_preview(&item);
             state.processing_items.fetch_add(1, Ordering::AcqRel);
             if item_tx.send(item).await.is_err() {
-                error!("Failed to send item to processing channel");
+                if !item_limit_shutdown() {
+                    error!("Failed to send item to processing channel");
+                }
                 item_error_total += 1;
+                if item_limit_shutdown() {
+                    state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
+                }
                 state.processing_items.fetch_sub(1, Ordering::AcqRel);
                 if item_limit.is_some() {
                     state.admitted_items.fetch_sub(1, Ordering::AcqRel);
@@ -254,10 +271,17 @@ pub async fn process_crawl_outputs<S>(
     }
 
     if item_error_total > 0 {
-        warn!(
-            "Failed to send {} of {} scraped items.",
-            item_error_total, items_len
-        );
+        if item_limit_shutdown() {
+            debug!(
+                "Dropping {} of {} scraped items during item-limit shutdown",
+                item_error_total, items_len
+            );
+        } else {
+            warn!(
+                "Failed to send {} of {} scraped items.",
+                item_error_total, items_len
+            );
+        }
     } else if items_sent > 0 {
         debug!(
             "Successfully sent {} scraped items for processing",
@@ -286,6 +310,11 @@ pub async fn process_crawl_outputs<S>(
         request_error_total = requests_len;
         if requests_len > 0 {
             debug!("Scheduler is shutting down, skipping remaining requests");
+            if item_limit_shutdown() {
+                state
+                    .shutdown_skipped_requests
+                    .fetch_add(requests_len, Ordering::AcqRel);
+            }
         }
     } else {
         let mut request_batch = Vec::with_capacity(batch_size);
@@ -298,6 +327,11 @@ pub async fn process_crawl_outputs<S>(
             if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                 debug!("Scheduler is shutting down, skipping remaining requests");
                 request_error_total += request_batch.len();
+                if item_limit_shutdown() {
+                    state
+                        .shutdown_skipped_requests
+                        .fetch_add(request_batch.len(), Ordering::AcqRel);
+                }
                 request_batch.clear();
                 continue;
             }
@@ -314,6 +348,11 @@ pub async fn process_crawl_outputs<S>(
                     if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                         debug!("Scheduler is shutting down, skipping remaining requests");
                         request_error_total += batch_size;
+                        if item_limit_shutdown() {
+                            state
+                                .shutdown_skipped_requests
+                                .fetch_add(batch_size, Ordering::AcqRel);
+                        }
                         continue;
                     }
 
@@ -327,6 +366,11 @@ pub async fn process_crawl_outputs<S>(
             if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                 debug!("Scheduler is shutting down, skipping remaining requests");
                 request_error_total += request_batch.len();
+                if item_limit_shutdown() {
+                    state
+                        .shutdown_skipped_requests
+                        .fetch_add(request_batch.len(), Ordering::AcqRel);
+                }
             } else {
                 let remaining = request_batch.len();
                 match scheduler.enqueue_requests_batch(request_batch).await {
@@ -340,6 +384,11 @@ pub async fn process_crawl_outputs<S>(
                         if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                             debug!("Scheduler is shutting down, skipping remaining requests");
                             request_error_total += remaining;
+                            if item_limit_shutdown() {
+                                state
+                                    .shutdown_skipped_requests
+                                    .fetch_add(remaining, Ordering::AcqRel);
+                            }
                         } else {
                             error!("Failed to enqueue request batch: {:?}", e);
                             request_error_total += remaining;
@@ -351,10 +400,17 @@ pub async fn process_crawl_outputs<S>(
     }
 
     if request_error_total > 0 {
-        warn!(
-            "Failed to enqueue {} of {} requests.",
-            request_error_total, requests_len
-        );
+        if item_limit_shutdown() {
+            debug!(
+                "Skipping {} of {} requests during item-limit shutdown",
+                request_error_total, requests_len
+            );
+        } else {
+            warn!(
+                "Failed to enqueue {} of {} requests.",
+                request_error_total, requests_len
+            );
+        }
     } else if requests_len > 0 {
         debug!("Successfully enqueued all {} requests", requests_len);
     }

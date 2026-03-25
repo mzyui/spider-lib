@@ -105,6 +105,7 @@ where
                     &downloader_clone,
                     &middlewares_clone,
                     &scheduler_clone,
+                    &state_clone,
                     retry_release_permit,
                     &stats_clone,
                 )
@@ -146,6 +147,7 @@ async fn process_request_through_middlewares<S, C>(
     downloader: &Arc<dyn Downloader<Client = C> + Send + Sync>,
     middlewares: &SharedMiddlewareManager<C>,
     scheduler: &Arc<Scheduler>,
+    state: &Arc<CrawlerState>,
     retry_release_permit: bool,
     stats: &Arc<StatCollector>,
 ) -> Result<Option<Response>, ()>
@@ -338,10 +340,22 @@ where
         let fingerprint = original_request.fingerprint();
         trace!("Marking URL as visited: {}", original_request.url);
         if let Err(e) = scheduler.mark_visited(fingerprint.clone()).await {
-            error!(
-                "Failed to mark URL as visited (fingerprint: {}): {:?}",
-                fingerprint, e
-            );
+            if state.item_limit_reached.load(Ordering::SeqCst)
+                && scheduler.is_shutting_down.load(Ordering::SeqCst)
+            {
+                state
+                    .shutdown_skipped_visited_marks
+                    .fetch_add(1, Ordering::AcqRel);
+                debug!(
+                    "Skipping visited mark during item-limit shutdown for fingerprint: {}",
+                    fingerprint
+                );
+            } else {
+                error!(
+                    "Failed to mark URL as visited (fingerprint: {}): {:?}",
+                    fingerprint, e
+                );
+            }
         }
     }
 

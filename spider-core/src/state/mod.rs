@@ -53,6 +53,12 @@ pub struct CrawlerState {
     pub admitted_items: AtomicUsize,
     /// Indicates that the crawl is shutting down because the item limit was reached.
     pub item_limit_reached: AtomicBool,
+    /// Number of follow-up requests skipped because item-limit shutdown was in progress.
+    pub shutdown_skipped_requests: AtomicUsize,
+    /// Number of scraped items dropped because item-limit shutdown was in progress.
+    pub shutdown_dropped_items: AtomicUsize,
+    /// Number of visited-mark updates skipped because item-limit shutdown was in progress.
+    pub shutdown_skipped_visited_marks: AtomicUsize,
 }
 
 impl CrawlerState {

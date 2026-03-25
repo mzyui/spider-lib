@@ -45,6 +45,12 @@ use tokio::time::MissedTickBehavior;
 #[cfg(feature = "cookie-store")]
 use cookie_store::CookieStore;
 
+enum RunOutcome {
+    Interrupted,
+    Idle,
+    ItemLimitReached,
+}
+
 /// The running crawler instance.
 pub struct Crawler<S: Spider, C> {
     scheduler: Arc<Scheduler>,
@@ -261,7 +267,7 @@ where
             }
         }
 
-        let interrupted = tokio::select! {
+        let outcome = tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!("Ctrl-C received, initiating graceful shutdown.");
                 if let Err(e) = scheduler.shutdown().await {
@@ -269,12 +275,18 @@ where
                 } else {
                     info!("Scheduler shutdown initiated successfully");
                 }
-                true
+                RunOutcome::Interrupted
             }
             _ = async {
                 loop {
+                    if state.item_limit_reached.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
                     if scheduler.is_idle() && state.is_idle() {
                         tokio::time::sleep(Duration::from_millis(25)).await;
+                        if state.item_limit_reached.load(std::sync::atomic::Ordering::SeqCst) {
+                            break;
+                        }
                         if scheduler.is_idle() && state.is_idle() {
                             break;
                         }
@@ -282,8 +294,13 @@ where
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
             } => {
-                info!("Crawl has become idle, initiating shutdown.");
-                false
+                if state.item_limit_reached.load(std::sync::atomic::Ordering::SeqCst) {
+                    info!("Item limit reached, initiating fast shutdown.");
+                    RunOutcome::ItemLimitReached
+                } else {
+                    info!("Crawl has become idle, initiating shutdown.");
+                    RunOutcome::Idle
+                }
             }
         };
 
@@ -291,7 +308,11 @@ where
         drop(res_tx);
         drop(item_tx);
 
-        if !interrupted {
+        if matches!(outcome, RunOutcome::Idle)
+            && !scheduler
+                .is_shutting_down
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
             if let Err(e) = scheduler.shutdown().await {
                 error!("Error during scheduler shutdown: {}", e);
             } else {
@@ -299,59 +320,89 @@ where
             }
         }
 
-        let mut tasks = tokio::task::JoinSet::new();
-        tasks.spawn(processor_handle);
-        tasks.spawn(parser_handle);
-        tasks.spawn(downloader_handle);
-        tasks.spawn(init_task);
         let mut results = Vec::new();
-        let mut remaining_tasks = 4usize;
 
-        if interrupted {
+        if matches!(outcome, RunOutcome::ItemLimitReached) {
+            downloader_handle.abort();
+            parser_handle.abort();
+            init_task.abort();
+
+            for handle in [downloader_handle, parser_handle, init_task] {
+                match handle.await {
+                    Ok(_) => {}
+                    Err(join_err) if join_err.is_cancelled() => {}
+                    Err(join_err) => error!("Task failed during fast shutdown: {}", join_err),
+                }
+            }
+
             let grace_period = config.shutdown_grace_period;
-            let shutdown_deadline = tokio::time::sleep(grace_period);
-            tokio::pin!(shutdown_deadline);
-
-            while remaining_tasks > 0 {
-                tokio::select! {
-                    result = tasks.join_next() => {
-                        match result {
-                            Some(result) => {
-                                results.push(result);
-                                remaining_tasks = remaining_tasks.saturating_sub(1);
-                            }
-                            None => break,
-                        }
-                    }
-                    _ = tokio::signal::ctrl_c() => {
-                        warn!("Second Ctrl-C received, aborting remaining tasks immediately.");
-                        tasks.abort_all();
-                        tokio::time::sleep(Duration::from_millis(25)).await;
-                        break;
-                    }
-                    _ = &mut shutdown_deadline => {
-                        warn!(
-                            "Tasks did not complete within shutdown grace period ({}s), aborting remaining tasks and continuing with shutdown...",
-                            grace_period.as_secs()
-                        );
-                        tasks.abort_all();
-                        tokio::time::sleep(Duration::from_millis(25)).await;
-                        break;
-                    }
+            match tokio::time::timeout(grace_period, processor_handle).await {
+                Ok(Ok(())) => {}
+                Ok(Err(join_err)) if join_err.is_cancelled() => {}
+                Ok(Err(join_err)) => {
+                    error!("Item processor failed during fast shutdown: {}", join_err)
+                }
+                Err(_) => {
+                    warn!(
+                        "Item processor did not finish within shutdown grace period ({}s) after item limit; aborting it.",
+                        grace_period.as_secs()
+                    );
                 }
             }
         } else {
-            while let Some(result) = tasks.join_next().await {
-                results.push(result);
-            }
-            trace!("All tasks completed during shutdown");
-        }
+            let mut tasks = tokio::task::JoinSet::new();
+            tasks.spawn(processor_handle);
+            tasks.spawn(parser_handle);
+            tasks.spawn(downloader_handle);
+            tasks.spawn(init_task);
+            let mut remaining_tasks = 4usize;
 
-        for result in results {
-            if let Err(e) = result {
-                error!("Task failed during shutdown: {}", e);
+            if matches!(outcome, RunOutcome::Interrupted) {
+                let grace_period = config.shutdown_grace_period;
+                let shutdown_deadline = tokio::time::sleep(grace_period);
+                tokio::pin!(shutdown_deadline);
+
+                while remaining_tasks > 0 {
+                    tokio::select! {
+                        result = tasks.join_next() => {
+                            match result {
+                                Some(result) => {
+                                    results.push(result);
+                                    remaining_tasks = remaining_tasks.saturating_sub(1);
+                                }
+                                None => break,
+                            }
+                        }
+                        _ = tokio::signal::ctrl_c() => {
+                            warn!("Second Ctrl-C received, aborting remaining tasks immediately.");
+                            tasks.abort_all();
+                            tokio::time::sleep(Duration::from_millis(25)).await;
+                            break;
+                        }
+                        _ = &mut shutdown_deadline => {
+                            warn!(
+                                "Tasks did not complete within shutdown grace period ({}s), aborting remaining tasks and continuing with shutdown...",
+                                grace_period.as_secs()
+                            );
+                            tasks.abort_all();
+                            tokio::time::sleep(Duration::from_millis(25)).await;
+                            break;
+                        }
+                    }
+                }
             } else {
-                trace!("Task completed successfully during shutdown");
+                while let Some(result) = tasks.join_next().await {
+                    results.push(result);
+                }
+                trace!("All tasks completed during shutdown");
+            }
+
+            for result in results {
+                if let Err(e) = result {
+                    error!("Task failed during shutdown: {}", e);
+                } else {
+                    trace!("Task completed successfully during shutdown");
+                }
             }
         }
 
@@ -394,6 +445,28 @@ where
         let futures: Vec<_> = pipelines.iter().map(|p| p.close()).collect();
         join_all(futures).await;
         info!("All item pipelines closed");
+
+        if state
+            .item_limit_reached
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            let skipped_requests = state
+                .shutdown_skipped_requests
+                .load(std::sync::atomic::Ordering::Acquire);
+            let dropped_items = state
+                .shutdown_dropped_items
+                .load(std::sync::atomic::Ordering::Acquire);
+            let skipped_visited_marks = state
+                .shutdown_skipped_visited_marks
+                .load(std::sync::atomic::Ordering::Acquire);
+
+            if skipped_requests > 0 || dropped_items > 0 || skipped_visited_marks > 0 {
+                info!(
+                    "Item-limit shutdown summary: skipped {} follow-up requests, dropped {} scraped items, skipped {} visited-mark updates while draining in-flight work.",
+                    skipped_requests, dropped_items, skipped_visited_marks,
+                );
+            }
+        }
 
         if config.live_stats {
             println!("{}\n", stats.to_live_report_string());
