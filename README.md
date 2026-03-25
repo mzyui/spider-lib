@@ -1,25 +1,14 @@
-<div align="center">
-  <h1>spider-lib</h1>
-  <p>
-    <code>spider-lib</code> is an async web scraping framework for Rust with a layout that will feel familiar if you have used Scrapy before: spiders define crawl logic, the runtime schedules and downloads requests, middleware can shape traffic, and pipelines handle extracted items.
-  </p>
-  <p>
-    The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through <code>spider_lib::prelude::*</code>, so a normal application does not need to wire the lower-level crates by hand.
-  </p>
-  <p>
-    <a href="#quick-start">Quick start</a>
-    &nbsp;•&nbsp;
-    <a href="#installation">Installation</a>
-    &nbsp;•&nbsp;
-    <a href="#recommended-path">Recommended path</a>
-    &nbsp;•&nbsp;
-    <a href="#run-the-examples">Run the examples</a>
-    &nbsp;•&nbsp;
-    <a href="#why-this-crate-exists">Why this crate exists</a>
-  </p>
-</div>
+# spider-lib
 
----
+[![crates.io](https://img.shields.io/crates/v/spider-lib.svg)](https://crates.io/crates/spider-lib)
+[![crates.io downloads](https://img.shields.io/crates/d/spider-lib.svg)](https://crates.io/crates/spider-lib)
+[![rust edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
+[![docs.rs](https://img.shields.io/docsrs/spider-lib)](https://docs.rs/spider-lib)
+[![license](https://img.shields.io/crates/l/spider-lib.svg)](https://github.com/mzyui/spider-lib/blob/main/LICENSE)
+
+`spider-lib` is an async web scraping framework for Rust with a layout that will feel familiar if you have used Scrapy before: spiders define crawl logic, the runtime schedules and downloads requests, middleware can shape traffic, and pipelines handle extracted items.
+
+The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through `spider_lib::prelude::*`, so a normal application does not need to wire the lower-level crates by hand.
 
 ## Why this crate exists
 
