@@ -105,6 +105,109 @@ impl DiscoveryConfig {
         self
     }
 
+    /// Sets whether only same-site links should be discovered.
+    pub fn with_same_site_only(mut self, enabled: bool) -> Self {
+        self.link_extract_options.same_site_only = enabled;
+        self
+    }
+
+    /// Sets whether text content should be scanned for plain-text URLs.
+    pub fn with_text_links(mut self, enabled: bool) -> Self {
+        self.link_extract_options.include_text_links = enabled;
+        self
+    }
+
+    /// Restricts discovery to URLs that match at least one glob-style pattern.
+    pub fn with_allow_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_patterns(patterns);
+        self
+    }
+
+    /// Excludes URLs that match any glob-style pattern.
+    pub fn with_deny_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_patterns(patterns);
+        self
+    }
+
+    /// Restricts discovery to the given domains or subdomains.
+    pub fn with_allow_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_domains(domains);
+        self
+    }
+
+    /// Excludes discovery for the given domains or subdomains.
+    pub fn with_deny_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_domains(domains);
+        self
+    }
+
+    /// Restricts discovery to URL paths with one of the provided prefixes.
+    pub fn with_allow_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_path_prefixes(prefixes);
+        self
+    }
+
+    /// Excludes URL paths with one of the provided prefixes.
+    pub fn with_deny_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_path_prefixes(prefixes);
+        self
+    }
+
+    /// Restricts attribute extraction to specific HTML tags.
+    pub fn with_allowed_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allowed_tags(tags);
+        self
+    }
+
+    /// Restricts attribute extraction to specific attributes.
+    pub fn with_allowed_attributes(
+        mut self,
+        attributes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self
+            .link_extract_options
+            .with_allowed_attributes(attributes);
+        self
+    }
+
+    /// Restricts discovery to the provided link types.
+    pub fn with_allowed_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.link_extract_options = self
+            .link_extract_options
+            .with_allowed_link_types(link_types);
+        self
+    }
+
+    /// Excludes the provided link types from discovery.
+    pub fn with_denied_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_denied_link_types(link_types);
+        self
+    }
+
     /// Returns the effective link extraction options for the configured mode.
     pub fn effective_link_extract_options(&self) -> Option<LinkExtractOptions> {
         let mut options = self.link_extract_options.clone();

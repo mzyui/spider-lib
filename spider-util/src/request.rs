@@ -29,6 +29,7 @@ use bytes::Bytes;
 use dashmap::DashMap;
 use http::header::HeaderMap;
 use reqwest::{Method, Url};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -567,6 +568,32 @@ impl Request {
         self
     }
 
+    /// Serializes and stores a metadata value under the provided key.
+    ///
+    /// This is a convenient typed companion to [`Request::with_meta`] that
+    /// avoids manual `serde_json::json!(...)` calls for structured metadata.
+    pub fn with_meta_value<T>(self, key: impl Into<String>, value: T) -> Result<Self, SpiderError>
+    where
+        T: Serialize,
+    {
+        Ok(self.with_meta(key, serde_json::to_value(value)?))
+    }
+
+    /// Serializes and stores a metadata value only when it is present.
+    pub fn with_optional_meta_value<T>(
+        self,
+        key: impl Into<String>,
+        value: Option<T>,
+    ) -> Result<Self, SpiderError>
+    where
+        T: Serialize,
+    {
+        match value {
+            Some(value) => self.with_meta_value(key, value),
+            None => Ok(self),
+        }
+    }
+
     /// Gets a reference to a metadata value, if it exists.
     ///
     /// Returns a cloned JSON value because metadata is stored in a shared
@@ -576,6 +603,17 @@ impl Request {
         self.meta
             .as_ref()
             .and_then(|m| m.get(key).map(|e| e.value().clone()))
+    }
+
+    /// Deserializes a metadata value into the requested type.
+    pub fn meta_value<T>(&self, key: &str) -> Result<Option<T>, SpiderError>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_meta(key)
+            .map(serde_json::from_value)
+            .transpose()
+            .map_err(SpiderError::from)
     }
 
     /// Returns `true` if the request has metadata.
@@ -595,6 +633,26 @@ impl Request {
         self.meta
             .get_or_insert_with(|| Arc::new(DashMap::new()))
             .insert(key.into(), value);
+    }
+
+    /// Serializes and inserts a metadata value for internal or incremental use.
+    pub fn insert_meta_value<T>(
+        &mut self,
+        key: impl Into<String>,
+        value: T,
+    ) -> Result<(), SpiderError>
+    where
+        T: Serialize,
+    {
+        self.insert_meta(key, serde_json::to_value(value)?);
+        Ok(())
+    }
+
+    /// Removes a metadata entry by key, returning the stored JSON value if any.
+    pub fn remove_meta(&mut self, key: &str) -> Option<serde_json::Value> {
+        self.meta
+            .as_ref()
+            .and_then(|meta| meta.remove(key).map(|(_, value)| value))
     }
 
     /// Gets a value from metadata using DashMap's API.

@@ -202,6 +202,21 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
+Runtime discovery can also be filtered more aggressively when you want a
+rule-like crawl shape:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .discovery_mode(DiscoveryMode::HtmlLinks)
+    .discover_allow_domains(["books.toscrape.com"])
+    .discover_allow_path_prefixes(["/catalogue/"])
+    .discover_deny_patterns(["*/page-*.html"])
+    .discover_allowed_tags(["a"])
+    .discover_allowed_attributes(["href"])
+    .build()
+    .await?;
+```
+
 Example:
 
 ```toml

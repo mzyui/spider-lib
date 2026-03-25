@@ -148,6 +148,24 @@ pub struct LinkExtractOptions {
     pub sources: Vec<LinkSource>,
     /// Optional allow-list of link types to include.
     pub allowed_link_types: Option<Vec<LinkType>>,
+    /// Optional deny-list of link types to exclude.
+    pub denied_link_types: Vec<LinkType>,
+    /// Optional allow-list of glob-style URL patterns (`*` and `?` supported).
+    pub allow_patterns: Vec<String>,
+    /// Optional deny-list of glob-style URL patterns (`*` and `?` supported).
+    pub deny_patterns: Vec<String>,
+    /// Optional allow-list of domains or registered-domain suffixes.
+    pub allow_domains: Vec<String>,
+    /// Optional deny-list of domains or registered-domain suffixes.
+    pub deny_domains: Vec<String>,
+    /// Optional allow-list of URL path prefixes.
+    pub allow_path_prefixes: Vec<String>,
+    /// Optional deny-list of URL path prefixes.
+    pub deny_path_prefixes: Vec<String>,
+    /// Optional allow-list of HTML tag names used for attribute extraction.
+    pub allowed_tags: Option<Vec<String>>,
+    /// Optional allow-list of attribute names used for attribute extraction.
+    pub allowed_attributes: Option<Vec<String>>,
 }
 
 impl Default for LinkExtractOptions {
@@ -157,6 +175,15 @@ impl Default for LinkExtractOptions {
             include_text_links: true,
             sources: default_link_sources(),
             allowed_link_types: None,
+            denied_link_types: Vec::new(),
+            allow_patterns: Vec::new(),
+            deny_patterns: Vec::new(),
+            allow_domains: Vec::new(),
+            deny_domains: Vec::new(),
+            allow_path_prefixes: Vec::new(),
+            deny_path_prefixes: Vec::new(),
+            allowed_tags: None,
+            allowed_attributes: None,
         }
     }
 }
@@ -192,6 +219,131 @@ impl LinkExtractOptions {
         allowed_link_types: impl IntoIterator<Item = LinkType>,
     ) -> Self {
         self.allowed_link_types = Some(allowed_link_types.into_iter().collect());
+        self
+    }
+
+    /// Adds link types that should be excluded even if discovered.
+    pub fn with_denied_link_types(
+        mut self,
+        denied_link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.denied_link_types = denied_link_types.into_iter().collect();
+        self
+    }
+
+    /// Adds a glob-style allow pattern that URLs must match.
+    pub fn allow_pattern(mut self, pattern: impl Into<String>) -> Self {
+        self.allow_patterns.push(pattern.into());
+        self
+    }
+
+    /// Replaces the glob-style allow patterns.
+    pub fn with_allow_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_patterns = patterns.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Adds a glob-style deny pattern that excludes matching URLs.
+    pub fn deny_pattern(mut self, pattern: impl Into<String>) -> Self {
+        self.deny_patterns.push(pattern.into());
+        self
+    }
+
+    /// Replaces the glob-style deny patterns.
+    pub fn with_deny_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_patterns = patterns.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Adds a domain or registered-domain suffix to allow.
+    pub fn allow_domain(mut self, domain: impl Into<String>) -> Self {
+        self.allow_domains.push(normalize_domain_filter(domain));
+        self
+    }
+
+    /// Replaces the allowed domains.
+    pub fn with_allow_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_domains = domains.into_iter().map(normalize_domain_filter).collect();
+        self
+    }
+
+    /// Adds a domain or registered-domain suffix to deny.
+    pub fn deny_domain(mut self, domain: impl Into<String>) -> Self {
+        self.deny_domains.push(normalize_domain_filter(domain));
+        self
+    }
+
+    /// Replaces the denied domains.
+    pub fn with_deny_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_domains = domains.into_iter().map(normalize_domain_filter).collect();
+        self
+    }
+
+    /// Adds a URL path prefix that links must match.
+    pub fn allow_path_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.allow_path_prefixes.push(normalize_path_prefix(prefix));
+        self
+    }
+
+    /// Replaces the allowed URL path prefixes.
+    pub fn with_allow_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_path_prefixes = prefixes.into_iter().map(normalize_path_prefix).collect();
+        self
+    }
+
+    /// Adds a URL path prefix that should be excluded.
+    pub fn deny_path_prefix(mut self, prefix: impl Into<String>) -> Self {
+        self.deny_path_prefixes.push(normalize_path_prefix(prefix));
+        self
+    }
+
+    /// Replaces the denied URL path prefixes.
+    pub fn with_deny_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_path_prefixes = prefixes.into_iter().map(normalize_path_prefix).collect();
+        self
+    }
+
+    /// Restricts attribute-based extraction to specific HTML tag names.
+    pub fn with_allowed_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.allowed_tags = Some(
+            tags.into_iter()
+                .map(Into::into)
+                .map(|tag: String| tag.to_ascii_lowercase())
+                .collect(),
+        );
+        self
+    }
+
+    /// Restricts attribute-based extraction to specific attribute names.
+    pub fn with_allowed_attributes(
+        mut self,
+        attributes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allowed_attributes = Some(
+            attributes
+                .into_iter()
+                .map(Into::into)
+                .map(|attr: String| attr.to_ascii_lowercase())
+                .collect(),
+        );
         self
     }
 }
@@ -642,11 +794,28 @@ impl Response {
         links: &mut Vec<Link>,
     ) {
         for source in &options.sources {
+            if !options
+                .allowed_attributes
+                .as_ref()
+                .is_none_or(|allowed| allowed.iter().any(|attr| attr == &source.attribute))
+            {
+                continue;
+            }
+
             let Some(selector) = get_cached_selector(&source.selector) else {
                 continue;
             };
 
             for element in html.select(&selector) {
+                let tag_name = element.value().name();
+                if !options
+                    .allowed_tags
+                    .as_ref()
+                    .is_none_or(|allowed| allowed.iter().any(|tag| tag == tag_name))
+                {
+                    continue;
+                }
+
                 let Some(attr_value) = element.value().attr(&source.attribute) else {
                     continue;
                 };
@@ -695,6 +864,64 @@ impl Response {
             .allowed_link_types
             .as_ref()
             .is_none_or(|allowed| allowed.contains(&link_type))
+        {
+            return None;
+        }
+
+        if options.denied_link_types.contains(&link_type) {
+            return None;
+        }
+
+        let absolute_url = url.as_str();
+        if !options.allow_patterns.is_empty()
+            && !options
+                .allow_patterns
+                .iter()
+                .any(|pattern| glob_matches(pattern, absolute_url))
+        {
+            return None;
+        }
+
+        if options
+            .deny_patterns
+            .iter()
+            .any(|pattern| glob_matches(pattern, absolute_url))
+        {
+            return None;
+        }
+
+        let host = url.host_str().unwrap_or_default();
+        if !options.allow_domains.is_empty()
+            && !options
+                .allow_domains
+                .iter()
+                .any(|domain| domain_matches(host, domain))
+        {
+            return None;
+        }
+
+        if options
+            .deny_domains
+            .iter()
+            .any(|domain| domain_matches(host, domain))
+        {
+            return None;
+        }
+
+        let path = url.path();
+        if !options.allow_path_prefixes.is_empty()
+            && !options
+                .allow_path_prefixes
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+        {
+            return None;
+        }
+
+        if options
+            .deny_path_prefixes
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
         {
             return None;
         }
@@ -756,4 +983,61 @@ fn infer_link_type(element: &ElementRef<'_>) -> LinkType {
         "audio" | "video" | "source" => LinkType::Media,
         _ => LinkType::Other(element.value().name().to_string()),
     }
+}
+
+fn normalize_domain_filter(domain: impl Into<String>) -> String {
+    domain
+        .into()
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase()
+}
+
+fn normalize_path_prefix(prefix: impl Into<String>) -> String {
+    let prefix = prefix.into();
+    let prefix = prefix.trim();
+    if prefix.is_empty() || prefix == "/" {
+        "/".to_string()
+    } else if prefix.starts_with('/') {
+        prefix.to_string()
+    } else {
+        format!("/{prefix}")
+    }
+}
+
+fn domain_matches(host: &str, filter: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    let filter = filter.to_ascii_lowercase();
+    host == filter || host.ends_with(&format!(".{filter}"))
+}
+
+fn glob_matches(pattern: &str, input: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let input = input.as_bytes();
+    let (mut p, mut s) = (0usize, 0usize);
+    let mut last_star = None;
+    let mut match_after_star = 0usize;
+
+    while s < input.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == input[s]) {
+            p += 1;
+            s += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            last_star = Some(p);
+            p += 1;
+            match_after_star = s;
+        } else if let Some(star_idx) = last_star {
+            p = star_idx + 1;
+            match_after_star += 1;
+            s = match_after_star;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+
+    p == pattern.len()
 }

@@ -33,7 +33,7 @@ use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use spider_middleware::middleware::Middleware;
 use spider_pipeline::pipeline::Pipeline;
-use spider_util::response::LinkExtractOptions;
+use spider_util::response::{LinkExtractOptions, LinkType};
 
 #[cfg(feature = "checkpoint")]
 type RestoreResult = (
@@ -335,6 +335,151 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Overrides the link extraction options used by runtime discovery.
     pub fn discovery_link_options(mut self, options: LinkExtractOptions) -> Self {
         self.config.discovery.link_extract_options = options;
+        self
+    }
+
+    /// Sets whether runtime discovery should keep links on the same site only.
+    pub fn discover_same_site_only(mut self, enabled: bool) -> Self {
+        self.config.discovery.link_extract_options.same_site_only = enabled;
+        self
+    }
+
+    /// Sets whether runtime discovery should scan text nodes for plain-text URLs.
+    pub fn discover_text_links(mut self, enabled: bool) -> Self {
+        self.config
+            .discovery
+            .link_extract_options
+            .include_text_links = enabled;
+        self
+    }
+
+    /// Adds glob-style allow patterns to runtime discovery.
+    pub fn discover_allow_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allow_patterns(patterns);
+        self
+    }
+
+    /// Adds glob-style deny patterns to runtime discovery.
+    pub fn discover_deny_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_deny_patterns(patterns);
+        self
+    }
+
+    /// Restricts runtime discovery to the provided domains or subdomains.
+    pub fn discover_allow_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allow_domains(domains);
+        self
+    }
+
+    /// Excludes runtime discovery for the provided domains or subdomains.
+    pub fn discover_deny_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_deny_domains(domains);
+        self
+    }
+
+    /// Restricts runtime discovery to the provided URL path prefixes.
+    pub fn discover_allow_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allow_path_prefixes(prefixes);
+        self
+    }
+
+    /// Excludes runtime discovery for the provided URL path prefixes.
+    pub fn discover_deny_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_deny_path_prefixes(prefixes);
+        self
+    }
+
+    /// Restricts runtime discovery to specific HTML tags.
+    pub fn discover_allowed_tags(
+        mut self,
+        tags: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allowed_tags(tags);
+        self
+    }
+
+    /// Restricts runtime discovery to specific HTML attributes.
+    pub fn discover_allowed_attributes(
+        mut self,
+        attributes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allowed_attributes(attributes);
+        self
+    }
+
+    /// Restricts runtime discovery to specific link types.
+    pub fn discover_allowed_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_allowed_link_types(link_types);
+        self
+    }
+
+    /// Excludes specific link types from runtime discovery.
+    pub fn discover_denied_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.config.discovery.link_extract_options = self
+            .config
+            .discovery
+            .link_extract_options
+            .with_denied_link_types(link_types);
         self
     }
 
