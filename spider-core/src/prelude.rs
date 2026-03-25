@@ -11,6 +11,7 @@ pub use crate::{
     CrawlerConfig,
     DiscoveryConfig,
     DiscoveryMode,
+    DiscoveryRule,
     // Core traits
     Downloader,
     Spider,

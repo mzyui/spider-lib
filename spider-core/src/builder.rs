@@ -28,7 +28,9 @@
 
 use crate::Downloader;
 use crate::ReqwestClientDownloader;
-use crate::config::{CheckpointConfig, CrawlerConfig, DiscoveryConfig, DiscoveryMode};
+use crate::config::{
+    CheckpointConfig, CrawlerConfig, DiscoveryConfig, DiscoveryMode, DiscoveryRule,
+};
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
 use spider_middleware::middleware::Middleware;
@@ -311,6 +313,18 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Replaces the full discovery configuration.
     pub fn discovery(mut self, discovery: DiscoveryConfig) -> Self {
         self.config.discovery = discovery;
+        self
+    }
+
+    /// Replaces runtime discovery rules.
+    pub fn discovery_rules(mut self, rules: impl IntoIterator<Item = DiscoveryRule>) -> Self {
+        self.config.discovery.rules = rules.into_iter().collect();
+        self
+    }
+
+    /// Adds a runtime discovery rule.
+    pub fn add_discovery_rule(mut self, rule: DiscoveryRule) -> Self {
+        self.config.discovery.rules.push(rule);
         self
     }
 

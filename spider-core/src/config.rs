@@ -26,6 +26,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use spider_util::response::{LinkExtractOptions, LinkType};
+use url::Url;
 
 /// Runtime discovery mode applied to each downloaded response.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,264 @@ pub enum DiscoveryMode {
     SitemapOnly,
 }
 
+/// Rule-like configuration for runtime-managed discovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryRule {
+    /// Stable rule name injected into request/response metadata when matched.
+    pub name: String,
+    /// URL patterns that the source response must match.
+    pub allow_patterns: Vec<String>,
+    /// URL patterns that exclude the source response.
+    pub deny_patterns: Vec<String>,
+    /// Domains or subdomains allowed for the source response.
+    pub allow_domains: Vec<String>,
+    /// Domains or subdomains denied for the source response.
+    pub deny_domains: Vec<String>,
+    /// Path prefixes allowed for the source response.
+    pub allow_path_prefixes: Vec<String>,
+    /// Path prefixes denied for the source response.
+    pub deny_path_prefixes: Vec<String>,
+    /// Link extraction behavior used when the rule matches.
+    pub link_extract_options: LinkExtractOptions,
+}
+
+impl DiscoveryRule {
+    /// Creates a new discovery rule with the provided name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            allow_patterns: Vec::new(),
+            deny_patterns: Vec::new(),
+            allow_domains: Vec::new(),
+            deny_domains: Vec::new(),
+            allow_path_prefixes: Vec::new(),
+            deny_path_prefixes: Vec::new(),
+            link_extract_options: LinkExtractOptions::default(),
+        }
+    }
+
+    /// Replaces the link extraction options used by this rule.
+    pub fn with_link_extract_options(mut self, options: LinkExtractOptions) -> Self {
+        self.link_extract_options = options;
+        self
+    }
+
+    /// Restricts this rule to source response URLs that match at least one pattern.
+    pub fn with_allow_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_patterns = patterns.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Excludes this rule for source response URLs that match any pattern.
+    pub fn with_deny_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_patterns = patterns.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Restricts this rule to source response domains or subdomains.
+    pub fn with_allow_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_domains = domains.into_iter().map(normalize_domain_filter).collect();
+        self
+    }
+
+    /// Excludes this rule for source response domains or subdomains.
+    pub fn with_deny_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_domains = domains.into_iter().map(normalize_domain_filter).collect();
+        self
+    }
+
+    /// Restricts this rule to source response paths with one of the provided prefixes.
+    pub fn with_allow_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.allow_path_prefixes = prefixes.into_iter().map(normalize_path_prefix).collect();
+        self
+    }
+
+    /// Excludes this rule for source response paths with one of the provided prefixes.
+    pub fn with_deny_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.deny_path_prefixes = prefixes.into_iter().map(normalize_path_prefix).collect();
+        self
+    }
+
+    /// Sets whether only same-site links should be extracted for matching responses.
+    pub fn with_same_site_only(mut self, enabled: bool) -> Self {
+        self.link_extract_options.same_site_only = enabled;
+        self
+    }
+
+    /// Sets whether text content should be scanned for plain-text URLs.
+    pub fn with_text_links(mut self, enabled: bool) -> Self {
+        self.link_extract_options.include_text_links = enabled;
+        self
+    }
+
+    /// Restricts discovered follow-up links to matching patterns.
+    pub fn with_follow_allow_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_patterns(patterns);
+        self
+    }
+
+    /// Excludes discovered follow-up links that match the given patterns.
+    pub fn with_follow_deny_patterns(
+        mut self,
+        patterns: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_patterns(patterns);
+        self
+    }
+
+    /// Restricts discovered follow-up links to the given domains or subdomains.
+    pub fn with_follow_allow_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_domains(domains);
+        self
+    }
+
+    /// Excludes discovered follow-up links for the given domains or subdomains.
+    pub fn with_follow_deny_domains(
+        mut self,
+        domains: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_domains(domains);
+        self
+    }
+
+    /// Restricts discovered follow-up links to the provided path prefixes.
+    pub fn with_follow_allow_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allow_path_prefixes(prefixes);
+        self
+    }
+
+    /// Excludes discovered follow-up links for the provided path prefixes.
+    pub fn with_follow_deny_path_prefixes(
+        mut self,
+        prefixes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_deny_path_prefixes(prefixes);
+        self
+    }
+
+    /// Restricts attribute extraction to specific HTML tags for matching responses.
+    pub fn with_allowed_tags(mut self, tags: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.link_extract_options = self.link_extract_options.with_allowed_tags(tags);
+        self
+    }
+
+    /// Restricts attribute extraction to specific HTML attributes for matching responses.
+    pub fn with_allowed_attributes(
+        mut self,
+        attributes: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.link_extract_options = self
+            .link_extract_options
+            .with_allowed_attributes(attributes);
+        self
+    }
+
+    /// Restricts discovered follow-up links to the provided link types.
+    pub fn with_allowed_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.link_extract_options = self
+            .link_extract_options
+            .with_allowed_link_types(link_types);
+        self
+    }
+
+    /// Excludes the provided link types from discovered follow-up links.
+    pub fn with_denied_link_types(
+        mut self,
+        link_types: impl IntoIterator<Item = LinkType>,
+    ) -> Self {
+        self.link_extract_options = self.link_extract_options.with_denied_link_types(link_types);
+        self
+    }
+
+    pub(crate) fn matches_response(&self, url: &Url) -> bool {
+        let absolute_url = url.as_str();
+        if !self.allow_patterns.is_empty()
+            && !self
+                .allow_patterns
+                .iter()
+                .any(|pattern| glob_matches(pattern, absolute_url))
+        {
+            return false;
+        }
+
+        if self
+            .deny_patterns
+            .iter()
+            .any(|pattern| glob_matches(pattern, absolute_url))
+        {
+            return false;
+        }
+
+        let host = url.host_str().unwrap_or_default();
+        if !self.allow_domains.is_empty()
+            && !self
+                .allow_domains
+                .iter()
+                .any(|domain| domain_matches(host, domain))
+        {
+            return false;
+        }
+
+        if self
+            .deny_domains
+            .iter()
+            .any(|domain| domain_matches(host, domain))
+        {
+            return false;
+        }
+
+        let path = url.path();
+        if !self.allow_path_prefixes.is_empty()
+            && !self
+                .allow_path_prefixes
+                .iter()
+                .any(|prefix| path.starts_with(prefix))
+        {
+            return false;
+        }
+
+        if self
+            .deny_path_prefixes
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+        {
+            return false;
+        }
+
+        true
+    }
+}
+
 /// Discovery-specific runtime configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryConfig {
@@ -55,6 +314,8 @@ pub struct DiscoveryConfig {
     pub extract_page_metadata: bool,
     /// Base link extraction options used for HTML discovery.
     pub link_extract_options: LinkExtractOptions,
+    /// Optional rule-like link discovery behavior matched against source responses.
+    pub rules: Vec<DiscoveryRule>,
 }
 
 impl Default for DiscoveryConfig {
@@ -65,6 +326,7 @@ impl Default for DiscoveryConfig {
             max_sitemap_depth: 4,
             extract_page_metadata: false,
             link_extract_options: LinkExtractOptions::default(),
+            rules: Vec::new(),
         }
     }
 }
@@ -102,6 +364,18 @@ impl DiscoveryConfig {
     /// Replaces the base link extraction options.
     pub fn with_link_extract_options(mut self, options: LinkExtractOptions) -> Self {
         self.link_extract_options = options;
+        self
+    }
+
+    /// Replaces the configured discovery rules.
+    pub fn with_rules(mut self, rules: impl IntoIterator<Item = DiscoveryRule>) -> Self {
+        self.rules = rules.into_iter().collect();
+        self
+    }
+
+    /// Adds a single discovery rule.
+    pub fn with_rule(mut self, rule: DiscoveryRule) -> Self {
+        self.rules.push(rule);
         self
     }
 
@@ -210,8 +484,14 @@ impl DiscoveryConfig {
 
     /// Returns the effective link extraction options for the configured mode.
     pub fn effective_link_extract_options(&self) -> Option<LinkExtractOptions> {
-        let mut options = self.link_extract_options.clone();
+        self.effective_link_extract_options_for(self.link_extract_options.clone())
+    }
 
+    /// Returns the effective link extraction options for a specific rule or override.
+    pub fn effective_link_extract_options_for(
+        &self,
+        mut options: LinkExtractOptions,
+    ) -> Option<LinkExtractOptions> {
         match self.mode {
             DiscoveryMode::Disabled | DiscoveryMode::SitemapOnly => None,
             DiscoveryMode::HtmlLinks | DiscoveryMode::HtmlAndMetadata => {
@@ -228,6 +508,63 @@ impl DiscoveryConfig {
     pub fn should_extract_metadata(&self) -> bool {
         self.extract_page_metadata || matches!(self.mode, DiscoveryMode::HtmlAndMetadata)
     }
+}
+
+fn normalize_domain_filter(domain: impl Into<String>) -> String {
+    domain
+        .into()
+        .trim()
+        .trim_start_matches('.')
+        .to_ascii_lowercase()
+}
+
+fn normalize_path_prefix(prefix: impl Into<String>) -> String {
+    let prefix = prefix.into();
+    let prefix = prefix.trim();
+    if prefix.is_empty() || prefix == "/" {
+        "/".to_string()
+    } else if prefix.starts_with('/') {
+        prefix.to_string()
+    } else {
+        format!("/{prefix}")
+    }
+}
+
+fn domain_matches(host: &str, filter: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    let filter = filter.to_ascii_lowercase();
+    host == filter || host.ends_with(&format!(".{filter}"))
+}
+
+fn glob_matches(pattern: &str, input: &str) -> bool {
+    let pattern = pattern.as_bytes();
+    let input = input.as_bytes();
+    let (mut p, mut s) = (0usize, 0usize);
+    let mut last_star = None;
+    let mut match_after_star = 0usize;
+
+    while s < input.len() {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p] == input[s]) {
+            p += 1;
+            s += 1;
+        } else if p < pattern.len() && pattern[p] == b'*' {
+            last_star = Some(p);
+            p += 1;
+            match_after_star = s;
+        } else if let Some(star_idx) = last_star {
+            p = star_idx + 1;
+            match_after_star += 1;
+            s = match_after_star;
+        } else {
+            return false;
+        }
+    }
+
+    while p < pattern.len() && pattern[p] == b'*' {
+        p += 1;
+    }
+
+    p == pattern.len()
 }
 
 /// Core runtime configuration for the crawler.

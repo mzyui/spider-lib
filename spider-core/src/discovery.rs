@@ -6,10 +6,12 @@ use quick_xml::Reader;
 use quick_xml::events::Event;
 use spider_util::request::Request;
 use spider_util::response::{PageMetadata, Response};
+use std::collections::HashSet;
 use url::Url;
 
 const PAGE_METADATA_META_KEY: &str = "__page_metadata";
 const DISCOVERY_SOURCE_META_KEY: &str = "__discovery_source";
+const DISCOVERY_RULE_META_KEY: &str = "__discovery_rule";
 const SITEMAP_DEPTH_META_KEY: &str = "__sitemap_depth";
 const SITEMAP_SOURCE_VALUE: &str = "sitemap";
 const HTML_DISCOVERY_SOURCE_VALUE: &str = "html-discovery";
@@ -42,15 +44,56 @@ pub fn discover_response(response: &Response, config: &DiscoveryConfig) -> Disco
 
     let mut requests = Vec::new();
 
-    if let Some(options) = config.effective_link_extract_options()
-        && looks_like_html(response)
-    {
-        requests.extend(response.links_iter(options).map(|link| {
-            Request::new(link.url).with_meta(
-                DISCOVERY_SOURCE_META_KEY,
-                serde_json::Value::String(HTML_DISCOVERY_SOURCE_VALUE.to_string()),
-            )
-        }));
+    if looks_like_html(response) {
+        if !config.rules.is_empty() {
+            let mut seen = HashSet::new();
+            let mut matched_any_rule = false;
+
+            for rule in config
+                .rules
+                .iter()
+                .filter(|rule| rule.matches_response(&response.url))
+            {
+                let Some(options) =
+                    config.effective_link_extract_options_for(rule.link_extract_options.clone())
+                else {
+                    continue;
+                };
+                matched_any_rule = true;
+
+                for link in response.links_iter(options) {
+                    let request = Request::new(link.url)
+                        .with_meta(
+                            DISCOVERY_SOURCE_META_KEY,
+                            serde_json::Value::String(HTML_DISCOVERY_SOURCE_VALUE.to_string()),
+                        )
+                        .with_meta(
+                            DISCOVERY_RULE_META_KEY,
+                            serde_json::Value::String(rule.name.clone()),
+                        );
+
+                    if seen.insert(request.fingerprint()) {
+                        requests.push(request);
+                    }
+                }
+            }
+
+            if !matched_any_rule && let Some(options) = config.effective_link_extract_options() {
+                requests.extend(response.links_iter(options).map(|link| {
+                    Request::new(link.url).with_meta(
+                        DISCOVERY_SOURCE_META_KEY,
+                        serde_json::Value::String(HTML_DISCOVERY_SOURCE_VALUE.to_string()),
+                    )
+                }));
+            }
+        } else if let Some(options) = config.effective_link_extract_options() {
+            requests.extend(response.links_iter(options).map(|link| {
+                Request::new(link.url).with_meta(
+                    DISCOVERY_SOURCE_META_KEY,
+                    serde_json::Value::String(HTML_DISCOVERY_SOURCE_VALUE.to_string()),
+                )
+            }));
+        }
     }
 
     if config.discover_sitemaps
@@ -104,6 +147,11 @@ pub fn attach_page_metadata(response: &mut Response, metadata: &PageMetadata) {
 /// Metadata key used for page metadata injection.
 pub fn page_metadata_meta_key() -> &'static str {
     PAGE_METADATA_META_KEY
+}
+
+/// Metadata key used for matched discovery rule names.
+pub fn discovery_rule_meta_key() -> &'static str {
+    DISCOVERY_RULE_META_KEY
 }
 
 fn looks_like_html(response: &Response) -> bool {
