@@ -22,6 +22,11 @@ The workspace is split into small crates, but the root crate is the easiest plac
 
 If you only need to fetch one or two pages, the lower ceremony of plain `reqwest` may still be a better fit.
 
+By default, the built-in reqwest downloader now sends a balanced set of
+browser-like headers when a request does not already define them. That helps
+HTML crawling behave more like a normal browser without taking control away
+from spiders or middleware that set headers explicitly.
+
 ## Installation
 
 ```toml
@@ -45,6 +50,16 @@ For most projects, the smoothest path is:
 
 Only drop to the lower-level crates when you need deeper runtime control or
 want to publish reusable extensions.
+
+If you are crawling APIs or want a minimal request shape, disable the default
+header profile with:
+
+```rust,ignore
+let crawler = CrawlerBuilder::new(MySpider)
+    .browser_like_headers(false)
+    .build()
+    .await?;
+```
 
 ## Quick start
 
@@ -217,8 +232,8 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
-For more structured crawling, you can define named discovery rules and inspect
-the matched rule name from response metadata inside `parse`:
+For more structured crawling, you can define named discovery rules and route
+parse logic without manual metadata matching:
 
 ```rust,ignore
 let listing_rule = DiscoveryRule::new("listing")
@@ -234,7 +249,11 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 
 // later in parse:
-let rule_name: Option<String> = response.meta_value("__discovery_rule")?;
+route_by_rule!(
+    response,
+    "listing" => self.parse_listing(response, state).await,
+    _ => self.parse_default(response, state).await,
+);
 ```
 
 Example:

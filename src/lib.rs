@@ -116,6 +116,7 @@ pub mod prelude;
 /// use spider_lib::prelude::*;
 /// ```
 pub use prelude::*;
+pub use spider_core::route_by_rule;
 
 // Re-export procedural macros
 pub use spider_macro::scraped_item;

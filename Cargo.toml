@@ -133,6 +133,10 @@ name = "all_features"
 path = "examples/all_features.rs"
 
 [[example]]
+name = "rules"
+path = "examples/rules.rs"
+
+[[example]]
 name = "books_live"
 path = "examples/books_live.rs"
 required-features = ["live-stats", "pipeline-csv"]
