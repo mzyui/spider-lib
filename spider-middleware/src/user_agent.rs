@@ -179,20 +179,27 @@ impl UserAgentMiddlewareBuilder {
     }
 
     /// Sets a fallback User-Agent to use if no other User-Agents are available.
-    pub fn fallback_user_agent(mut self, fallback_user_agent: String) -> Self {
-        self.fallback_user_agent = Some(fallback_user_agent);
+    pub fn fallback_user_agent(
+        mut self,
+        fallback_user_agent: impl Into<String>,
+    ) -> Self {
+        self.fallback_user_agent = Some(fallback_user_agent.into());
         self
     }
 
     /// Adds a domain-specific User-Agent source.
-    pub fn per_domain_source(self, domain: String, source: UserAgentSource) -> Self {
-        self.per_domain_source.insert(domain, source);
+    pub fn per_domain_source(self, domain: impl Into<String>, source: UserAgentSource) -> Self {
+        self.per_domain_source.insert(domain.into(), source);
         self
     }
 
     /// Adds a domain-specific User-Agent rotation strategy, overriding the default.
-    pub fn per_domain_strategy(self, domain: String, strategy: UserAgentRotationStrategy) -> Self {
-        self.per_domain_strategy.insert(domain, strategy);
+    pub fn per_domain_strategy(
+        self,
+        domain: impl Into<String>,
+        strategy: UserAgentRotationStrategy,
+    ) -> Self {
+        self.per_domain_strategy.insert(domain.into(), strategy);
         self
     }
 

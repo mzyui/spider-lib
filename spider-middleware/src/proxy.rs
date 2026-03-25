@@ -70,8 +70,12 @@ impl ProxyMiddlewareBuilder {
 
     /// Sets the texts to detect in the response body to trigger a proxy rotation.
     /// This is only used with the `StickyFailover` strategy.
-    pub fn with_block_detection_texts(mut self, texts: Vec<String>) -> Self {
-        self.block_detection_texts = texts;
+    pub fn with_block_detection_texts<I, S>(mut self, texts: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.block_detection_texts = texts.into_iter().map(Into::into).collect();
         self
     }
 

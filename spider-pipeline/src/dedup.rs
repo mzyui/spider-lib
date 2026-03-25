@@ -20,13 +20,21 @@ pub struct DeduplicationPipeline<I: ScrapedItem> {
 
 impl<I: ScrapedItem> DeduplicationPipeline<I> {
     /// Creates a new `DeduplicationPipeline` with a specified set of unique fields.
-    pub fn new(unique_fields: &[&str]) -> Self {
+    pub fn new<F, S>(unique_fields: F) -> Self
+    where
+        F: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        let unique_fields: Vec<String> = unique_fields
+            .into_iter()
+            .map(|field| field.as_ref().to_string())
+            .collect();
         info!(
             "Initializing DeduplicationPipeline with unique fields: {:?}",
             unique_fields
         );
         DeduplicationPipeline {
-            unique_fields: unique_fields.iter().map(|&s| s.to_string()).collect(),
+            unique_fields,
             seen_hashes: DashSet::new(),
             _phantom: PhantomData,
         }

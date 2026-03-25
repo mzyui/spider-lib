@@ -51,8 +51,11 @@ impl RetryMiddleware {
     }
 
     /// Sets the HTTP status codes that should trigger a retry.
-    pub fn retry_http_codes(mut self, retry_http_codes: Vec<u16>) -> Self {
-        self.retry_http_codes = retry_http_codes;
+    pub fn retry_http_codes<I>(mut self, retry_http_codes: I) -> Self
+    where
+        I: IntoIterator<Item = u16>,
+    {
+        self.retry_http_codes = retry_http_codes.into_iter().collect();
         self
     }
 
