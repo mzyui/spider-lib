@@ -179,10 +179,7 @@ impl UserAgentMiddlewareBuilder {
     }
 
     /// Sets a fallback User-Agent to use if no other User-Agents are available.
-    pub fn fallback_user_agent(
-        mut self,
-        fallback_user_agent: impl Into<String>,
-    ) -> Self {
+    pub fn fallback_user_agent(mut self, fallback_user_agent: impl Into<String>) -> Self {
         self.fallback_user_agent = Some(fallback_user_agent.into());
         self
     }
