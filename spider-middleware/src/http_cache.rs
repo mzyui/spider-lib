@@ -159,8 +159,8 @@ pub struct HttpCacheMiddlewareBuilder {
 
 impl HttpCacheMiddlewareBuilder {
     /// Sets the directory where cache files will be stored.
-    pub fn cache_dir(mut self, path: PathBuf) -> Self {
-        self.cache_dir = Some(path);
+    pub fn cache_dir(mut self, path: impl Into<PathBuf>) -> Self {
+        self.cache_dir = Some(path.into());
         self
     }
 
