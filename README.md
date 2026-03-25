@@ -217,6 +217,26 @@ let crawler = CrawlerBuilder::new(MySpider)
     .await?;
 ```
 
+For more structured crawling, you can define named discovery rules and inspect
+the matched rule name from response metadata inside `parse`:
+
+```rust,ignore
+let listing_rule = DiscoveryRule::new("listing")
+    .with_allow_path_prefixes(["/catalogue/"])
+    .with_allowed_tags(["a"])
+    .with_allowed_attributes(["href"])
+    .with_follow_allow_path_prefixes(["/catalogue/"]);
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .discovery_mode(DiscoveryMode::HtmlLinks)
+    .add_discovery_rule(listing_rule)
+    .build()
+    .await?;
+
+// later in parse:
+let rule_name: Option<String> = response.meta_value("__discovery_rule")?;
+```
+
 Example:
 
 ```toml
