@@ -131,6 +131,13 @@ impl<S: Spider> CrawlerBuilder<S, ReqwestClientDownloader> {
             ..Default::default()
         }
     }
+
+    /// Enables or disables balanced browser-like default headers for the built-in reqwest downloader.
+    pub fn browser_like_headers(mut self, enabled: bool) -> Self {
+        self.config.browser_like_headers = enabled;
+        self.downloader = self.downloader.with_browser_like_headers(enabled);
+        self
+    }
 }
 
 impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {

@@ -33,7 +33,7 @@ use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use crate::{
     config::DiscoveryConfig,
-    discovery::{attach_page_metadata, discover_response},
+    discovery::{attach_page_metadata, discover_response, discovery_rule_meta_key},
 };
 use kanal::{AsyncReceiver, AsyncSender};
 use log::{debug, error, info, trace, warn};
@@ -66,6 +66,14 @@ fn spawn_parser_worker<S>(
             let discovery = discover_response(&response, &discovery_config);
             if let Some(metadata) = discovery.metadata.as_ref() {
                 attach_page_metadata(&mut response, metadata);
+            }
+            if response.get_meta(discovery_rule_meta_key()).is_none()
+                && let Some(rule_name) = discovery.rule_name.as_ref()
+            {
+                response.insert_meta(
+                    discovery_rule_meta_key().to_string(),
+                    serde_json::Value::String(rule_name.clone()),
+                );
             }
 
             let start_time = Instant::now();

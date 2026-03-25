@@ -21,6 +21,8 @@ const HTML_DISCOVERY_SOURCE_VALUE: &str = "html-discovery";
 pub struct DiscoveryOutcome {
     /// Structured metadata extracted from the page.
     pub metadata: Option<PageMetadata>,
+    /// Matched discovery rule name for the current response, if any.
+    pub rule_name: Option<String>,
     /// Additional requests produced by discovery.
     pub requests: Vec<Request>,
 }
@@ -42,6 +44,12 @@ pub fn discover_response(response: &Response, config: &DiscoveryConfig) -> Disco
         None
     };
 
+    let rule_name = config
+        .rules
+        .iter()
+        .find(|rule| rule.matches_response(&response.url))
+        .map(|rule| rule.name.clone());
+
     let mut requests = Vec::new();
 
     if looks_like_html(response) {
@@ -62,6 +70,13 @@ pub fn discover_response(response: &Response, config: &DiscoveryConfig) -> Disco
                 matched_any_rule = true;
 
                 for link in response.links_iter(options) {
+                    let destination_rule = config
+                        .rules
+                        .iter()
+                        .find(|candidate| candidate.matches_response(&link.url))
+                        .map(|candidate| candidate.name.clone())
+                        .unwrap_or_else(|| rule.name.clone());
+
                     let request = Request::new(link.url)
                         .with_meta(
                             DISCOVERY_SOURCE_META_KEY,
@@ -69,7 +84,7 @@ pub fn discover_response(response: &Response, config: &DiscoveryConfig) -> Disco
                         )
                         .with_meta(
                             DISCOVERY_RULE_META_KEY,
-                            serde_json::Value::String(rule.name.clone()),
+                            serde_json::Value::String(destination_rule),
                         );
 
                     if seen.insert(request.fingerprint()) {
@@ -134,7 +149,11 @@ pub fn discover_response(response: &Response, config: &DiscoveryConfig) -> Disco
         }
     }
 
-    DiscoveryOutcome { metadata, requests }
+    DiscoveryOutcome {
+        metadata,
+        rule_name,
+        requests,
+    }
 }
 
 /// Attaches extracted page metadata to the response metadata map.

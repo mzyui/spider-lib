@@ -57,6 +57,25 @@ pub mod spider;
 pub mod state;
 pub mod stats;
 
+/// Routes parse logic based on the discovery rule name attached to a response.
+///
+/// This is a lightweight helper for rule-based crawling. The response is only
+/// consumed by the matched branch, so each branch may move it into a dedicated
+/// parse helper.
+#[macro_export]
+macro_rules! route_by_rule {
+    ($response:expr, _ => $default:expr $(,)?) => {
+        $default
+    };
+    ($response:expr, $rule:literal => $handler:expr, $($rest:tt)+) => {{
+        if $response.matches_discovery_rule($rule) {
+            $handler
+        } else {
+            $crate::route_by_rule!($response, $($rest)+)
+        }
+    }};
+}
+
 // Re-export SchedulerCheckpoint and Checkpoint (when checkpoint feature is enabled)
 #[cfg(feature = "checkpoint")]
 pub use checkpoint::{Checkpoint, SchedulerCheckpoint};

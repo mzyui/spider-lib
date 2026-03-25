@@ -588,6 +588,8 @@ pub struct CrawlerConfig {
     pub item_backpressure_threshold: usize,
     /// When enabled, retries are scheduled outside the downloader permit path.
     pub retry_release_permit: bool,
+    /// Enables balanced browser-like default headers for the built-in reqwest downloader.
+    pub browser_like_headers: bool,
     /// Enables in-place live statistics updates on terminal stdout.
     pub live_stats: bool,
     /// Refresh interval for live statistics output.
@@ -620,6 +622,7 @@ impl Default for CrawlerConfig {
             response_backpressure_threshold: (max_concurrent_downloads * 6).min(channel_capacity),
             item_backpressure_threshold: (parser_workers * 6).min(channel_capacity),
             retry_release_permit: true,
+            browser_like_headers: true,
             live_stats: false,
             live_stats_interval: Duration::from_millis(50),
             live_stats_preview_fields: None,
@@ -687,6 +690,12 @@ impl CrawlerConfig {
     /// Controls whether retry delays release the downloader permit immediately.
     pub fn with_retry_release_permit(mut self, enabled: bool) -> Self {
         self.retry_release_permit = enabled;
+        self
+    }
+
+    /// Enables or disables balanced browser-like default headers for the built-in reqwest downloader.
+    pub fn with_browser_like_headers(mut self, enabled: bool) -> Self {
+        self.browser_like_headers = enabled;
         self
     }
 
