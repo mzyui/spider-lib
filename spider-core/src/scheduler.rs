@@ -632,7 +632,11 @@ impl Scheduler {
     /// # Errors
     ///
     /// Returns an error when the message cannot be delivered to the scheduler loop.
-    pub async fn mark_visited(&self, fingerprint: String) -> Result<(), SpiderError> {
+    pub async fn mark_visited(
+        &self,
+        fingerprint: impl Into<String>,
+    ) -> Result<(), SpiderError> {
+        let fingerprint = fingerprint.into();
         trace!(
             "Sending MarkAsVisited message for fingerprint: {}",
             fingerprint

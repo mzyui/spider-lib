@@ -274,8 +274,8 @@ impl VisitedUrls {
     }
 
     /// Marks a URL as visited.
-    pub fn mark(&self, url: String) {
-        self.urls.insert(url, true);
+    pub fn mark(&self, url: impl Into<String>) {
+        self.urls.insert(url.into(), true);
     }
 
     /// Checks if a URL has been visited.
