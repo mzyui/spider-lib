@@ -560,10 +560,10 @@ impl Request {
     ///     .with_meta("source", json!("manual"));
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_meta(mut self, key: &str, value: serde_json::Value) -> Self {
+    pub fn with_meta(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.meta
             .get_or_insert_with(|| Arc::new(DashMap::new()))
-            .insert(key.to_string(), value);
+            .insert(key.into(), value);
         self
     }
 
@@ -591,10 +591,10 @@ impl Request {
     /// Inserts a value into metadata, creating the map if needed.
     ///
     /// This is intended for internal framework use.
-    pub fn insert_meta(&mut self, key: String, value: serde_json::Value) {
+    pub fn insert_meta(&mut self, key: impl Into<String>, value: serde_json::Value) {
         self.meta
             .get_or_insert_with(|| Arc::new(DashMap::new()))
-            .insert(key, value);
+            .insert(key.into(), value);
     }
 
     /// Gets a value from metadata using DashMap's API.

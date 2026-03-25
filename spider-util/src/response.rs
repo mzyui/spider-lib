@@ -338,10 +338,10 @@ impl Response {
     }
 
     /// Inserts a metadata value, lazily allocating the map if needed.
-    pub fn insert_meta(&mut self, key: String, value: serde_json::Value) {
+    pub fn insert_meta(&mut self, key: impl Into<String>, value: serde_json::Value) {
         self.meta
             .get_or_insert_with(|| Arc::new(DashMap::new()))
-            .insert(key, value);
+            .insert(key.into(), value);
     }
 
     /// Returns a clone of the internal metadata map, if present.
