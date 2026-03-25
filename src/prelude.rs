@@ -18,6 +18,7 @@ pub use spider_core::{
     CrawlerConfig,
     DiscoveryConfig,
     DiscoveryMode,
+    DiscoveryRule,
     // Core traits
     Downloader,
     ReqwestClientDownloader,
