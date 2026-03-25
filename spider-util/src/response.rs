@@ -489,6 +489,14 @@ impl Response {
             .and_then(|m| m.get(key).map(|entry| entry.value().clone()))
     }
 
+    /// Deserializes a metadata value into the requested type.
+    pub fn meta_value<T>(&self, key: &str) -> Result<Option<T>, serde_json::Error>
+    where
+        T: DeserializeOwned,
+    {
+        self.get_meta(key).map(serde_json::from_value).transpose()
+    }
+
     /// Inserts a metadata value, lazily allocating the map if needed.
     pub fn insert_meta(&mut self, key: impl Into<String>, value: serde_json::Value) {
         self.meta
