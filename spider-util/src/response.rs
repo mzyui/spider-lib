@@ -55,6 +55,8 @@ thread_local! {
     static HTML_CACHE: RefCell<HashMap<u64, Html>> = RefCell::new(HashMap::new());
 }
 
+const DISCOVERY_RULE_META_KEY: &str = "__discovery_rule";
+
 /// Classification for links discovered in a response.
 ///
 /// ## Variants
@@ -495,6 +497,17 @@ impl Response {
         T: DeserializeOwned,
     {
         self.get_meta(key).map(serde_json::from_value).transpose()
+    }
+
+    /// Returns the runtime discovery rule name attached to this response, if any.
+    pub fn discovery_rule_name(&self) -> Option<String> {
+        self.get_meta(DISCOVERY_RULE_META_KEY)
+            .and_then(|value| value.as_str().map(ToOwned::to_owned))
+    }
+
+    /// Returns `true` when the response was reached through the named discovery rule.
+    pub fn matches_discovery_rule(&self, rule_name: &str) -> bool {
+        self.discovery_rule_name().as_deref() == Some(rule_name)
     }
 
     /// Inserts a metadata value, lazily allocating the map if needed.
