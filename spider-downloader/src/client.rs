@@ -8,6 +8,7 @@ use crate::Downloader;
 use async_trait::async_trait;
 use log::{Level, debug, log_enabled, warn};
 use moka::sync::Cache;
+use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, USER_AGENT};
 use reqwest::{Client, Proxy};
 use spider_util::error::SpiderError;
 use spider_util::request::{Body, Request};
@@ -18,6 +19,7 @@ use std::time::Duration;
 pub struct ReqwestClientDownloader {
     client: Client,
     timeout: Duration,
+    browser_like_headers: bool,
     /// Per-proxy clients with TTL/capacity bounds to avoid unbounded growth.
     proxy_clients: Cache<String, Client>,
 }
@@ -46,10 +48,12 @@ impl Downloader for ReqwestClientDownloader {
         let Request {
             url: request_url,
             method,
-            headers,
+            mut headers,
             body,
             ..
         } = request;
+
+        self.apply_default_headers(&mut headers);
 
         let mut req_builder = client_to_use.request(method, request_url.clone());
 
@@ -85,6 +89,9 @@ impl ReqwestClientDownloader {
     const PROXY_CLIENT_CACHE_TTL_SECS: u64 = 30 * 60;
     const PROXY_META_KEY: &str = "proxy";
     const DEFAULT_USER_AGENT: &'static str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36";
+    const DEFAULT_ACCEPT: &'static str =
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    const DEFAULT_ACCEPT_LANGUAGE: &'static str = "en-US,en;q=0.9";
 
     /// Creates a new `ReqwestClientDownloader` with a default timeout of 30 seconds.
     pub fn new() -> Self {
@@ -116,11 +123,18 @@ impl ReqwestClientDownloader {
         Ok(ReqwestClientDownloader {
             client: base_client,
             timeout,
+            browser_like_headers: true,
             proxy_clients: Cache::builder()
                 .max_capacity(Self::PROXY_CLIENT_CACHE_MAX_CAPACITY)
                 .time_to_idle(Duration::from_secs(Self::PROXY_CLIENT_CACHE_TTL_SECS))
                 .build(),
         })
+    }
+
+    /// Enables or disables balanced browser-like default headers when request headers are missing.
+    pub fn with_browser_like_headers(mut self, enabled: bool) -> Self {
+        self.browser_like_headers = enabled;
+        self
     }
 
     fn proxy_from_request(request: &Request) -> Option<String> {
@@ -153,8 +167,7 @@ impl ReqwestClientDownloader {
             .pool_idle_timeout(pool_idle_timeout)
             .tcp_keepalive(tcp_keepalive)
             .tcp_nodelay(true)
-            .connect_timeout(connect_timeout)
-            .user_agent(Self::DEFAULT_USER_AGENT);
+            .connect_timeout(connect_timeout);
 
         if let Some(proxy) = proxy {
             builder = builder.proxy(proxy);
@@ -173,6 +186,16 @@ impl ReqwestClientDownloader {
         }
 
         self.client.clone()
+    }
+
+    fn apply_default_headers(&self, headers: &mut HeaderMap) {
+        if !self.browser_like_headers {
+            return;
+        }
+
+        insert_if_missing(headers, USER_AGENT, Self::DEFAULT_USER_AGENT);
+        insert_if_missing(headers, ACCEPT, Self::DEFAULT_ACCEPT);
+        insert_if_missing(headers, ACCEPT_LANGUAGE, Self::DEFAULT_ACCEPT_LANGUAGE);
     }
 
     /// Gets or creates a proxy-specific client to preserve connection pooling per proxy endpoint.
@@ -223,4 +246,16 @@ impl Default for ReqwestClientDownloader {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn insert_if_missing(
+    headers: &mut HeaderMap,
+    name: reqwest::header::HeaderName,
+    value: &'static str,
+) {
+    if headers.contains_key(&name) {
+        return;
+    }
+
+    headers.insert(name, HeaderValue::from_static(value));
 }
