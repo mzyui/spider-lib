@@ -29,6 +29,54 @@ use serde_json::Value;
 use std::any::Any;
 use std::fmt::Debug;
 
+/// Stable field kinds used by typed item schema metadata.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum FieldValueType {
+    Bool,
+    Integer,
+    Float,
+    String,
+    Json,
+    Sequence,
+    Map,
+    Unknown,
+}
+
+/// Static schema metadata for a single item field.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ItemFieldSchema {
+    pub name: String,
+    pub rust_type: String,
+    pub value_type: FieldValueType,
+    pub nullable: bool,
+}
+
+/// Static schema metadata for a scraped item type.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ItemSchema {
+    pub item_name: String,
+    pub version: u32,
+    pub fields: Vec<ItemFieldSchema>,
+}
+
+impl ItemSchema {
+    /// Returns the fields in their declared order.
+    pub fn fields(&self) -> &[ItemFieldSchema] {
+        &self.fields
+    }
+}
+
+/// Trait for typed item definitions that can expose static schema metadata.
+pub trait TypedItemSchema {
+    /// Returns the typed schema for the item.
+    fn schema() -> ItemSchema;
+
+    /// Returns the schema version used by the item.
+    fn schema_version() -> u32 {
+        1
+    }
+}
+
 /// The output returned by a spider's `parse` method.
 #[derive(Debug, Clone)]
 pub struct ParseOutput<I> {
@@ -101,6 +149,14 @@ pub trait ScrapedItem: Debug + Send + Sync + Any + 'static {
     fn box_clone(&self) -> Box<dyn ScrapedItem + Send + Sync>;
     /// Converts the item to a `serde_json::Value`.
     fn to_json_value(&self) -> Value;
+    /// Returns typed schema metadata when the item type exposes it.
+    fn item_schema(&self) -> Option<ItemSchema> {
+        None
+    }
+    /// Returns the schema version used by this item.
+    fn item_schema_version(&self) -> u32 {
+        1
+    }
 }
 
 impl Clone for Box<dyn ScrapedItem + Send + Sync> {

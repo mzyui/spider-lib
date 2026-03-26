@@ -74,6 +74,10 @@ pub struct MetricsSnapshot {
     pub items_scraped: usize,
     pub items_processed: usize,
     pub items_dropped_by_pipeline: usize,
+    pub queue_depth: usize,
+    pub parser_backlog: usize,
+    pub pipeline_backlog: usize,
+    pub retry_backlog: usize,
     pub response_status_counts: std::collections::HashMap<u16, usize>,
     pub elapsed_duration: Duration,
     pub average_request_time: Option<Duration>,
@@ -220,6 +224,7 @@ pub fn format_plain_text_metrics<T: MetricsSnapshotProvider>(snapshot: &T) -> St
          ratios   : success {}, failure {}, cache hit {}\n\
          response : received {}, cache {}, downloaded {}, bytes/s {}\n\
          delay    : retry in flight {} ms\n\
+         backlog  : queue {}, parser {}, pipeline {}, retry {}\n\
          items    : scraped {}, processed {}, dropped {}\n\
          current  : {}\n\
          req time : avg {}, fastest {}, slowest {}, total {}\n\
@@ -245,6 +250,10 @@ pub fn format_plain_text_metrics<T: MetricsSnapshotProvider>(snapshot: &T) -> St
         snapshot.formatted_bytes(),
         bytes_per_second,
         snapshot.get_retry_delay_in_flight_ms(),
+        snapshot.get_queue_depth(),
+        snapshot.get_parser_backlog(),
+        snapshot.get_pipeline_backlog(),
+        snapshot.get_retry_backlog(),
         snapshot.get_items_scraped(),
         snapshot.get_items_processed(),
         snapshot.get_items_dropped_by_pipeline(),
@@ -315,6 +324,10 @@ pub trait MetricsSnapshotProvider {
     fn get_items_scraped(&self) -> usize;
     fn get_items_processed(&self) -> usize;
     fn get_items_dropped_by_pipeline(&self) -> usize;
+    fn get_queue_depth(&self) -> usize;
+    fn get_parser_backlog(&self) -> usize;
+    fn get_pipeline_backlog(&self) -> usize;
+    fn get_retry_backlog(&self) -> usize;
     fn get_response_status_counts(&self) -> &std::collections::HashMap<u16, usize>;
     fn get_elapsed_duration(&self) -> Duration;
     fn get_average_request_time(&self) -> Option<Duration>;
@@ -389,6 +402,22 @@ impl MetricsSnapshotProvider for MetricsSnapshot {
 
     fn get_items_dropped_by_pipeline(&self) -> usize {
         self.items_dropped_by_pipeline
+    }
+
+    fn get_queue_depth(&self) -> usize {
+        self.queue_depth
+    }
+
+    fn get_parser_backlog(&self) -> usize {
+        self.parser_backlog
+    }
+
+    fn get_pipeline_backlog(&self) -> usize {
+        self.pipeline_backlog
+    }
+
+    fn get_retry_backlog(&self) -> usize {
+        self.retry_backlog
     }
 
     fn get_response_status_counts(&self) -> &std::collections::HashMap<u16, usize> {

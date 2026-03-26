@@ -693,10 +693,9 @@ impl Response {
                     .split_ascii_whitespace()
                     .any(|token| token.eq_ignore_ascii_case("canonical"))
                     && metadata.canonical_url.is_none()
+                    && let Ok(url) = self.url.join(href)
                 {
-                    if let Ok(url) = self.url.join(href) {
-                        metadata.canonical_url = Some(url);
-                    }
+                    metadata.canonical_url = Some(url);
                 }
 
                 let is_alternate = rel
