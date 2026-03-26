@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["calculate_rate","format_bytes","format_duration","format_request_time"],"struct":["DefaultByteFormatter","DefaultDurationFormatter","DefaultRateCalculator"],"trait":["ByteFormatter","DurationFormatter","RateCalculator"]};

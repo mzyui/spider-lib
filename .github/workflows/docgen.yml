@@ -1,25 +1,20 @@
-
 name: Cargo Docs
 
 on:
   push:
     branches:
       - main
-    paths-ignore:
-      - "docs/**"
   workflow_dispatch:
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: cargo-docs-pages
+  group: cargo-docs-branch
   cancel-in-progress: true
 
 jobs:
-  build-docs:
+  publish-docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -37,13 +32,13 @@ jobs:
       - name: Build Cargo documentation
         run: cargo doc --workspace --all-features --no-deps
 
-      - name: Copy docs to repository docs folder
+      - name: Prepare documentation site
         run: |
-          rm -rf docs
-          mkdir -p docs
-          cp -R target/doc/. docs/
-          touch docs/.nojekyll
-          cat > docs/index.html <<'EOF'
+          rm -rf site
+          mkdir -p site
+          cp -R target/doc/. site/
+          touch site/.nojekyll
+          cat > site/index.html <<'EOF'
           <!DOCTYPE html>
           <html lang="en">
             <head>
@@ -58,37 +53,41 @@ jobs:
           </html>
           EOF
 
-      - name: Commit generated docs
+      - name: Publish docs to gh-pages branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git add -A docs
+          set -eu
 
-          if git diff --cached --quiet -- docs; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin gh-pages || true
+
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add --force ../gh-pages origin/gh-pages
+          else
+            git worktree add --force --detach ../gh-pages
+            cd ../gh-pages
+            git checkout --orphan gh-pages
+            git rm -rf . >/dev/null 2>&1 || true
+            cd "$GITHUB_WORKSPACE"
+          fi
+
+          find ../gh-pages -mindepth 1 -maxdepth 1 \
+            ! -name '.git' \
+            ! -name '.github' \
+            -exec rm -rf {} +
+
+          cp -R site/. ../gh-pages/
+
+          cd ../gh-pages
+          git add -A
+
+          if git diff --cached --quiet; then
             echo "No documentation changes to commit."
             exit 0
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "docs: update cargo docs [skip ci]"
-          git push
-
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: docs
-
-  deploy-pages:
-    needs: build-docs
-    runs-on: ubuntu-latest
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["console","csv","dedup","json","jsonl","pipeline","schema","sqlite","stream_json","transform","validation"]};

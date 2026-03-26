@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["save_checkpoint"],"struct":["Checkpoint","SchedulerCheckpoint"]};

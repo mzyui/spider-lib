@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"attr":["scraped_item"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["export_schema_for_item","map_item_for_export","sqlite_type_for_field"],"struct":["SchemaExportConfig","SchemaTransformPipeline","SchemaValidationPipeline","SchemaViolation"]};

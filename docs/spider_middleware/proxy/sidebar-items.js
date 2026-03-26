@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["ProxyRotationStrategy","ProxySource"],"struct":["ProxyMiddleware","ProxyMiddlewareBuilder"]};

@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["create_dir","is_same_site","normalize_origin","validate_output_dir"],"trait":["ToSelector"]};

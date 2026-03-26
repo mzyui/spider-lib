@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["CrawlShapePreset","DiscoveryMode"],"struct":["CheckpointConfig","CheckpointConfigBuilder","CrawlerConfig","DiscoveryConfig","DiscoveryRule","DownloaderConfig","ItemProcessorConfig","ParserConfig"]};

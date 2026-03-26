@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["Scope"],"struct":["AdaptiveLimiter","RateLimitMiddleware","RateLimitMiddlewareBuilder","TokenBucketLimiter"],"trait":["RateLimiter"]};

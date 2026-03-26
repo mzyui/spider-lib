@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"attr":["async_trait","scraped_item"],"macro":["route_by_rule"],"mod":["builder","checkpoint","config","discovery","engine","prelude","scheduler","spider","state","stats"],"struct":["CookieStore","DashMap","ReqwestClientDownloader"],"trait":["Downloader","HttpClient"]};

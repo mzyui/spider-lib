@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["attach_page_metadata","discover_response","discovery_rule_meta_key","page_metadata_meta_key"],"struct":["DiscoveryOutcome"]};

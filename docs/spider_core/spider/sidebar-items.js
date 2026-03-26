@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["StartRequests"],"trait":["Spider"],"type":["StartRequestIter"]};
