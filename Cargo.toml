@@ -129,8 +129,37 @@ name = "minimal"
 path = "examples/minimal.rs"
 
 [[example]]
-name = "all_features"
-path = "examples/all_features.rs"
+name = "showcase_state"
+path = "examples/showcase_state.rs"
+
+[[example]]
+name = "showcase_middleware"
+path = "examples/showcase_middleware.rs"
+required-features = [
+    "middleware-autothrottle",
+    "middleware-cache",
+    "middleware-proxy",
+    "middleware-user-agent",
+    "middleware-robots",
+    "middleware-cookies",
+    "cookie-store",
+]
+
+[[example]]
+name = "showcase_pipelines"
+path = "examples/showcase_pipelines.rs"
+required-features = [
+    "pipeline-json",
+    "pipeline-jsonl",
+    "pipeline-csv",
+    "pipeline-sqlite",
+    "pipeline-stream-json",
+]
+
+[[example]]
+name = "showcase_runtime"
+path = "examples/showcase_runtime.rs"
+required-features = ["live-stats", "checkpoint"]
 
 [[example]]
 name = "rules"

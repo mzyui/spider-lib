@@ -12,6 +12,7 @@
 
 /// Core runtime types and traits used to define and run a crawl.
 pub use spider_core::{
+    CrawlShapePreset,
     // Core structs
     Crawler,
     CrawlerBuilder,
@@ -38,6 +39,7 @@ pub use spider_core::{
     tokio,
 };
 
+pub use spider_util::item::{FieldValueType, ItemFieldSchema, ItemSchema, TypedItemSchema};
 /// Item contracts and parse results returned by [`Spider::parse`].
 pub use spider_util::item::{ParseOutput, ScrapedItem};
 
@@ -89,6 +91,9 @@ pub use spider_middleware::cookies::CookieMiddleware;
 pub use spider_pipeline::{
     console::ConsolePipeline,
     dedup::DeduplicationPipeline,
+    schema::{
+        SchemaExportConfig, SchemaTransformPipeline, SchemaValidationPipeline, SchemaViolation,
+    },
     transform::{TransformOperation, TransformPipeline},
     validation::{JsonType, ValidationPipeline, ValidationRule},
 };

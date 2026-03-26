@@ -18,6 +18,7 @@ The workspace is split into small crates, but the root crate is the easiest plac
 - shared crawl state
 - middleware for retries, rate limiting, cookies, robots, or proxying
 - pipelines for validation, deduplication, and output
+- typed item schemas that can drive validation and export mapping
 - a runtime that keeps the crawling loop organized
 
 If you only need to fetch one or two pages, the lower ceremony of plain `reqwest` may still be a better fit.
@@ -50,6 +51,36 @@ For most projects, the smoothest path is:
 
 Only drop to the lower-level crates when you need deeper runtime control or
 want to publish reusable extensions.
+
+## Typed data workflow
+
+`#[scraped_item]` now generates typed schema metadata in addition to the
+existing `ScrapedItem` implementation. That schema can drive validation,
+export ordering, and schema-version tagging without forcing you to hand-maintain
+JSON field lists.
+
+```rust,ignore
+use spider_lib::prelude::*;
+
+#[scraped_item]
+struct Quote {
+    text: String,
+    author: String,
+    tags: Vec<String>,
+    source_url: Option<String>,
+}
+
+let crawler = CrawlerBuilder::new(MySpider)
+    .crawl_shape_preset(CrawlShapePreset::ApiHeavy)
+    .add_pipeline(SchemaValidationPipeline::<Quote>::new().expect_schema_version(1))
+    .add_pipeline(
+        CsvPipeline::new("output/quotes.csv")?.with_schema_export_config(
+            SchemaExportConfig::new().with_field_alias("source_url", "url"),
+        ),
+    )
+    .build()
+    .await?;
+```
 
 If you are crawling APIs or want a minimal request shape, disable the default
 header profile with:
@@ -136,16 +167,24 @@ cargo run --example sitemap
 
 That example crawls `books.toscrape.com` and prints the final page and item counts.
 
-There are also two feature-gated examples:
+There are also several feature-gated showcase examples:
 
 ```bash
-cargo run --example all_features --all-features
+cargo run --example showcase_state
+cargo run --example showcase_middleware --features "middleware-autothrottle middleware-cache middleware-proxy middleware-user-agent middleware-robots middleware-cookies cookie-store"
+cargo run --example showcase_pipelines --features "pipeline-json pipeline-jsonl pipeline-csv pipeline-sqlite pipeline-stream-json"
+cargo run --example showcase_runtime --features "live-stats checkpoint"
 cargo run --example books_live --features "live-stats pipeline-csv"
 cargo run --example kusonime --features "live-stats pipeline-stream-json"
 ```
 
-`all_features` is a compile-first showcase that demonstrates facade usage, shared
-state primitives, and feature-gated middleware/pipelines in one place.
+`showcase_state` demonstrates facade usage plus shared state primitives.
+
+`showcase_middleware` focuses on request/response middleware composition.
+
+`showcase_pipelines` writes the same scraped item through the maintained output pipelines.
+
+`showcase_runtime` focuses on builder tuning, live stats, and checkpoint configuration.
 
 `books_live` writes CSV output to `output/books_live.csv`.
 
