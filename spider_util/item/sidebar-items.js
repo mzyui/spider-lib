@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["FieldValueType"],"struct":["ItemFieldSchema","ItemSchema","ParseOutput"],"trait":["ScrapedItem","TypedItemSchema"]};

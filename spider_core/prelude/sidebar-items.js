@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":["async_trait","scraped_item"],"enum":["LinkType","MiddlewareAction","PipelineError","SpiderError"],"struct":["Link","LinkExtractOptions","LinkSource","PageMetadata","Request","Response"],"trait":["Downloader","Middleware"]};

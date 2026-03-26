@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PipelineError","SpiderError"],"struct":["ReqwestError"]};

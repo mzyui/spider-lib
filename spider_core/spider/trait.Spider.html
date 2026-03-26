@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Defines the contract for a spider."><title>Spider in spider_core::spider - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-77263533.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="spider_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.94.0 (4a4ef493e 2026-03-02)" data-channel="1.94.0" data-search-js="search-9e2438ea.js" data-stringdex-js="stringdex-b897f86f.js" data-settings-js="settings-c38705f0.js" ><script src="../../static.files/storage-e2aeef58.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-7bab91a1.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-ffcac47a.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Spider</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../spider_core/index.html">spider_<wbr>core</a><span class="version">2.0.2</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Spider</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#type-parameters" title="Type Parameters">Type Parameters</a></li><li><a href="#design-notes" title="Design Notes">Design Notes</a></li></ul><h3><a href="#required-associated-types">Required Associated Types</a></h3><ul class="block"><li><a href="#associatedtype.Item" title="Item">Item</a></li><li><a href="#associatedtype.State" title="State">State</a></li></ul><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.parse" title="parse">parse</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.start_requests" title="start_requests">start_requests</a></li><li><a href="#method.start_urls" title="start_urls">start_urls</a></li></ul><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In spider_<wbr>core::<wbr>spider</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">spider_core</a>::<wbr><a href="index.html">spider</a></div><h1>Trait <span class="trait">Spider</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/spider_core/spider.rs.html#212-371">Source</a> </span></div><pre class="rust item-decl"><code>pub trait Spider:
+    <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a>
+    + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a>
+    + 'static {
+    type <a href="#associatedtype.Item" class="associatedtype">Item</a>: ScrapedItem;
+    type <a href="#associatedtype.State" class="associatedtype">State</a>: <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html" title="trait core::default::Default">Default</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a>;
+
+    // Required method
+    fn <a href="#tymethod.parse" class="fn">parse</a>&lt;'life0, 'life1, 'async_trait&gt;(
+        &amp;'life0 self,
+        response: <a class="struct" href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response">Response</a>,
+        state: &amp;'life1 Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.State" title="type spider_core::spider::Spider::State">State</a>,
+    ) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.0/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.0/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;ParseOutput&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;
+       <span class="where">where Self: 'async_trait,
+             'life0: 'async_trait,
+             'life1: 'async_trait</span>;
+
+    // Provided methods
+    fn <a href="#method.start_urls" class="fn">start_urls</a>(&amp;self) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;&amp;'static <a class="primitive" href="https://doc.rust-lang.org/1.94.0/std/primitive.str.html">str</a>&gt; { ... }
+<span class="item-spacer"></span>    fn <a href="#method.start_requests" class="fn">start_requests</a>(&amp;self) -&gt; <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;<a class="enum" href="enum.StartRequests.html" title="enum spider_core::spider::StartRequests">StartRequests</a>&lt;'_&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt; { ... }
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Defines the contract for a spider.</p>
+<h3 id="type-parameters"><a class="doc-anchor" href="#type-parameters">§</a>Type Parameters</h3>
+<ul>
+<li><code>Item</code>: The type of scraped data structure (must implement [<code>ScrapedItem</code>])</li>
+<li><code>State</code>: The type of shared state (must implement <code>Default</code>)</li>
+</ul>
+<h3 id="design-notes"><a class="doc-anchor" href="#design-notes">§</a>Design Notes</h3>
+<p>The trait uses <code>&amp;self</code> (immutable reference) instead of <code>&amp;mut self</code> for the
+<a href="trait.Spider.html#tymethod.parse" title="method spider_core::spider::Spider::parse"><code>parse</code></a> method. This design enables efficient concurrent crawling
+by eliminating the need for mutex locks when accessing the spider from multiple
+async tasks. State that needs mutation should be stored in the associated
+<code>State</code> type using thread-safe primitives like <code>Arc&lt;AtomicUsize&gt;</code> or <code>DashMap</code>.</p>
+<p>A typical crawl lifecycle looks like this:</p>
+<ol>
+<li><a href="trait.Spider.html#method.start_requests" title="method spider_core::spider::Spider::start_requests"><code>start_requests</code></a> produces the initial requests</li>
+<li>the runtime schedules and downloads them</li>
+<li><a href="trait.Spider.html#tymethod.parse" title="method spider_core::spider::Spider::parse"><code>parse</code></a> turns each <a href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response"><code>Response</code></a> into a [<code>ParseOutput</code>]</li>
+<li>emitted items go to pipelines and emitted requests go back to the scheduler</li>
+</ol>
+</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.Item" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#219">Source</a><h4 class="code-header">type <a href="#associatedtype.Item" class="associatedtype">Item</a>: ScrapedItem</h4></section></summary><div class="docblock"><p>The type of item that the spider scrapes.</p>
+<p>This associated type must implement the [<code>ScrapedItem</code>] trait, which
+provides methods for type erasure, cloning, and JSON serialization.
+Use the <code>#[scraped_item]</code> procedural macro to automatically implement
+all required traits for your data structures.</p>
+</div></details><details class="toggle" open><summary><section id="associatedtype.State" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#240">Source</a><h4 class="code-header">type <a href="#associatedtype.State" class="associatedtype">State</a>: <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/default/trait.Default.html" title="trait core::default::Default">Default</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a></h4></section></summary><div class="docblock"><p>The type of state that the spider uses.</p>
+<p>The state type must implement <code>Default</code> so it can be instantiated
+automatically by the crawler. It should also be <code>Send + Sync</code> to
+enable safe concurrent access from multiple async tasks.</p>
+<h6 id="example"><a class="doc-anchor" href="#example">§</a>Example</h6>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::sync::Arc;
+<span class="kw">use </span>std::sync::atomic::{AtomicUsize, Ordering};
+<span class="kw">use </span>dashmap::DashMap;
+
+<span class="attr">#[derive(Clone, Default)]
+</span><span class="kw">struct </span>MySpiderState {
+    page_count: Arc&lt;AtomicUsize&gt;,
+    visited_urls: Arc&lt;DashMap&lt;String, bool&gt;&gt;,
+}</code></pre></div></div></details></div><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.parse" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#366-370">Source</a><h4 class="code-header">fn <a href="#tymethod.parse" class="fn">parse</a>&lt;'life0, 'life1, 'async_trait&gt;(
+    &amp;'life0 self,
+    response: <a class="struct" href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response">Response</a>,
+    state: &amp;'life1 Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.State" title="type spider_core::spider::Spider::State">State</a>,
+) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.0/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.0/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;ParseOutput&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;<div class="where">where
+    Self: 'async_trait,
+    'life0: 'async_trait,
+    'life1: 'async_trait,</div></h4></section></summary><div class="docblock"><p>Parses a response and extracts scraped items and new requests.</p>
+<h5 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h5>
+<p>This is the primary method where scraping logic is implemented. It receives
+a <a href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response"><code>Response</code></a> object and should extract structured data (items) and/or
+discover new URLs to crawl (requests).</p>
+<h6 id="parameters"><a class="doc-anchor" href="#parameters">§</a>Parameters</h6>
+<ul>
+<li><code>response</code>: The HTTP response to parse, containing the body, headers, and URL</li>
+<li><code>state</code>: A shared reference to the spider’s state, which can be used to
+track information across multiple parse calls</li>
+</ul>
+<h6 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h6>
+<p>Returns a [<code>ParseOutput</code>] containing:</p>
+<ul>
+<li>Scraped items of type <code>Self::Item</code></li>
+<li>New <a href="../prelude/struct.Request.html" title="struct spider_core::prelude::Request"><code>Request</code></a> objects to be enqueued</li>
+</ul>
+<p>The usual pattern is:</p>
+<ul>
+<li>call [<code>ParseOutput::new</code>]</li>
+<li>add zero or more items with [<code>ParseOutput::add_item</code>] or <code>add_items</code></li>
+<li>add zero or more follow-up requests with [<code>ParseOutput::add_request</code>]
+or <code>add_requests</code></li>
+<li>return the accumulated output</li>
+</ul>
+<h6 id="design-notes-1"><a class="doc-anchor" href="#design-notes-1">§</a>Design Notes</h6>
+<p>This method takes an immutable reference to <code>self</code> (<code>&amp;self</code>) instead of
+mutable (<code>&amp;mut self</code>), eliminating the need for mutex locks when accessing
+the spider in concurrent environments. State that needs to be modified
+should be stored in the <code>State</code> type using thread-safe primitives.</p>
+<h5 id="errors-1"><a class="doc-anchor" href="#errors-1">§</a>Errors</h5>
+<p>Returns a <a href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError"><code>SpiderError</code></a> if parsing fails or if an unrecoverable error
+occurs during processing.</p>
+<h5 id="example-1"><a class="doc-anchor" href="#example-1">§</a>Example</h5>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>parse(<span class="kw-2">&amp;</span><span class="self">self</span>, response: Response, state: <span class="kw-2">&amp;</span><span class="self">Self</span>::State) -&gt; <span class="prelude-ty">Result</span>&lt;ParseOutput&lt;<span class="self">Self</span>::Item&gt;, SpiderError&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>output = ParseOutput::new();
+
+    <span class="comment">// Parse HTML and extract data
+    </span><span class="kw">if let </span><span class="prelude-val">Ok</span>(html) = response.to_html() {
+        <span class="comment">// ... extraction logic ...
+    </span>}
+
+    <span class="prelude-val">Ok</span>(output)
+}</code></pre></div></div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.start_urls" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#252-254">Source</a><h4 class="code-header">fn <a href="#method.start_urls" class="fn">start_urls</a>(&amp;self) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;&amp;'static <a class="primitive" href="https://doc.rust-lang.org/1.94.0/std/primitive.str.html">str</a>&gt;</h4></section></summary><div class="docblock"><p>Returns static seed URLs.</p>
+<p>This method is optional and useful for simple spiders. The default
+<a href="trait.Spider.html#method.start_requests" title="method spider_core::spider::Spider::start_requests"><code>start_requests</code></a> implementation converts these
+URLs into a request iterator.</p>
+<p>Prefer this method when plain URL strings are enough. Override
+<a href="trait.Spider.html#method.start_requests" title="method spider_core::spider::Spider::start_requests"><code>start_requests</code></a> instead when you need custom
+headers, methods, request metadata, seed-file loading, or dynamic seed
+generation.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.start_requests" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#291-293">Source</a><h4 class="code-header">fn <a href="#method.start_requests" class="fn">start_requests</a>(&amp;self) -&gt; <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;<a class="enum" href="enum.StartRequests.html" title="enum spider_core::spider::StartRequests">StartRequests</a>&lt;'_&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;</h4></section></summary><div class="docblock"><p>Returns the initial request source used to start crawling.</p>
+<p>The default implementation converts <a href="trait.Spider.html#method.start_urls" title="method spider_core::spider::Spider::start_urls"><code>start_urls</code></a>
+into an iterator.</p>
+<p>To load from seed file, return <code>StartRequests::file(path)</code>.
+To use a fixed list of URL strings, return <code>StartRequests::Urls(...)</code>.
+To use custom generation logic, return <code>StartRequests::iter(...)</code>.</p>
+<p>This method is the better override point whenever initial requests need
+more than a URL string, such as per-request metadata, POST bodies, or
+custom headers.</p>
+<h6 id="example-2"><a class="doc-anchor" href="#example-2">§</a>Example</h6>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>start_requests(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;StartRequests&lt;<span class="lifetime">'_</span>&gt;, SpiderError&gt; {
+    <span class="prelude-val">Ok</span>(StartRequests::file(<span class="string">"seeds/start_urls.txt"</span>))
+}</code></pre></div></div></details></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"></div><script src="../../trait.impl/spider_core/spider/trait.Spider.js" async></script></section></div></main></body></html>
