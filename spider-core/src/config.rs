@@ -567,6 +567,15 @@ fn glob_matches(pattern: &str, input: &str) -> bool {
     p == pattern.len()
 }
 
+/// Guided runtime presets for common crawl shapes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CrawlShapePreset {
+    Broad,
+    Deep,
+    Sitemap,
+    ApiHeavy,
+}
+
 /// Core runtime configuration for the crawler.
 #[derive(Debug, Clone)]
 pub struct CrawlerConfig {
@@ -735,6 +744,62 @@ impl CrawlerConfig {
     /// Sets the maximum number of scraped items to process before stopping the crawl.
     pub fn with_item_limit(mut self, limit: usize) -> Self {
         self.item_limit = Some(limit);
+        self
+    }
+
+    /// Applies a guided set of concurrency defaults for a common crawl shape.
+    pub fn with_crawl_shape_preset(mut self, preset: CrawlShapePreset) -> Self {
+        let cpu_count = num_cpus::get();
+        match preset {
+            CrawlShapePreset::Broad => {
+                self.max_concurrent_downloads = (cpu_count * 6).clamp(12, 192);
+                self.max_pending_requests = (self.max_concurrent_downloads * 10).clamp(128, 8192);
+                self.parser_workers = (cpu_count * 2).clamp(4, 32);
+                self.max_concurrent_pipelines = (cpu_count * 2).clamp(4, 16);
+                self.channel_capacity = (self.max_pending_requests / 2).clamp(512, 4096);
+                self.output_batch_size = 32;
+                self.response_backpressure_threshold =
+                    (self.max_concurrent_downloads * 4).min(self.channel_capacity);
+                self.item_backpressure_threshold =
+                    (self.parser_workers * 6).min(self.channel_capacity);
+            }
+            CrawlShapePreset::Deep => {
+                self.max_concurrent_downloads = (cpu_count * 3).clamp(8, 96);
+                self.max_pending_requests = (self.max_concurrent_downloads * 4).clamp(64, 2048);
+                self.parser_workers = (cpu_count * 2).clamp(4, 24);
+                self.max_concurrent_pipelines = (cpu_count * 2).clamp(4, 16);
+                self.channel_capacity = (self.max_pending_requests / 2).clamp(256, 2048);
+                self.output_batch_size = 24;
+                self.response_backpressure_threshold =
+                    (self.max_concurrent_downloads * 5).min(self.channel_capacity);
+                self.item_backpressure_threshold =
+                    (self.parser_workers * 5).min(self.channel_capacity);
+            }
+            CrawlShapePreset::Sitemap => {
+                self.max_concurrent_downloads = (cpu_count * 5).clamp(10, 160);
+                self.max_pending_requests = (self.max_concurrent_downloads * 8).clamp(128, 8192);
+                self.parser_workers = cpu_count.clamp(2, 12);
+                self.max_concurrent_pipelines = (cpu_count * 2).clamp(4, 12);
+                self.channel_capacity = (self.max_pending_requests / 2).clamp(512, 4096);
+                self.output_batch_size = 96;
+                self.response_backpressure_threshold =
+                    (self.max_concurrent_downloads * 6).min(self.channel_capacity);
+                self.item_backpressure_threshold =
+                    (self.parser_workers * 8).min(self.channel_capacity);
+            }
+            CrawlShapePreset::ApiHeavy => {
+                self.max_concurrent_downloads = (cpu_count * 3).clamp(8, 96);
+                self.max_pending_requests = (self.max_concurrent_downloads * 6).clamp(96, 4096);
+                self.parser_workers = cpu_count.clamp(2, 8);
+                self.max_concurrent_pipelines = (cpu_count * 3).clamp(4, 24);
+                self.channel_capacity = (self.max_pending_requests / 2).clamp(256, 4096);
+                self.output_batch_size = 48;
+                self.response_backpressure_threshold =
+                    (self.max_concurrent_downloads * 5).min(self.channel_capacity);
+                self.item_backpressure_threshold =
+                    (self.max_concurrent_pipelines * 4).min(self.channel_capacity);
+            }
+        }
         self
     }
 

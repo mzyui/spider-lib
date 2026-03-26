@@ -29,7 +29,8 @@
 use crate::Downloader;
 use crate::ReqwestClientDownloader;
 use crate::config::{
-    CheckpointConfig, CrawlerConfig, DiscoveryConfig, DiscoveryMode, DiscoveryRule,
+    CheckpointConfig, CrawlShapePreset, CrawlerConfig, DiscoveryConfig, DiscoveryMode,
+    DiscoveryRule,
 };
 use crate::scheduler::Scheduler;
 use crate::spider::Spider;
@@ -168,6 +169,12 @@ impl<S: Spider, D: Downloader> CrawlerBuilder<S, D> {
     /// Defaults to twice the number of CPU cores, clamped between 4 and 64.
     pub fn max_concurrent_downloads(mut self, limit: usize) -> Self {
         self.config.max_concurrent_downloads = limit;
+        self
+    }
+
+    /// Applies guided concurrency defaults for a common crawl shape.
+    pub fn crawl_shape_preset(mut self, preset: CrawlShapePreset) -> Self {
+        self.config = self.config.with_crawl_shape_preset(preset);
         self
     }
 

@@ -454,6 +454,7 @@ async fn schedule_retry(
         tokio::spawn(async move {
             tokio::time::sleep(delay).await;
             stats.remove_retry_delay_in_flight(delay);
+            stats.complete_scheduled_retry();
             if scheduler.is_shutting_down.load(Ordering::SeqCst) {
                 debug!(
                     "Skipping retried request re-enqueue during shutdown for URL: {}",

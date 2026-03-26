@@ -22,7 +22,9 @@
 use parking_lot::RwLock;
 use spider_util::error::SpiderError;
 use spider_util::item::ScrapedItem;
-use spider_util::metrics::{ExpMovingAverage, MetricsSnapshotProvider, format_plain_text_metrics};
+use spider_util::metrics::{
+    ExpMovingAverage, MetricsSnapshot, MetricsSnapshotProvider, format_plain_text_metrics,
+};
 use std::{
     collections::HashMap,
     sync::{
@@ -49,6 +51,10 @@ struct StatsSnapshot {
     items_scraped: usize,
     items_processed: usize,
     items_dropped_by_pipeline: usize,
+    queue_depth: usize,
+    parser_backlog: usize,
+    pipeline_backlog: usize,
+    retry_backlog: usize,
     response_status_counts: HashMap<u16, usize>,
     elapsed_duration: Duration,
     average_request_time: Option<Duration>,
@@ -256,6 +262,22 @@ impl MetricsSnapshotProvider for StatsSnapshot {
         self.items_dropped_by_pipeline
     }
 
+    fn get_queue_depth(&self) -> usize {
+        self.queue_depth
+    }
+
+    fn get_parser_backlog(&self) -> usize {
+        self.parser_backlog
+    }
+
+    fn get_pipeline_backlog(&self) -> usize {
+        self.pipeline_backlog
+    }
+
+    fn get_retry_backlog(&self) -> usize {
+        self.retry_backlog
+    }
+
     fn get_response_status_counts(&self) -> &HashMap<u16, usize> {
         &self.response_status_counts
     }
@@ -354,6 +376,10 @@ pub struct StatCollector {
     pub items_scraped: AtomicUsize,
     pub items_processed: AtomicUsize,
     pub items_dropped_by_pipeline: AtomicUsize,
+    pub queue_depth: AtomicUsize,
+    pub parser_backlog: AtomicUsize,
+    pub pipeline_backlog: AtomicUsize,
+    pub retry_backlog: AtomicUsize,
 
     // Timing metrics - Using bounded LRU caches to prevent memory leaks
     // Only keeps recent entries (max 10,000 for requests, 1,000 for parsing)
@@ -411,6 +437,10 @@ impl StatCollector {
             items_scraped: AtomicUsize::new(0),
             items_processed: AtomicUsize::new(0),
             items_dropped_by_pipeline: AtomicUsize::new(0),
+            queue_depth: AtomicUsize::new(0),
+            parser_backlog: AtomicUsize::new(0),
+            pipeline_backlog: AtomicUsize::new(0),
+            retry_backlog: AtomicUsize::new(0),
             request_time_total_nanos: AtomicU64::new(0),
             request_time_fastest_nanos: AtomicU64::new(u64::MAX),
             request_time_slowest_nanos: AtomicU64::new(0),
@@ -430,7 +460,7 @@ impl StatCollector {
 
     /// Creates a snapshot of the current statistics.
     /// This is the single source of truth for all presentation logic.
-    fn snapshot(&self) -> StatsSnapshot {
+    fn internal_snapshot(&self) -> StatsSnapshot {
         let mut status_counts: HashMap<u16, usize> = HashMap::new();
         for entry in self.response_status_counts.iter() {
             let (key, value) = entry.pair();
@@ -457,6 +487,10 @@ impl StatCollector {
             items_scraped: self.items_scraped.load(Ordering::Acquire),
             items_processed: self.items_processed.load(Ordering::Acquire),
             items_dropped_by_pipeline: self.items_dropped_by_pipeline.load(Ordering::Acquire),
+            queue_depth: self.queue_depth.load(Ordering::Acquire),
+            parser_backlog: self.parser_backlog.load(Ordering::Acquire),
+            pipeline_backlog: self.pipeline_backlog.load(Ordering::Acquire),
+            retry_backlog: self.retry_backlog.load(Ordering::Acquire),
             response_status_counts: status_counts,
             elapsed_duration: self.start_time.elapsed(),
             average_request_time: self.average_request_time(),
@@ -473,6 +507,45 @@ impl StatCollector {
             recent_responses_per_second,
             recent_items_per_second,
             current_item_preview: self.current_item_preview.read().clone(),
+        }
+    }
+
+    /// Returns a public immutable snapshot of the current crawl metrics.
+    pub fn snapshot(&self) -> MetricsSnapshot {
+        let snapshot = self.internal_snapshot();
+        MetricsSnapshot {
+            requests_enqueued: snapshot.requests_enqueued,
+            requests_sent: snapshot.requests_sent,
+            requests_succeeded: snapshot.requests_succeeded,
+            requests_failed: snapshot.requests_failed,
+            requests_retried: snapshot.requests_retried,
+            requests_scheduled_for_retry: snapshot.requests_scheduled_for_retry,
+            requests_dropped: snapshot.requests_dropped,
+            retry_delay_in_flight_ms: snapshot.retry_delay_in_flight_ms,
+            responses_received: snapshot.responses_received,
+            responses_from_cache: snapshot.responses_from_cache,
+            total_bytes_downloaded: snapshot.total_bytes_downloaded,
+            items_scraped: snapshot.items_scraped,
+            items_processed: snapshot.items_processed,
+            items_dropped_by_pipeline: snapshot.items_dropped_by_pipeline,
+            queue_depth: snapshot.queue_depth,
+            parser_backlog: snapshot.parser_backlog,
+            pipeline_backlog: snapshot.pipeline_backlog,
+            retry_backlog: snapshot.retry_backlog,
+            response_status_counts: snapshot.response_status_counts,
+            elapsed_duration: snapshot.elapsed_duration,
+            average_request_time: snapshot.average_request_time,
+            fastest_request_time: snapshot.fastest_request_time,
+            slowest_request_time: snapshot.slowest_request_time,
+            request_time_count: snapshot.request_time_count,
+            average_parsing_time: snapshot.average_parsing_time,
+            fastest_parsing_time: snapshot.fastest_parsing_time,
+            slowest_parsing_time: snapshot.slowest_parsing_time,
+            parsing_time_count: snapshot.parsing_time_count,
+            recent_requests_per_second: snapshot.recent_requests_per_second,
+            recent_responses_per_second: snapshot.recent_responses_per_second,
+            recent_items_per_second: snapshot.recent_items_per_second,
+            current_item_preview: snapshot.current_item_preview,
         }
     }
 
@@ -512,6 +585,24 @@ impl StatCollector {
     pub(crate) fn increment_requests_scheduled_for_retry(&self) {
         self.requests_scheduled_for_retry
             .fetch_add(1, Ordering::AcqRel);
+        self.retry_backlog.fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Marks a scheduled retry as no longer waiting.
+    pub(crate) fn complete_scheduled_retry(&self) {
+        let mut current = self.retry_backlog.load(Ordering::Acquire);
+        loop {
+            let next = current.saturating_sub(1);
+            match self.retry_backlog.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break,
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     /// Adds the currently scheduled retry delay in milliseconds.
@@ -592,6 +683,19 @@ impl StatCollector {
     pub(crate) fn increment_items_dropped_by_pipeline(&self) {
         self.items_dropped_by_pipeline
             .fetch_add(1, Ordering::AcqRel);
+    }
+
+    /// Updates queue and worker backlog gauges used by snapshots and live stats.
+    pub(crate) fn update_runtime_backlog(
+        &self,
+        queue_depth: usize,
+        parser_backlog: usize,
+        pipeline_backlog: usize,
+    ) {
+        self.queue_depth.store(queue_depth, Ordering::Release);
+        self.parser_backlog.store(parser_backlog, Ordering::Release);
+        self.pipeline_backlog
+            .store(pipeline_backlog, Ordering::Release);
     }
 
     /// Records the time taken for a request.
@@ -707,17 +811,17 @@ impl StatCollector {
 
     /// Converts the snapshot into a JSON string.
     pub fn to_json_string(&self) -> Result<String, SpiderError> {
-        Ok(serde_json::to_string(self)?)
+        Ok(serde_json::to_string(&self.snapshot())?)
     }
 
     /// Converts the snapshot into a pretty-printed JSON string.
     pub fn to_json_string_pretty(&self) -> Result<String, SpiderError> {
-        Ok(serde_json::to_string_pretty(self)?)
+        Ok(serde_json::to_string_pretty(&self.snapshot())?)
     }
 
     /// Exports the current statistics to a Markdown formatted string.
     pub fn to_markdown_string(&self) -> String {
-        let snapshot = self.snapshot();
+        let snapshot = self.internal_snapshot();
 
         let status_codes_list: String = snapshot
             .response_status_counts
@@ -849,7 +953,7 @@ impl StatCollector {
 
     /// Exports current statistics to the text layout used for terminal output.
     pub fn to_live_report_string(&self) -> String {
-        let snapshot = self.snapshot();
+        let snapshot = self.internal_snapshot();
         format_plain_text_metrics(&snapshot)
     }
 }

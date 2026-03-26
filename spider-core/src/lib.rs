@@ -87,7 +87,7 @@ pub use spider_downloader::{Downloader, HttpClient, ReqwestClientDownloader};
 pub use cookie_store::CookieStore;
 
 pub use builder::CrawlerBuilder;
-pub use config::{CrawlerConfig, DiscoveryConfig, DiscoveryMode, DiscoveryRule};
+pub use config::{CrawlShapePreset, CrawlerConfig, DiscoveryConfig, DiscoveryMode, DiscoveryRule};
 pub use engine::Crawler;
 pub use scheduler::Scheduler;
 pub use spider_macro::scraped_item;

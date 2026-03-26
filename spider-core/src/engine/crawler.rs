@@ -199,6 +199,24 @@ where
             Arc::clone(&ctx.stats),
         );
 
+        let backlog_stats = Arc::clone(&ctx.stats);
+        let backlog_scheduler = Arc::clone(&ctx.scheduler);
+        let backlog_state = state.clone();
+        let backlog_task = tokio::spawn(async move {
+            loop {
+                backlog_stats.update_runtime_backlog(
+                    backlog_scheduler.pending_count(),
+                    backlog_state
+                        .parsing_responses
+                        .load(std::sync::atomic::Ordering::Acquire),
+                    backlog_state
+                        .processing_items
+                        .load(std::sync::atomic::Ordering::Acquire),
+                );
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        });
+
         #[cfg(feature = "live-stats")]
         let mut live_stats_task: Option<(
             oneshot::Sender<()>,
@@ -307,6 +325,7 @@ where
         trace!("Closing communication channels");
         drop(res_tx);
         drop(item_tx);
+        backlog_task.abort();
 
         if matches!(outcome, RunOutcome::Idle)
             && !scheduler

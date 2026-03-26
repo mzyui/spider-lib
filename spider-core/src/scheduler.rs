@@ -239,6 +239,11 @@ impl Scheduler {
         (scheduler, rx_out)
     }
 
+    /// Returns the number of requests currently tracked by the scheduler.
+    pub fn pending_count(&self) -> usize {
+        self.pending.load(Ordering::Acquire)
+    }
+
     async fn run_loop(
         &self,
         rx_internal: AsyncReceiver<SchedulerMessage>,
