@@ -11,7 +11,8 @@
 The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through `spider_lib::prelude::*`, so a normal application does not need to wire the lower-level crates by hand.
 
 For stable API documentation, use [docs.rs](https://docs.rs/spider-lib).
-For the most up-to-date usage notes and examples, use the README in this repository:
+For the latest upstream docs and updates, use <https://mzyui.github.io/spider-lib>.
+For the most up-to-date source README and examples, use this repository:
 <https://github.com/mzyui/spider-lib>.
 
 ## Why this crate exists
