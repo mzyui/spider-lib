@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["LinkType"],"struct":["Link","LinkExtractOptions","LinkSource","PageMetadata","Response"]};

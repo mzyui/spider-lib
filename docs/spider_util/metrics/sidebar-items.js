@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["format_plain_text_metrics"],"struct":["ExpMovingAverage","MetricsDisplayFormatter","MetricsSnapshot"],"trait":["MetricsExporter","MetricsSnapshotProvider","SnapshotProvider"]};

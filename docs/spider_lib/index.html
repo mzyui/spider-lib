@@ -1,0 +1,93 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="spider-lib"><title>spider_lib - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-77263533.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="spider_lib" data-themes="" data-resource-suffix="" data-rustdoc-version="1.94.0 (4a4ef493e 2026-03-02)" data-channel="1.94.0" data-search-js="search-9e2438ea.js" data-stringdex-js="stringdex-b897f86f.js" data-settings-js="settings-c38705f0.js" ><script src="../static.files/storage-e2aeef58.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-7bab91a1.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-ffcac47a.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate spider_lib</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../spider_lib/index.html">spider_<wbr>lib</a><span class="version">3.0.2</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#spider-lib" title="spider-lib">spider-lib</a><ul><li><a href="#what-you-get-from-the-facade-crate" title="What you get from the facade crate">What you get from the facade crate</a></li><li><a href="#installation" title="Installation">Installation</a></li><li><a href="#quick-start" title="Quick start">Quick start</a></li><li><a href="#typical-next-steps" title="Typical next steps">Typical next steps</a></li></ul></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#macros" title="Macros">Macros</a></li><li><a href="#attributes" title="Attribute Macros">Attribute Macros</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content"><div class="main-heading"><h1>Crate <span>spider_<wbr>lib</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/spider_lib/lib.rs.html#1-122">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="spider-lib"><a class="doc-anchor" href="#spider-lib">§</a>spider-lib</h2>
+<p><code>spider-lib</code> is the easiest way to use this workspace as an application
+framework. It re-exports the crawler runtime, common middleware and
+pipelines, shared request and response types, and the <code>#[scraped_item]</code>
+macro behind one crate.</p>
+<p>If you want the lower-level pieces individually, the workspace also exposes
+<code>spider-core</code>, <code>spider-middleware</code>, <code>spider-pipeline</code>, <code>spider-downloader</code>,
+<code>spider-macro</code>, and <code>spider-util</code>. Most users should start here.</p>
+<h3 id="what-you-get-from-the-facade-crate"><a class="doc-anchor" href="#what-you-get-from-the-facade-crate">§</a>What you get from the facade crate</h3>
+<p>The root crate is optimized for application authors:</p>
+<ul>
+<li><a href="prelude/index.html" title="mod spider_lib::prelude"><code>prelude</code></a> re-exports the common types needed to define and run a spider</li>
+<li><a href="prelude/trait.Spider.html" title="trait spider_lib::prelude::Spider"><code>Spider</code></a> describes crawl behavior</li>
+<li><a href="prelude/struct.CrawlerBuilder.html" title="struct spider_lib::prelude::CrawlerBuilder"><code>CrawlerBuilder</code></a> assembles the runtime</li>
+<li><a href="prelude/struct.Request.html" title="struct spider_lib::prelude::Request"><code>Request</code></a>, <a href="prelude/struct.Response.html" title="struct spider_lib::prelude::Response"><code>Response</code></a>, and <a href="prelude/struct.ParseOutput.html" title="struct spider_lib::prelude::ParseOutput"><code>ParseOutput</code></a> are the core runtime data types</li>
+<li>middleware and pipelines can be enabled with feature flags and then added
+through the builder</li>
+</ul>
+<h3 id="installation"><a class="doc-anchor" href="#installation">§</a>Installation</h3><div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+spider-lib = &quot;3.0.2&quot;
+serde = { version = &quot;1.0&quot;, features = [&quot;derive&quot;] }
+serde_json = &quot;1.0&quot;</code></pre></div>
+<p><code>serde</code> and <code>serde_json</code> are required when you use <a href="attr.scraped_item.html" title="attr spider_lib::scraped_item"><code>scraped_item</code></a>.</p>
+<h3 id="quick-start"><a class="doc-anchor" href="#quick-start">§</a>Quick start</h3>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>spider_lib::prelude::<span class="kw-2">*</span>;
+
+<span class="attr">#[scraped_item]
+</span><span class="kw">struct </span>Quote {
+    text: String,
+    author: String,
+}
+
+<span class="kw">struct </span>QuotesSpider;
+
+<span class="attr">#[async_trait]
+</span><span class="kw">impl </span>Spider <span class="kw">for </span>QuotesSpider {
+    <span class="kw">type </span>Item = Quote;
+    <span class="kw">type </span>State = ();
+
+    <span class="kw">fn </span>start_requests(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;StartRequests&lt;<span class="lifetime">'_</span>&gt;, SpiderError&gt; {
+        <span class="prelude-val">Ok</span>(StartRequests::Urls(<span class="macro">vec!</span>[<span class="string">"https://quotes.toscrape.com/"</span>]))
+    }
+
+    <span class="kw">async fn </span>parse(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        response: Response,
+        _state: <span class="kw-2">&amp;</span><span class="self">Self</span>::State,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;ParseOutput&lt;<span class="self">Self</span>::Item&gt;, SpiderError&gt; {
+        <span class="kw">let </span>html = response.to_html()<span class="question-mark">?</span>;
+        <span class="kw">let </span><span class="kw-2">mut </span>output = ParseOutput::new();
+
+        <span class="kw">for </span>quote <span class="kw">in </span>html.select(<span class="kw-2">&amp;</span><span class="string">".quote"</span>.to_selector()<span class="question-mark">?</span>) {
+            <span class="kw">let </span>text = quote
+                .select(<span class="kw-2">&amp;</span><span class="string">".text"</span>.to_selector()<span class="question-mark">?</span>)
+                .next()
+                .map(|node| node.text().collect::&lt;String&gt;())
+                .unwrap_or_default();
+
+            <span class="kw">let </span>author = quote
+                .select(<span class="kw-2">&amp;</span><span class="string">".author"</span>.to_selector()<span class="question-mark">?</span>)
+                .next()
+                .map(|node| node.text().collect::&lt;String&gt;())
+                .unwrap_or_default();
+
+            output.add_item(Quote { text, author });
+        }
+
+        <span class="prelude-val">Ok</span>(output)
+    }
+}
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;(), SpiderError&gt; {
+    <span class="kw">let </span>crawler = CrawlerBuilder::new(QuotesSpider).build().<span class="kw">await</span><span class="question-mark">?</span>;
+    crawler.start_crawl().<span class="kw">await
+</span>}</code></pre></div>
+<p><a href="prelude/trait.Spider.html#tymethod.parse" title="method spider_lib::prelude::Spider::parse"><code>Spider::parse</code></a> takes <code>&amp;self</code> and a separate shared state parameter.
+That design keeps the spider itself immutable while still allowing
+concurrent parsing with user-defined shared state.</p>
+<h3 id="typical-next-steps"><a class="doc-anchor" href="#typical-next-steps">§</a>Typical next steps</h3>
+<p>After the minimal spider works, the next additions are usually:</p>
+<ol>
+<li>add one or more middleware with <a href="prelude/struct.CrawlerBuilder.html#method.add_middleware" title="method spider_lib::prelude::CrawlerBuilder::add_middleware"><code>CrawlerBuilder::add_middleware</code></a></li>
+<li>add one or more pipelines with <a href="prelude/struct.CrawlerBuilder.html#method.add_pipeline" title="method spider_lib::prelude::CrawlerBuilder::add_pipeline"><code>CrawlerBuilder::add_pipeline</code></a></li>
+<li>move repeated parse-time state into <a href="prelude/trait.Spider.html#associatedtype.State" title="associated type spider_lib::prelude::Spider::State"><code>Spider::State</code></a></li>
+<li>enable optional features such as <code>live-stats</code>, <code>pipeline-csv</code>, or
+<code>middleware-robots</code></li>
+</ol>
+<p>If you find yourself needing transport-level customization, custom
+middleware contracts, or lower-level runtime control, move down to the
+crate-specific APIs in <code>spider-core</code>, <code>spider-downloader</code>,
+<code>spider-middleware</code>, or <code>spider-pipeline</code>.</p>
+</div></details><h2 id="reexports" class="section-header">Re-exports<a href="#reexports" class="anchor">§</a></h2><dl class="item-table reexports"><dt><code>pub use <a class="mod" href="prelude/index.html" title="mod spider_lib::prelude">prelude</a>::*;</code></dt></dl><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="prelude/index.html" title="mod spider_lib::prelude">prelude</a></dt><dd>Convenient re-exports for <code>spider-lib</code> applications.</dd></dl><h2 id="macros" class="section-header">Macros<a href="#macros" class="anchor">§</a></h2><dl class="item-table"><dt><a class="macro" href="macro.route_by_rule.html" title="macro spider_lib::route_by_rule">route_<wbr>by_<wbr>rule</a></dt><dd>Routes parse logic based on the discovery rule name attached to a response.</dd></dl><h2 id="attributes" class="section-header">Attribute Macros<a href="#attributes" class="anchor">§</a></h2><dl class="item-table"><dt><a class="attr" href="attr.scraped_item.html" title="attr spider_lib::scraped_item">scraped_<wbr>item</a></dt><dd>Attribute macro for defining a scraped item type.</dd></dl><script type="text/json" id="notable-traits-data">{"&[u8]":"<h3>Notable traits for <code>&amp;[<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u8.html\">u8</a>]</code></h3><pre><code><div class=\"where\">impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.94.0/std/io/trait.Read.html\" title=\"trait std::io::Read\">Read</a> for &amp;[<a class=\"primitive\" href=\"https://doc.rust-lang.org/1.94.0/std/primitive.u8.html\">u8</a>]</div>"}</script></section></div></main></body></html>

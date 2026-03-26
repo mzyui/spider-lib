@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"attr":["scraped_item"],"macro":["route_by_rule"],"mod":["prelude"]};
