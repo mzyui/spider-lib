@@ -3,15 +3,16 @@
 [![crates.io](https://img.shields.io/crates/v/spider-lib.svg)](https://crates.io/crates/spider-lib)
 [![crates.io downloads](https://img.shields.io/crates/d/spider-lib.svg)](https://crates.io/crates/spider-lib)
 [![rust edition](https://img.shields.io/badge/edition-2024-orange.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
-[![docs.rs](https://img.shields.io/docsrs/spider-lib)](https://docs.rs/spider-lib)
+[![stable docs](https://img.shields.io/docsrs/spider-lib?label=stable%20docs)](https://docs.rs/spider-lib)
+[![latest docs](https://img.shields.io/badge/latest-docs-blue)](https://mzyui.github.io/spider-lib)
 [![license](https://img.shields.io/crates/l/spider-lib.svg)](https://github.com/mzyui/spider-lib/blob/main/LICENSE)
 
 `spider-lib` is an async web scraping framework for Rust with a layout that will feel familiar if you have used Scrapy before: spiders define crawl logic, the runtime schedules and downloads requests, middleware can shape traffic, and pipelines handle extracted items.
 
 The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through `spider_lib::prelude::*`, so a normal application does not need to wire the lower-level crates by hand.
 
-For stable API documentation, use [docs.rs](https://docs.rs/spider-lib).
-For the latest upstream docs and updates, use <https://mzyui.github.io/spider-lib>.
+For stable API documentation, use the `stable docs` badge above.
+For the latest upstream docs and updates, use the `latest docs` badge above.
 For the most up-to-date source README and examples, use this repository:
 <https://github.com/mzyui/spider-lib>.
 
