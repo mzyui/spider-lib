@@ -23,6 +23,7 @@
 pub mod console;
 pub mod dedup;
 pub mod pipeline;
+pub mod schema;
 pub mod transform;
 pub mod validation;
 

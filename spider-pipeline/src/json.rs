@@ -4,6 +4,7 @@
 //! array when the pipeline is closed.
 
 use crate::pipeline::Pipeline;
+use crate::schema::{SchemaExportConfig, map_item_for_export};
 use async_trait::async_trait;
 use kanal::bounded_async;
 use log::{debug, error, info};
@@ -35,6 +36,7 @@ enum JsonCommand {
 /// Items are collected in a blocking task and written to disk when the pipeline is closed.
 pub struct JsonPipeline<I: ScrapedItem> {
     command_sender: kanal::AsyncSender<JsonCommand>,
+    export_config: Option<SchemaExportConfig>,
     _phantom: PhantomData<I>,
 }
 
@@ -109,8 +111,15 @@ impl<I: ScrapedItem> JsonPipeline<I> {
 
         Ok(JsonPipeline {
             command_sender,
+            export_config: None,
             _phantom: PhantomData,
         })
+    }
+
+    /// Applies typed export mapping before values are written.
+    pub fn with_schema_export_config(mut self, config: SchemaExportConfig) -> Self {
+        self.export_config = Some(config);
+        self
     }
 }
 
@@ -122,7 +131,7 @@ impl<I: ScrapedItem> Pipeline<I> for JsonPipeline<I> {
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
         debug!("JsonPipeline processing item.");
-        let json_value = item.to_json_value();
+        let json_value = map_item_for_export(&item, self.export_config.as_ref());
         self.command_sender
             .send(JsonCommand::Write(json_value))
             .await

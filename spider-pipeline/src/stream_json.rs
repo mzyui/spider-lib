@@ -4,6 +4,7 @@
 //! holding the full result set in memory.
 
 use crate::pipeline::Pipeline;
+use crate::schema::{SchemaExportConfig, map_item_for_export};
 use async_trait::async_trait;
 use kanal::bounded_async;
 use log::{debug, error, info};
@@ -25,6 +26,7 @@ enum StreamJsonCommand {
 /// A pipeline that streams items directly to a JSON file without accumulating them in memory.
 pub struct StreamJsonPipeline<I: ScrapedItem> {
     command_sender: kanal::AsyncSender<StreamJsonCommand>,
+    export_config: Option<SchemaExportConfig>,
     _phantom: PhantomData<I>,
 }
 
@@ -130,8 +132,15 @@ impl<I: ScrapedItem> StreamJsonPipeline<I> {
 
         Ok(StreamJsonPipeline {
             command_sender,
+            export_config: None,
             _phantom: PhantomData,
         })
+    }
+
+    /// Applies typed export mapping before values are written.
+    pub fn with_schema_export_config(mut self, config: SchemaExportConfig) -> Self {
+        self.export_config = Some(config);
+        self
     }
 }
 
@@ -174,7 +183,7 @@ impl<I: ScrapedItem> Pipeline<I> for StreamJsonPipeline<I> {
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
         debug!("StreamJsonPipeline processing item.");
-        let json_value = item.to_json_value();
+        let json_value = map_item_for_export(&item, self.export_config.as_ref());
 
         self.command_sender
             .send(StreamJsonCommand::Write(json_value))

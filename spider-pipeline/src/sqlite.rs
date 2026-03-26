@@ -4,6 +4,9 @@
 //! database work to a dedicated blocking task.
 
 use crate::pipeline::Pipeline;
+use crate::schema::{
+    SchemaExportConfig, export_schema_for_item, map_item_for_export, sqlite_type_for_field,
+};
 use async_trait::async_trait;
 use log::{debug, error, info, trace};
 use rusqlite::{Connection, params, params_from_iter};
@@ -30,6 +33,7 @@ enum SqliteCommand {
 pub struct SqlitePipeline<I: ScrapedItem> {
     command_sender: mpsc::Sender<SqliteCommand>,
     table_created: Mutex<bool>,
+    export_config: Option<SchemaExportConfig>,
     _phantom: PhantomData<I>,
 }
 
@@ -122,8 +126,15 @@ impl<I: ScrapedItem> SqlitePipeline<I> {
         Ok(SqlitePipeline {
             command_sender,
             table_created: Mutex::new(false),
+            export_config: None,
             _phantom: PhantomData,
         })
+    }
+
+    /// Applies typed export mapping before rows are written.
+    pub fn with_schema_export_config(mut self, config: SchemaExportConfig) -> Self {
+        self.export_config = Some(config);
+        self
     }
 }
 
@@ -138,6 +149,11 @@ fn create_table_if_not_exists_sync(
         for (key, value) in map {
             let sqlite_type = match value {
                 Value::Null => "TEXT",
+                Value::String(value)
+                    if matches!(value.as_str(), "INTEGER" | "REAL" | "TEXT" | "BLOB") =>
+                {
+                    value.as_str()
+                }
                 Value::Bool(_) => "INTEGER",
                 Value::Number(n) => {
                     if n.is_f64() {
@@ -174,6 +190,17 @@ fn create_table_if_not_exists_sync(
             "Item must be a JSON object to infer table schema.".to_string(),
         ))
     }
+}
+
+fn schema_fields_to_value(fields: &[spider_util::item::ItemFieldSchema]) -> Value {
+    let mut map = serde_json::Map::new();
+    for field in fields {
+        map.insert(
+            field.name.clone(),
+            Value::String(sqlite_type_for_field(field).to_string()),
+        );
+    }
+    Value::Object(map)
 }
 
 // Synchronous helper function to insert item
@@ -255,7 +282,8 @@ impl<I: ScrapedItem> Pipeline<I> for SqlitePipeline<I> {
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
         trace!("SqlitePipeline processing item");
-        let item_value = item.to_json_value();
+        let item_value = map_item_for_export(&item, self.export_config.as_ref());
+        let typed_schema = export_schema_for_item(&item, self.export_config.as_ref());
 
         // Check if table created, and create if not
         let mut table_created_lock = self.table_created.lock().await;
@@ -264,7 +292,10 @@ impl<I: ScrapedItem> Pipeline<I> for SqlitePipeline<I> {
             let (tx, rx) = oneshot::channel();
             self.command_sender
                 .send(SqliteCommand::CreateSchema {
-                    item_value: item_value.clone(),
+                    item_value: typed_schema
+                        .as_ref()
+                        .map(|fields| schema_fields_to_value(fields))
+                        .unwrap_or_else(|| item_value.clone()),
                     responder: tx,
                 })
                 .await

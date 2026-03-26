@@ -4,6 +4,7 @@
 //! good fit for streaming workflows and shell-based processing.
 
 use crate::pipeline::Pipeline;
+use crate::schema::{SchemaExportConfig, map_item_for_export};
 use async_trait::async_trait;
 use log::{debug, info};
 use spider_util::{error::PipelineError, item::ScrapedItem};
@@ -25,6 +26,7 @@ enum JsonlCommand {
 /// Each item is written as a JSON object on a new line.
 pub struct JsonlPipeline<I: ScrapedItem> {
     command_sender: mpsc::Sender<JsonlCommand>,
+    export_config: Option<SchemaExportConfig>,
     _phantom: PhantomData<I>,
 }
 
@@ -97,8 +99,15 @@ impl<I: ScrapedItem> JsonlPipeline<I> {
 
         Ok(JsonlPipeline {
             command_sender,
+            export_config: None,
             _phantom: PhantomData,
         })
+    }
+
+    /// Applies typed export mapping before values are written.
+    pub fn with_schema_export_config(mut self, config: SchemaExportConfig) -> Self {
+        self.export_config = Some(config);
+        self
     }
 }
 
@@ -110,7 +119,7 @@ impl<I: ScrapedItem> Pipeline<I> for JsonlPipeline<I> {
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
         debug!("JsonlPipeline processing item.");
-        let json_value = item.to_json_value();
+        let json_value = map_item_for_export(&item, self.export_config.as_ref());
         let serialized_item = serde_json::to_string(&json_value)?;
 
         let (tx, rx) = oneshot::channel();

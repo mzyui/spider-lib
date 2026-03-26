@@ -4,6 +4,7 @@
 //! item and serializing nested values into JSON strings when needed.
 
 use crate::pipeline::Pipeline;
+use crate::schema::{SchemaExportConfig, map_item_for_export};
 use async_trait::async_trait;
 use csv::Writer;
 use kanal::bounded_async;
@@ -46,6 +47,7 @@ enum CsvCommand {
 /// Headers are determined from the keys of the first item processed.
 pub struct CsvPipeline<I> {
     command_sender: kanal::AsyncSender<CsvCommand>,
+    export_config: Option<SchemaExportConfig>,
     _phantom: PhantomData<I>,
 }
 
@@ -209,8 +211,15 @@ impl<I: ScrapedItem> CsvPipeline<I> {
 
         Ok(CsvPipeline {
             command_sender,
+            export_config: None,
             _phantom: PhantomData,
         })
+    }
+
+    /// Applies typed export mapping before values are written.
+    pub fn with_schema_export_config(mut self, config: SchemaExportConfig) -> Self {
+        self.export_config = Some(config);
+        self
     }
 }
 
@@ -226,7 +235,7 @@ impl<I: ScrapedItem> Pipeline<I> for CsvPipeline<I> {
 
     async fn process_item(&self, item: I) -> Result<Option<I>, PipelineError> {
         debug!("CsvPipeline processing item.");
-        let item_value = item.to_json_value();
+        let item_value = map_item_for_export(&item, self.export_config.as_ref());
 
         let (tx, rx) = kanal::bounded_async(1);
         self.command_sender
