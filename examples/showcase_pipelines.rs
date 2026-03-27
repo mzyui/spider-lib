@@ -48,7 +48,7 @@ async fn main() -> Result<(), SpiderError> {
                 .with_rule("status", ValidationRule::Type(JsonType::Number))
                 .with_rule("body_bytes", ValidationRule::MinNumber(1.0)),
         )
-        .add_pipeline(DeduplicationPipeline::new(&["url"]))
+        .add_pipeline(DeduplicationPipeline::new(["url"]))
         .add_pipeline(ConsolePipeline::new())
         .add_pipeline(build_json_pipeline()?)
         .add_pipeline(build_jsonl_pipeline()?)
