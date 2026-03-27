@@ -160,6 +160,7 @@ The repository ships with maintained examples that you can run as-is:
 cargo run --example minimal
 cargo run --example books
 cargo run --example sitemap
+cargo run --example request_priority
 ```
 
 `minimal` is the quickest smoke example.
@@ -167,6 +168,9 @@ cargo run --example sitemap
 `sitemap` shows runtime-managed sitemap discovery and page metadata extraction.
 
 That example crawls `books.toscrape.com` and prints the final page and item counts.
+
+`request_priority` is a local scheduler demo that shows higher-priority
+requests being dequeued first without needing network access.
 
 There are also several feature-gated showcase examples:
 
