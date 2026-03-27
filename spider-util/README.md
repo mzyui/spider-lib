@@ -40,12 +40,16 @@ use spider_util::{
 };
 use url::Url;
 
-let request = Request::new(Url::parse("https://example.com")?);
+let request = Request::new(Url::parse("https://example.com")?)
+    .with_priority(10);
 let mut output = ParseOutput::<String>::new();
 
 output.add_request(request);
 output.add_item("example".to_string());
 ```
+
+Requests default to priority `0`. Higher values are scheduled before lower
+values, while requests with the same priority remain FIFO.
 
 ## You will probably want this crate if
 

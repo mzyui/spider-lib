@@ -175,6 +175,10 @@ impl<'de> Deserialize<'de> for Body {
 pub struct Request {
     /// The target URL for this request.
     pub url: Url,
+    /// Request scheduling priority.
+    ///
+    /// Higher values are dequeued before lower values.
+    pub priority: i32,
     /// The HTTP method (GET, POST, etc.).
     pub method: reqwest::Method,
     /// HTTP headers for the request.
@@ -205,8 +209,9 @@ impl Serialize for Request {
             })
             .collect();
 
-        let mut s = serializer.serialize_struct("Request", 5)?;
+        let mut s = serializer.serialize_struct("Request", 6)?;
         s.serialize_field("url", &self.url.as_str())?;
+        s.serialize_field("priority", &self.priority)?;
         s.serialize_field("method", &self.method.as_str())?;
         s.serialize_field("headers", &headers_vec)?;
         s.serialize_field("body", &self.body)?;
@@ -237,6 +242,7 @@ impl<'de> Deserialize<'de> for Request {
         #[serde(field_identifier, rename_all = "lowercase")]
         enum Field {
             Url,
+            Priority,
             Method,
             Headers,
             Body,
@@ -257,6 +263,7 @@ impl<'de> Deserialize<'de> for Request {
                 V: MapAccess<'de>,
             {
                 let mut url = None;
+                let mut priority = None;
                 let mut method = None;
                 let mut headers = None;
                 let mut body = None;
@@ -271,6 +278,12 @@ impl<'de> Deserialize<'de> for Request {
                             let url_str: String = map.next_value()?;
                             let parsed_url = Url::parse(&url_str).map_err(de::Error::custom)?;
                             url = Some(parsed_url);
+                        }
+                        Field::Priority => {
+                            if priority.is_some() {
+                                return Err(de::Error::duplicate_field("priority"));
+                            }
+                            priority = Some(map.next_value()?);
                         }
                         Field::Method => {
                             if method.is_some() {
@@ -303,7 +316,7 @@ impl<'de> Deserialize<'de> for Request {
                             if body.is_some() {
                                 return Err(de::Error::duplicate_field("body"));
                             }
-                            body = Some(map.next_value()?);
+                            body = map.next_value()?;
                         }
                         Field::Meta => {
                             // Deserialize meta HashMap and convert to DashMap
@@ -320,12 +333,14 @@ impl<'de> Deserialize<'de> for Request {
                 }
 
                 let url = url.ok_or_else(|| de::Error::missing_field("url"))?;
+                let priority = priority.unwrap_or(0);
                 let method = method.ok_or_else(|| de::Error::missing_field("method"))?;
                 let headers = headers.ok_or_else(|| de::Error::missing_field("headers"))?;
                 let body = body; // Optional field
 
                 Ok(Request {
                     url,
+                    priority,
                     method,
                     headers,
                     body,
@@ -334,7 +349,7 @@ impl<'de> Deserialize<'de> for Request {
             }
         }
 
-        const FIELDS: &[&str] = &["url", "method", "headers", "body", "meta"];
+        const FIELDS: &[&str] = &["url", "priority", "method", "headers", "body", "meta"];
         deserializer.deserialize_struct("Request", FIELDS, RequestVisitor)
     }
 }
@@ -347,6 +362,7 @@ impl Default for Request {
         };
         Self {
             url: default_url,
+            priority: 0,
             method: reqwest::Method::GET,
             headers: http::header::HeaderMap::new(),
             body: None,
@@ -374,6 +390,7 @@ impl Request {
     pub fn new(url: Url) -> Self {
         Request {
             url,
+            priority: 0,
             method: reqwest::Method::GET,
             headers: http::header::HeaderMap::new(),
             body: None,
@@ -423,6 +440,20 @@ impl Request {
     pub fn with_method(mut self, method: reqwest::Method) -> Self {
         self.method = method;
         self
+    }
+
+    /// Sets the scheduling priority for the request.
+    ///
+    /// Higher values are scheduled before lower values. Requests with the same
+    /// priority retain FIFO ordering.
+    pub fn with_priority(mut self, priority: i32) -> Self {
+        self.priority = priority;
+        self
+    }
+
+    /// Returns the scheduling priority for the request.
+    pub fn priority(&self) -> i32 {
+        self.priority
     }
 
     /// Adds a header to the request.
@@ -554,11 +585,10 @@ impl Request {
     /// ```rust,ignore
     /// use spider_util::request::Request;
     /// use url::Url;
-    /// use serde_json::json;
     ///
     /// let request = Request::new(Url::parse("https://example.com")?)
-    ///     .with_meta("priority", json!(1))
-    ///     .with_meta("source", json!("manual"));
+    ///     .with_priority(10)
+    ///     .with_meta("source", serde_json::json!("manual"));
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn with_meta(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
@@ -762,5 +792,47 @@ impl Request {
             }
         }
         format!("{:x}", hasher.finish())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Request;
+    use serde_json::json;
+    use url::Url;
+
+    #[test]
+    fn request_defaults_to_zero_priority() {
+        let request = Request::new(Url::parse("https://example.com").unwrap());
+        assert_eq!(request.priority(), 0);
+        assert_eq!(Request::default().priority(), 0);
+    }
+
+    #[test]
+    fn request_priority_round_trips_through_serde() {
+        let request = Request::new(Url::parse("https://example.com").unwrap())
+            .with_priority(7)
+            .with_meta("source", json!("test"));
+
+        let encoded = serde_json::to_value(&request).unwrap();
+        assert_eq!(encoded["priority"], 7);
+
+        let decoded: Request = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.priority(), 7);
+        assert_eq!(decoded.get_meta("source"), Some(json!("test")));
+    }
+
+    #[test]
+    fn request_deserialization_defaults_priority_for_legacy_payloads() {
+        let legacy = json!({
+            "url": "https://example.com",
+            "method": "GET",
+            "headers": [],
+            "body": null,
+            "meta": {}
+        });
+
+        let request: Request = serde_json::from_value(legacy).unwrap();
+        assert_eq!(request.priority(), 0);
     }
 }

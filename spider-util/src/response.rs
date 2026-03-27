@@ -19,6 +19,7 @@
 //!     headers: http::header::HeaderMap::new(),
 //!     body: Bytes::from("<html><body>Hello</body></html>"),
 //!     request_url: Url::parse("https://example.com").unwrap(),
+//!     request_priority: 0,
 //!     meta: None,
 //!     cached: false,
 //! };
@@ -423,6 +424,8 @@ pub struct Response {
     pub body: bytes::Bytes,
     /// The original URL of the request that led to this response.
     pub request_url: Url,
+    /// The scheduling priority of the original request.
+    pub request_priority: i32,
     /// Metadata associated with the response, carried over from the request.
     /// Uses Option to allow lazy initialization.
     pub meta: Option<Arc<DashMap<String, serde_json::Value>>>,
@@ -449,6 +452,7 @@ impl Response {
             headers,
             body,
             request_url,
+            request_priority: 0,
             meta: None,
             cached: false,
         }
@@ -473,13 +477,15 @@ impl Response {
     /// #     headers: http::header::HeaderMap::new(),
     /// #     body: Bytes::from("hello"),
     /// #     request_url: Url::parse("https://example.com").unwrap(),
+    /// #     request_priority: 0,
     /// #     meta: None,
     /// #     cached: false,
     /// # };
     /// let original_request = response.request_from_response();
     /// ```
     pub fn request_from_response(&self) -> Request {
-        let mut request = Request::new(self.request_url.clone());
+        let mut request =
+            Request::new(self.request_url.clone()).with_priority(self.request_priority);
         request.set_meta_from_option(self.meta.clone());
         request
     }
@@ -966,6 +972,7 @@ impl Clone for Response {
             headers: self.headers.clone(),
             body: self.body.clone(),
             request_url: self.request_url.clone(),
+            request_priority: self.request_priority,
             meta: self.meta.clone(),
             cached: self.cached,
         }
