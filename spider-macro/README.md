@@ -19,11 +19,16 @@ use spider_lib::prelude::*;
 ```toml
 [dependencies]
 spider-macro = "0.1.12"
+spider-util = "0.3.6"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
 
-`serde` and `serde_json` need to be direct dependencies in the downstream crate.
+If you use `spider-macro` directly, add `spider-util` too so the generated item
+traits and schema types are available. If you use `spider-lib`, that facade
+crate already provides the runtime item surface the macro needs.
+
+`serde` and `serde_json` still need to be direct dependencies in the downstream crate.
 
 ## `#[scraped_item]`
 
@@ -41,6 +46,7 @@ That is the item contract expected by pipelines and the rest of the `spider-*` e
 
 ```rust,ignore
 use spider_macro::scraped_item;
+use spider_util::item::ScrapedItem;
 
 #[scraped_item]
 struct Product {

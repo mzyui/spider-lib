@@ -11,6 +11,7 @@
 //! ```toml
 //! [dependencies]
 //! spider-macro = "0.1.12"
+//! spider-util = "0.3.6"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
@@ -19,6 +20,7 @@
 //!
 //! ```rust,ignore
 //! use spider_macro::scraped_item;
+//! use spider_util::item::ScrapedItem;
 //!
 //! #[scraped_item]
 //! struct Article {
@@ -33,6 +35,7 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use proc_macro_crate::{FoundCrate, crate_name};
 use quote::quote;
 use syn::{Fields, ItemStruct, Type, parse_macro_input};
 
@@ -49,6 +52,7 @@ use syn::{Fields, ItemStruct, Type, parse_macro_input};
 ///
 /// ```toml
 /// [dependencies]
+/// spider-util = "0.3.6"
 /// serde = { version = "1.0", features = ["derive"] }
 /// serde_json = "1.0"
 /// ```
@@ -57,6 +61,10 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let ast = parse_macro_input!(item as ItemStruct);
     let name = &ast.ident;
     let item_name = name.to_string();
+    let scraped_item_trait = item_type_tokens("ScrapedItem");
+    let item_field_schema = item_type_tokens("ItemFieldSchema");
+    let item_schema = item_type_tokens("ItemSchema");
+    let typed_item_schema = item_type_tokens("TypedItemSchema");
     let fields = match &ast.fields {
         Fields::Named(fields) => fields.named.iter().collect::<Vec<_>>(),
         _ => {
@@ -77,7 +85,7 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
         let value_type_tokens = field_value_type_tokens(&field.ty);
 
         quote! {
-            ::spider_util::item::ItemFieldSchema {
+            #item_field_schema {
                 name: #field_name.to_string(),
                 rust_type: #rust_type.to_string(),
                 value_type: #value_type_tokens,
@@ -95,12 +103,12 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
         )]
         #ast
 
-        impl ScrapedItem for #name {
+        impl #scraped_item_trait for #name {
             fn as_any(&self) -> &dyn ::std::any::Any {
                 self
             }
 
-            fn box_clone(&self) -> Box<dyn ScrapedItem + Send + Sync> {
+            fn box_clone(&self) -> Box<dyn #scraped_item_trait + Send + Sync> {
                 Box::new(self.clone())
             }
 
@@ -111,18 +119,18 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
 
-            fn item_schema(&self) -> ::std::option::Option<::spider_util::item::ItemSchema> {
-                ::std::option::Option::Some(<Self as ::spider_util::item::TypedItemSchema>::schema())
+            fn item_schema(&self) -> ::std::option::Option<#item_schema> {
+                ::std::option::Option::Some(<Self as #typed_item_schema>::schema())
             }
 
             fn item_schema_version(&self) -> u32 {
-                <Self as ::spider_util::item::TypedItemSchema>::schema_version()
+                <Self as #typed_item_schema>::schema_version()
             }
         }
 
-        impl ::spider_util::item::TypedItemSchema for #name {
-            fn schema() -> ::spider_util::item::ItemSchema {
-                ::spider_util::item::ItemSchema {
+        impl #typed_item_schema for #name {
+            fn schema() -> #item_schema {
+                #item_schema {
                     item_name: #item_name.to_string(),
                     version: Self::schema_version(),
                     fields: vec![#(#schema_fields),*],
@@ -132,6 +140,62 @@ pub fn scraped_item(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
+}
+
+fn item_type_tokens(type_name: &str) -> proc_macro2::TokenStream {
+    let ident = syn::Ident::new(type_name, proc_macro2::Span::call_site());
+
+    match runtime_crate() {
+        RuntimeCrate::SpiderLib(path) => quote!(#path::#ident),
+        RuntimeCrate::SpiderUtil(path) => quote!(#path::item::#ident),
+    }
+}
+
+fn runtime_crate() -> RuntimeCrate {
+    if let Some(path) = facade_crate_tokens("spider-lib", true) {
+        return RuntimeCrate::SpiderLib(path);
+    }
+
+    if let Some(path) = facade_crate_tokens("spider-util", false) {
+        return RuntimeCrate::SpiderUtil(path);
+    }
+
+    RuntimeCrate::SpiderUtil(
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "#[scraped_item] requires either `spider-lib` or `spider-util` as a dependency",
+        )
+        .to_compile_error(),
+    )
+}
+
+fn facade_crate_tokens(crate_key: &str, use_prelude: bool) -> Option<proc_macro2::TokenStream> {
+    let found = crate_name(crate_key).ok()?;
+
+    Some(match found {
+        FoundCrate::Itself => {
+            let crate_name = crate_key.replace('-', "_");
+            let ident = syn::Ident::new(&crate_name, proc_macro2::Span::call_site());
+            if use_prelude {
+                quote!(::#ident::prelude)
+            } else {
+                quote!(::#ident)
+            }
+        }
+        FoundCrate::Name(name) => {
+            let ident = syn::Ident::new(&name, proc_macro2::Span::call_site());
+            if use_prelude {
+                quote!(::#ident::prelude)
+            } else {
+                quote!(::#ident)
+            }
+        }
+    })
+}
+
+enum RuntimeCrate {
+    SpiderLib(proc_macro2::TokenStream),
+    SpiderUtil(proc_macro2::TokenStream),
 }
 
 fn is_option_type(ty: &Type) -> bool {
@@ -147,6 +211,7 @@ fn is_option_type(ty: &Type) -> bool {
 }
 
 fn field_value_type_tokens(ty: &Type) -> proc_macro2::TokenStream {
+    let field_value_type = item_type_tokens("FieldValueType");
     let core_ty = unwrap_option_type(ty).unwrap_or(ty);
 
     match core_ty {
@@ -154,27 +219,27 @@ fn field_value_type_tokens(ty: &Type) -> proc_macro2::TokenStream {
             let segment = match type_path.path.segments.last() {
                 Some(segment) => segment,
                 None => {
-                    return quote!(::spider_util::item::FieldValueType::Unknown);
+                    return quote!(#field_value_type::Unknown);
                 }
             };
             let ident = segment.ident.to_string();
             match ident.as_str() {
-                "bool" => quote!(::spider_util::item::FieldValueType::Bool),
-                "String" | "str" => quote!(::spider_util::item::FieldValueType::String),
+                "bool" => quote!(#field_value_type::Bool),
+                "String" | "str" => quote!(#field_value_type::String),
                 "i8" | "i16" | "i32" | "i64" | "i128" | "isize" | "u8" | "u16" | "u32" | "u64"
-                | "u128" | "usize" => quote!(::spider_util::item::FieldValueType::Integer),
-                "f32" | "f64" => quote!(::spider_util::item::FieldValueType::Float),
+                | "u128" | "usize" => quote!(#field_value_type::Integer),
+                "f32" | "f64" => quote!(#field_value_type::Float),
                 "Vec" | "VecDeque" | "HashSet" | "BTreeSet" => {
-                    quote!(::spider_util::item::FieldValueType::Sequence)
+                    quote!(#field_value_type::Sequence)
                 }
-                "HashMap" | "BTreeMap" => quote!(::spider_util::item::FieldValueType::Map),
-                "Value" => quote!(::spider_util::item::FieldValueType::Json),
-                _ => quote!(::spider_util::item::FieldValueType::Unknown),
+                "HashMap" | "BTreeMap" => quote!(#field_value_type::Map),
+                "Value" => quote!(#field_value_type::Json),
+                _ => quote!(#field_value_type::Unknown),
             }
         }
-        Type::Array(_) | Type::Slice(_) => quote!(::spider_util::item::FieldValueType::Sequence),
-        Type::Tuple(_) => quote!(::spider_util::item::FieldValueType::Sequence),
-        _ => quote!(::spider_util::item::FieldValueType::Unknown),
+        Type::Array(_) | Type::Slice(_) => quote!(#field_value_type::Sequence),
+        Type::Tuple(_) => quote!(#field_value_type::Sequence),
+        _ => quote!(#field_value_type::Unknown),
     }
 }
 

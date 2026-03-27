@@ -2,7 +2,7 @@
 //!
 //! [`Response`] wraps the downloaded body together with the final URL, status,
 //! headers, and request metadata. It also provides convenience methods for
-//! parsing HTML or JSON and for extracting links.
+//! Scrapy-like CSS extraction, parsing HTML or JSON, and extracting links.
 //!
 //! ## Example
 //!
@@ -24,8 +24,8 @@
 //!     cached: false,
 //! };
 //!
-//! // Parse as HTML
-//! let html = response.to_html().unwrap();
+//! // Extract text with the builtin selector API
+//! let heading = response.css("h1::text").unwrap().get();
 //!
 //! // Extract links from the response
 //! let links = response.links();
@@ -35,8 +35,9 @@
 //! optionally rewritten by middleware, and then handed to
 //! [`Spider::parse`](spider_core::Spider::parse).
 
+use crate::error::SpiderError;
 use crate::request::Request;
-use crate::selector::get_cached_selector;
+use crate::selector::{SelectorList, get_cached_selector};
 use crate::util;
 use dashmap::{DashMap, DashSet};
 use linkify::{LinkFinder, LinkKind};
@@ -53,7 +54,7 @@ use std::{str::Utf8Error, str::from_utf8, sync::Arc};
 use url::Url;
 
 thread_local! {
-    static HTML_CACHE: RefCell<HashMap<u64, Html>> = RefCell::new(HashMap::new());
+    static HTML_CACHE: RefCell<HashMap<u64, Arc<Html>>> = RefCell::new(HashMap::new());
 }
 
 const DISCOVERY_RULE_META_KEY: &str = "__discovery_rule";
@@ -384,7 +385,8 @@ impl PageMetadata {
 /// and metadata carried over from the original request.
 ///
 /// The type is designed for parse-time ergonomics:
-/// - [`Response::to_html`] parses the body as HTML
+/// - [`Response::css`] exposes the recommended Scrapy-like selector API
+/// - [`Response::to_html`] remains available for lower-level DOM access
 /// - [`Response::json`] deserializes JSON payloads
 /// - [`Response::links`] and related helpers extract follow-up links
 /// - [`Response::to_request`] reconstructs the originating request context
@@ -407,10 +409,8 @@ impl PageMetadata {
 ///     cached: false,
 /// };
 ///
-/// // Parse the response body as HTML
-/// if let Ok(html) = response.to_html() {
-///     // Process HTML...
-/// }
+/// // Extract text using the builtin selector API
+/// let title = response.css("title::text").ok().and_then(|list| list.get());
 /// ```
 #[derive(Debug)]
 pub struct Response {
@@ -567,7 +567,10 @@ impl Response {
 
     /// Parses the response body as HTML.
     ///
-    /// Returns a [`scraper::Html`] document that can be queried using CSS selectors.
+    /// This method is kept for lower-level DOM access and interop. For most
+    /// spider code, prefer [`Response::css`] and the builtin selector API.
+    ///
+    /// Returns a [`scraper::Html`] document that can be queried directly.
     ///
     /// # Errors
     ///
@@ -593,24 +596,13 @@ impl Response {
     /// # Ok::<(), std::str::Utf8Error>(())
     /// ```
     pub fn to_html(&self) -> Result<Html, Utf8Error> {
-        let cache_key = self.html_cache_key();
-
-        HTML_CACHE.with(|cache| {
-            if let Some(html) = cache.borrow().get(&cache_key).cloned() {
-                return Ok(html);
-            }
-
-            let body_str = from_utf8(&self.body)?;
-            let html = Html::parse_document(body_str);
-            cache.borrow_mut().insert(cache_key, html.clone());
-            Ok(html)
-        })
+        Ok((*self.cached_html()?).clone())
     }
 
     /// Lazily parses the response body as HTML.
     ///
-    /// Returns a closure that can be called when the HTML is actually needed.
-    /// This avoids parsing HTML for responses where it may not be used.
+    /// Returns a closure that can be called when lower-level HTML access is
+    /// actually needed. Most spiders should prefer [`Response::css`].
     ///
     /// # Errors
     ///
@@ -641,6 +633,43 @@ impl Response {
         Ok(move || self.to_html())
     }
 
+    /// Applies a builtin CSS selector to the response body using a Scrapy-like API.
+    ///
+    /// Supports standard CSS selectors plus terminal extraction suffixes:
+    /// - `::text`
+    /// - `::attr(name)`
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// # use spider_util::response::Response;
+    /// # use reqwest::StatusCode;
+    /// # use bytes::Bytes;
+    /// # use url::Url;
+    /// # let response = Response {
+    /// #     url: Url::parse("https://example.com").unwrap(),
+    /// #     status: StatusCode::OK,
+    /// #     headers: http::header::HeaderMap::new(),
+    /// #     body: Bytes::from(r#"<html><body><h1>Hello</h1><a href="/next">Next</a></body></html>"#),
+    /// #     request_url: Url::parse("https://example.com").unwrap(),
+    /// #     request_priority: 0,
+    /// #     meta: None,
+    /// #     cached: false,
+    /// # };
+    /// let heading = response.css("h1::text")?.get().unwrap_or_default();
+    /// let next_href = response.css("a::attr(href)")?.get();
+    /// # Ok::<(), crate::error::SpiderError>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SpiderError::Utf8Error`] when the body is not valid UTF-8 and
+    /// [`SpiderError::HtmlParseError`] when the selector is invalid.
+    pub fn css(&self, query: &str) -> Result<SelectorList, SpiderError> {
+        let document = self.cached_html()?;
+        SelectorList::from_document_query(document, query)
+    }
+
     /// Returns the response body as UTF-8 text.
     pub fn text(&self) -> Result<&str, Utf8Error> {
         from_utf8(&self.body)
@@ -648,7 +677,7 @@ impl Response {
 
     /// Extracts structured page metadata from HTML responses.
     pub fn page_metadata(&self) -> Result<PageMetadata, Utf8Error> {
-        let html = self.to_html()?;
+        let html = self.cached_html()?;
         let mut metadata = PageMetadata::default();
 
         if let Some(selector) = get_cached_selector("title") {
@@ -800,8 +829,7 @@ impl Response {
     }
 
     fn parse_links(&self, options: LinkExtractOptions) -> Result<Vec<Link>, Utf8Error> {
-        let html_fn = self.lazy_html()?;
-        let html = html_fn()?;
+        let html = self.cached_html()?;
         let mut links = Vec::new();
 
         self.collect_attribute_links(&html, &options, &mut links);
@@ -961,6 +989,21 @@ impl Response {
         self.request_url.as_str().hash(&mut hasher);
         self.body.hash(&mut hasher);
         hasher.finish()
+    }
+
+    fn cached_html(&self) -> Result<Arc<Html>, Utf8Error> {
+        let cache_key = self.html_cache_key();
+
+        HTML_CACHE.with(|cache| {
+            if let Some(html) = cache.borrow().get(&cache_key).cloned() {
+                return Ok(html);
+            }
+
+            let body_str = from_utf8(&self.body)?;
+            let html = Arc::new(Html::parse_document(body_str));
+            cache.borrow_mut().insert(cache_key, html.clone());
+            Ok(html)
+        })
     }
 }
 

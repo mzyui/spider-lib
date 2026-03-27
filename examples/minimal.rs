@@ -24,13 +24,11 @@ impl Spider for MinimalSpider {
         response: Response,
         _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        let heading = html
-            .select(&"h1".to_selector()?)
-            .next()
-            .map(|node| node.text().collect::<String>())
+        let heading = response
+            .css("h1::text")?
+            .get()
             .unwrap_or_else(|| "Example Domain".to_string())
             .trim()
             .to_string();

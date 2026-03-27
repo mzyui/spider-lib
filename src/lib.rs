@@ -17,6 +17,7 @@
 //! - [`Spider`] describes crawl behavior
 //! - [`CrawlerBuilder`] assembles the runtime
 //! - [`Request`], [`Response`], and [`ParseOutput`] are the core runtime data types
+//! - [`Response::css`](spider_util::response::Response::css) provides Scrapy-like builtin selectors
 //! - middleware and pipelines can be enabled with feature flags and then added
 //!   through the builder
 //!
@@ -58,20 +59,17 @@
 //!         response: Response,
 //!         _state: &Self::State,
 //!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         let html = response.to_html()?;
 //!         let mut output = ParseOutput::new();
 //!
-//!         for quote in html.select(&".quote".to_selector()?) {
+//!         for quote in response.css(".quote")? {
 //!             let text = quote
-//!                 .select(&".text".to_selector()?)
-//!                 .next()
-//!                 .map(|node| node.text().collect::<String>())
+//!                 .css(".text::text")?
+//!                 .get()
 //!                 .unwrap_or_default();
 //!
 //!             let author = quote
-//!                 .select(&".author".to_selector()?)
-//!                 .next()
-//!                 .map(|node| node.text().collect::<String>())
+//!                 .css(".author::text")?
+//!                 .get()
 //!                 .unwrap_or_default();
 //!
 //!             output.add_item(Quote { text, author });
@@ -87,6 +85,10 @@
 //!     crawler.start_crawl().await
 //! }
 //! ```
+//!
+//! The built-in selector API is the recommended path for HTML extraction:
+//! `response.css(".card")?`, `node.css("a::attr(href)")?.get()`, and
+//! `node.css(".title::text")?.get()`.
 //!
 //! [`Spider::parse`] takes `&self` and a separate shared state parameter.
 //! That design keeps the spider itself immutable while still allowing
@@ -106,6 +108,8 @@
 //! middleware contracts, or lower-level runtime control, move down to the
 //! crate-specific APIs in `spider-core`, `spider-downloader`,
 //! `spider-middleware`, or `spider-pipeline`.
+
+extern crate self as spider_lib;
 
 pub mod prelude;
 /// Re-export the application-facing prelude.

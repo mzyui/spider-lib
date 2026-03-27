@@ -67,6 +67,7 @@ unicode-width = "0.2"
 
 # HTML/Web scraping
 scraper = "0.19"
+ego-tree = "0.6.3"
 linkify = "0.10.0"
 psl = "2.1.183"
 robotstxt = "0.3.0"

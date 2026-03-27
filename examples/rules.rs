@@ -16,13 +16,11 @@ impl RuleSpider {
         response: Response,
         _state: &(),
     ) -> Result<ParseOutput<RuleRoutedItem>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        let title = html
-            .select(&"title".to_selector()?)
-            .next()
-            .map(|node| node.text().collect::<String>())
+        let title = response
+            .css("title::text")?
+            .get()
             .unwrap_or_default()
             .trim()
             .to_string();
@@ -41,13 +39,11 @@ impl RuleSpider {
         response: Response,
         _state: &(),
     ) -> Result<ParseOutput<RuleRoutedItem>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        let title = html
-            .select(&".product_main h1".to_selector()?)
-            .next()
-            .map(|node| node.text().collect::<String>())
+        let title = response
+            .css(".product_main h1::text")?
+            .get()
             .unwrap_or_default()
             .trim()
             .to_string();

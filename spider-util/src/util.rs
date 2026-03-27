@@ -1,7 +1,6 @@
 //! Small utility helpers shared across the workspace.
 
 use psl::{List, Psl};
-use scraper::Selector;
 use std::fs;
 use std::path::Path;
 use url::Url;
@@ -50,26 +49,4 @@ pub fn validate_output_dir(file_path: impl AsRef<Path>) -> Result<(), SpiderErro
 pub fn create_dir(dir_path: impl AsRef<Path>) -> Result<(), SpiderError> {
     fs::create_dir_all(dir_path)?;
     Ok(())
-}
-
-/// Converts a string selector expression into a parsed [`Selector`].
-pub trait ToSelector {
-    /// Parses a string slice into a `scraper::Selector`, returning a `SpiderError` on failure.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`SpiderError::HtmlParseError`] when selector parsing fails.
-    fn to_selector(&self) -> Result<Selector, SpiderError>;
-}
-
-impl ToSelector for &str {
-    fn to_selector(&self) -> Result<Selector, SpiderError> {
-        Selector::parse(self).map_err(|e| SpiderError::HtmlParseError(e.to_string()))
-    }
-}
-
-impl ToSelector for String {
-    fn to_selector(&self) -> Result<Selector, SpiderError> {
-        Selector::parse(self).map_err(|e| SpiderError::HtmlParseError(e.to_string()))
-    }
 }

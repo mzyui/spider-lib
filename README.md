@@ -13,7 +13,7 @@ The workspace is split into small crates, but the root crate is the easiest plac
 
 ## Why this crate exists
 
-`spider-lib` is meant for projects that need more structure than a one-off `reqwest + scraper` script:
+`spider-lib` is meant for projects that need more structure than a one-off `reqwest` plus ad-hoc HTML parsing script:
 
 - multiple follow-up requests from each page
 - shared crawl state
@@ -125,20 +125,17 @@ impl Spider for QuotesSpider {
         response: Response,
         _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        for quote in html.select(&".quote".to_selector()?) {
+        for quote in response.css(".quote")? {
             let text = quote
-                .select(&".text".to_selector()?)
-                .next()
-                .map(|node| node.text().collect::<String>())
+                .css(".text::text")?
+                .get()
                 .unwrap_or_default();
 
             let author = quote
-                .select(&".author".to_selector()?)
-                .next()
-                .map(|node| node.text().collect::<String>())
+                .css(".author::text")?
+                .get()
                 .unwrap_or_default();
 
             output.add_item(Quote { text, author });
@@ -154,6 +151,18 @@ async fn main() -> Result<(), SpiderError> {
     crawler.start_crawl().await
 }
 ```
+
+## Builtin selectors
+
+The recommended parse API is the built-in Scrapy-like selector surface on [`Response`]:
+
+- `response.css(".quote")?` to select elements
+- `quote.css(".text::text")?.get()` to extract text
+- `response.css("a::attr(href)")?.get_all()` to extract attributes
+
+`get()` returns the first match as `Option<String>`, and `get_all()` collects all extracted values.
+
+`to_html()` still exists when you need lower-level DOM access, but most spiders should start with `.css(...)`.
 
 ## Run the examples
 
@@ -211,7 +220,7 @@ At a high level:
 5. `Spider::parse` turns a `Response` into `ParseOutput`.
 6. Pipelines process emitted items.
 
-That separation is what makes the workspace easier to extend than a single-file scraper.
+That separation is what makes the workspace easier to extend than a single-file crawler script.
 
 ## Where to add behavior
 

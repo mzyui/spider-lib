@@ -86,13 +86,11 @@ impl Spider for ShowcaseSpider {
         response: Response,
         state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        let title = html
-            .select(&"h1".to_selector()?)
-            .next()
-            .map(|node| node.text().collect::<String>())
+        let title = response
+            .css("h1::text")?
+            .get()
             .unwrap_or_else(|| "Example Domain".to_string())
             .trim()
             .to_string();
