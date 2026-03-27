@@ -19,7 +19,7 @@ If you are happy with the default HTTP behavior, the root crate or `spider-core`
 
 ```toml
 [dependencies]
-spider-downloader = "1.0.3"
+spider-downloader = "1.1.0"
 reqwest = "0.13"
 ```
 
