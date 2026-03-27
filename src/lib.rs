@@ -16,7 +16,7 @@
 //! - [`prelude`] re-exports the common types needed to define and run a spider
 //! - [`Spider`] describes crawl behavior
 //! - [`CrawlerBuilder`] assembles the runtime
-//! - [`Request`], [`Response`], and [`ParseOutput`] are the core runtime data types
+//! - [`Request`], [`Response`], [`ParseContext`], and [`ParseOutput`] are the core runtime types
 //! - [`Response::css`](spider_util::response::Response::css) provides Scrapy-like builtin selectors
 //! - middleware and pipelines can be enabled with feature flags and then added
 //!   through the builder
@@ -25,7 +25,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! spider-lib = "3.0.2"
+//! spider-lib = "4.0.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
@@ -54,14 +54,8 @@
 //!         Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
 //!     }
 //!
-//!     async fn parse(
-//!         &self,
-//!         response: Response,
-//!         _state: &Self::State,
-//!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         let mut output = ParseOutput::new();
-//!
-//!         for quote in response.css(".quote")? {
+//!     async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+//!         for quote in cx.css(".quote")? {
 //!             let text = quote
 //!                 .css(".text::text")?
 //!                 .get()
@@ -72,10 +66,10 @@
 //!                 .get()
 //!                 .unwrap_or_default();
 //!
-//!             output.add_item(Quote { text, author });
+//!             cx.add_item(Quote { text, author }).await?;
 //!         }
 //!
-//!         Ok(output)
+//!         Ok(())
 //!     }
 //! }
 //!
@@ -87,12 +81,12 @@
 //! ```
 //!
 //! The built-in selector API is the recommended path for HTML extraction:
-//! `response.css(".card")?`, `node.css("a::attr(href)")?.get()`, and
+//! `cx.css(".card")?`, `node.css("a::attr(href)")?.get()`, and
 //! `node.css(".title::text")?.get()`.
 //!
-//! [`Spider::parse`] takes `&self` and a separate shared state parameter.
-//! That design keeps the spider itself immutable while still allowing
-//! concurrent parsing with user-defined shared state.
+//! [`Spider::parse`] takes `&self` and a single [`ParseContext`] parameter.
+//! That design keeps the spider itself immutable while still giving parse logic
+//! access to the current response, shared state, and async output methods.
 //!
 //! ## Typical next steps
 //!

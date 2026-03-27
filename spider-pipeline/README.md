@@ -16,7 +16,7 @@ Use `spider-pipeline` if you want to:
 
 ```toml
 [dependencies]
-spider-pipeline = "0.3.7"
+spider-pipeline = "0.4.0"
 ```
 
 ## Built-in pipelines
@@ -112,7 +112,7 @@ Choose middleware when the concern is about requests, responses, retries, or oth
 
 ```toml
 [dependencies]
-spider-pipeline = { version = "0.3.7", features = ["pipeline-jsonl", "pipeline-csv"] }
+spider-pipeline = { version = "0.4.0", features = ["pipeline-jsonl", "pipeline-csv"] }
 ```
 
 When used through the root crate, enable the same feature names on `spider-lib`.

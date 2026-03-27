@@ -2190,7 +2190,7 @@ dependencies = [
 
 [[package]]
 name = "spider-core"
-version = "2.0.2"
+version = "3.0.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2223,7 +2223,7 @@ dependencies = [
 
 [[package]]
 name = "spider-downloader"
-version = "1.0.3"
+version = "1.1.0"
 dependencies = [
  "async-trait",
  "dashmap 6.1.0",
@@ -2235,7 +2235,7 @@ dependencies = [
 
 [[package]]
 name = "spider-lib"
-version = "3.0.2"
+version = "4.0.0"
 dependencies = [
  "dashmap 6.1.0",
  "log",
@@ -2251,7 +2251,7 @@ dependencies = [
 
 [[package]]
 name = "spider-macro"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "spider-middleware"
-version = "0.3.6"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bincode",
@@ -2289,7 +2289,7 @@ dependencies = [
 
 [[package]]
 name = "spider-pipeline"
-version = "0.3.7"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "csv",
@@ -2306,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "spider-util"
-version = "0.3.5"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "bincode",

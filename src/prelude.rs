@@ -22,6 +22,7 @@ pub use spider_core::{
     DiscoveryRule,
     // Core traits
     Downloader,
+    ParseContext,
     ReqwestClientDownloader,
     Spider,
     StartRequestIter,
@@ -40,7 +41,7 @@ pub use spider_core::{
 };
 
 pub use spider_util::item::{FieldValueType, ItemFieldSchema, ItemSchema, TypedItemSchema};
-/// Item contracts and parse results returned by [`Spider::parse`].
+/// Parse-time output sink and item contracts used by [`Spider::parse`].
 pub use spider_util::item::{ParseOutput, ScrapedItem};
 
 /// Pipeline trait for item-processing stages.
