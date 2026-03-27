@@ -17,6 +17,8 @@
 //! let _ = request;
 //! ```
 
+extern crate self as spider_util;
+
 pub mod bloom;
 pub mod constants;
 pub mod error;
