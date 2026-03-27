@@ -130,6 +130,7 @@ impl From<CachedResponse> for Response {
             headers: cached_response.headers,
             body: Bytes::from(cached_response.body),
             request_url: cached_response.request_url,
+            request_priority: 0,
             meta: Default::default(),
             cached: true,
         }
