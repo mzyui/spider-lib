@@ -2,7 +2,7 @@
     <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a>
     + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a>
     + 'static {
-    type <a href="#associatedtype.Item" class="associatedtype">Item</a>: ScrapedItem;
+    type <a href="#associatedtype.Item" class="associatedtype">Item</a>: <a class="trait" href="../../spider_util/item/trait.ScrapedItem.html" title="trait spider_util::item::ScrapedItem">ScrapedItem</a>;
     type <a href="#associatedtype.State" class="associatedtype">State</a>: <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/default/trait.Default.html" title="trait core::default::Default">Default</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a>;
 
     // Required method
@@ -10,7 +10,7 @@
         &amp;'life0 self,
         response: <a class="struct" href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response">Response</a>,
         state: &amp;'life1 Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.State" title="type spider_core::spider::Spider::State">State</a>,
-    ) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.1/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.1/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;ParseOutput&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;
+    ) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.1/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.1/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;<a class="struct" href="../../spider_util/item/struct.ParseOutput.html" title="struct spider_util::item::ParseOutput">ParseOutput</a>&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;
        <span class="where">where Self: 'async_trait,
              'life0: 'async_trait,
              'life1: 'async_trait</span>;
@@ -21,7 +21,7 @@
 }</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Defines the contract for a spider.</p>
 <h3 id="type-parameters"><a class="doc-anchor" href="#type-parameters">§</a>Type Parameters</h3>
 <ul>
-<li><code>Item</code>: The type of scraped data structure (must implement [<code>ScrapedItem</code>])</li>
+<li><code>Item</code>: The type of scraped data structure (must implement <a href="../../spider_util/item/trait.ScrapedItem.html" title="trait spider_util::item::ScrapedItem"><code>ScrapedItem</code></a>)</li>
 <li><code>State</code>: The type of shared state (must implement <code>Default</code>)</li>
 </ul>
 <h3 id="design-notes"><a class="doc-anchor" href="#design-notes">§</a>Design Notes</h3>
@@ -34,11 +34,11 @@ async tasks. State that needs mutation should be stored in the associated
 <ol>
 <li><a href="trait.Spider.html#method.start_requests" title="method spider_core::spider::Spider::start_requests"><code>start_requests</code></a> produces the initial requests</li>
 <li>the runtime schedules and downloads them</li>
-<li><a href="trait.Spider.html#tymethod.parse" title="method spider_core::spider::Spider::parse"><code>parse</code></a> turns each <a href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response"><code>Response</code></a> into a [<code>ParseOutput</code>]</li>
+<li><a href="trait.Spider.html#tymethod.parse" title="method spider_core::spider::Spider::parse"><code>parse</code></a> turns each <a href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response"><code>Response</code></a> into a <a href="../../spider_util/item/struct.ParseOutput.html" title="struct spider_util::item::ParseOutput"><code>ParseOutput</code></a></li>
 <li>emitted items go to pipelines and emitted requests go back to the scheduler</li>
 </ol>
-</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.Item" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#219">Source</a><h4 class="code-header">type <a href="#associatedtype.Item" class="associatedtype">Item</a>: ScrapedItem</h4></section></summary><div class="docblock"><p>The type of item that the spider scrapes.</p>
-<p>This associated type must implement the [<code>ScrapedItem</code>] trait, which
+</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.Item" class="method"><a class="src rightside" href="../../src/spider_core/spider.rs.html#219">Source</a><h4 class="code-header">type <a href="#associatedtype.Item" class="associatedtype">Item</a>: <a class="trait" href="../../spider_util/item/trait.ScrapedItem.html" title="trait spider_util::item::ScrapedItem">ScrapedItem</a></h4></section></summary><div class="docblock"><p>The type of item that the spider scrapes.</p>
+<p>This associated type must implement the <a href="../../spider_util/item/trait.ScrapedItem.html" title="trait spider_util::item::ScrapedItem"><code>ScrapedItem</code></a> trait, which
 provides methods for type erasure, cloning, and JSON serialization.
 Use the <code>#[scraped_item]</code> procedural macro to automatically implement
 all required traits for your data structures.</p>
@@ -59,7 +59,7 @@ enable safe concurrent access from multiple async tasks.</p>
     &amp;'life0 self,
     response: <a class="struct" href="../prelude/struct.Response.html" title="struct spider_core::prelude::Response">Response</a>,
     state: &amp;'life1 Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.State" title="type spider_core::spider::Spider::State">State</a>,
-) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.1/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.1/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;ParseOutput&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;<div class="where">where
+) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.94.1/core/pin/struct.Pin.html" title="struct core::pin::Pin">Pin</a>&lt;<a class="struct" href="https://doc.rust-lang.org/1.94.1/alloc/boxed/struct.Box.html" title="struct alloc::boxed::Box">Box</a>&lt;dyn <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/future/future/trait.Future.html" title="trait core::future::future::Future">Future</a>&lt;Output = <a class="type" href="https://docs.rs/anyhow/1.0.101/anyhow/type.Result.html" title="type anyhow::Result">Result</a>&lt;<a class="struct" href="../../spider_util/item/struct.ParseOutput.html" title="struct spider_util::item::ParseOutput">ParseOutput</a>&lt;Self::<a class="associatedtype" href="trait.Spider.html#associatedtype.Item" title="type spider_core::spider::Spider::Item">Item</a>&gt;, <a class="enum" href="../prelude/enum.SpiderError.html" title="enum spider_core::prelude::SpiderError">SpiderError</a>&gt;&gt; + <a class="trait" href="https://doc.rust-lang.org/1.94.1/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a> + 'async_trait&gt;&gt;<div class="where">where
     Self: 'async_trait,
     'life0: 'async_trait,
     'life1: 'async_trait,</div></h4></section></summary><div class="docblock"><p>Parses a response and extracts scraped items and new requests.</p>
@@ -74,16 +74,16 @@ discover new URLs to crawl (requests).</p>
 track information across multiple parse calls</li>
 </ul>
 <h6 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h6>
-<p>Returns a [<code>ParseOutput</code>] containing:</p>
+<p>Returns a <a href="../../spider_util/item/struct.ParseOutput.html" title="struct spider_util::item::ParseOutput"><code>ParseOutput</code></a> containing:</p>
 <ul>
 <li>Scraped items of type <code>Self::Item</code></li>
 <li>New <a href="../prelude/struct.Request.html" title="struct spider_core::prelude::Request"><code>Request</code></a> objects to be enqueued</li>
 </ul>
 <p>The usual pattern is:</p>
 <ul>
-<li>call [<code>ParseOutput::new</code>]</li>
-<li>add zero or more items with [<code>ParseOutput::add_item</code>] or <code>add_items</code></li>
-<li>add zero or more follow-up requests with [<code>ParseOutput::add_request</code>]
+<li>call <a href="../../spider_util/item/struct.ParseOutput.html#method.new" title="associated function spider_util::item::ParseOutput::new"><code>ParseOutput::new</code></a></li>
+<li>add zero or more items with <a href="../../spider_util/item/struct.ParseOutput.html#method.add_item" title="method spider_util::item::ParseOutput::add_item"><code>ParseOutput::add_item</code></a> or <code>add_items</code></li>
+<li>add zero or more follow-up requests with <a href="../../spider_util/item/struct.ParseOutput.html#method.add_request" title="method spider_util::item::ParseOutput::add_request"><code>ParseOutput::add_request</code></a>
 or <code>add_requests</code></li>
 <li>return the accumulated output</li>
 </ul>
