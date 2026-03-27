@@ -109,6 +109,8 @@
 //! crate-specific APIs in `spider-core`, `spider-downloader`,
 //! `spider-middleware`, or `spider-pipeline`.
 
+extern crate self as spider_lib;
+
 pub mod prelude;
 /// Re-export the application-facing prelude.
 ///
