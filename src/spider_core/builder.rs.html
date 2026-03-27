@@ -70,8 +70,8 @@
 <a href=#70 id=70 data-nosnippet>70</a>/// ## Example
 <a href=#71 id=71 data-nosnippet>71</a>///
 <a href=#72 id=72 data-nosnippet>72</a>/// ```rust,ignore
-<a href=#73 id=73 data-nosnippet>73</a>/// # use spider_core::{CrawlerBuilder, Spider};
-<a href=#74 id=74 data-nosnippet>74</a>/// # use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+<a href=#73 id=73 data-nosnippet>73</a>/// # use spider_core::{CrawlerBuilder, ParseContext, Spider};
+<a href=#74 id=74 data-nosnippet>74</a>/// # use spider_util::error::SpiderError;
 <a href=#75 id=75 data-nosnippet>75</a>/// # struct MySpider;
 <a href=#76 id=76 data-nosnippet>76</a>/// # #[async_trait::async_trait]
 <a href=#77 id=77 data-nosnippet>77</a>/// # impl Spider for MySpider {
@@ -80,7 +80,7 @@
 <a href=#80 id=80 data-nosnippet>80</a>/// #     fn start_requests(&amp;self) -&gt; Result&lt;spider_core::spider::StartRequests&lt;'_&gt;, SpiderError&gt; {
 <a href=#81 id=81 data-nosnippet>81</a>/// #         Ok(spider_core::spider::StartRequests::iter(std::iter::empty()))
 <a href=#82 id=82 data-nosnippet>82</a>/// #     }
-<a href=#83 id=83 data-nosnippet>83</a>/// #     async fn parse(&amp;self, response: Response, state: &amp;Self::State) -&gt; Result&lt;ParseOutput&lt;Self::Item&gt;, SpiderError&gt; { todo!() }
+<a href=#83 id=83 data-nosnippet>83</a>/// #     async fn parse(&amp;self, cx: ParseContext&lt;'_, Self&gt;) -&gt; Result&lt;(), SpiderError&gt; { todo!() }
 <a href=#84 id=84 data-nosnippet>84</a>/// # }
 <a href=#85 id=85 data-nosnippet>85</a>/// let builder = CrawlerBuilder::new(MySpider)
 <a href=#86 id=86 data-nosnippet>86</a>///     .max_concurrent_downloads(8)

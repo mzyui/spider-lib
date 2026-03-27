@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["StartRequests"],"trait":["Spider"],"type":["StartRequestIter"]};
+window.SIDEBAR_ITEMS = {"enum":["StartRequests"],"struct":["ParseContext"],"trait":["Spider"],"type":["StartRequestIter"]};
