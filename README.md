@@ -11,9 +11,6 @@
 
 The workspace is split into small crates, but the root crate is the easiest place to start. It re-exports the common pieces through `spider_lib::prelude::*`, so a normal application does not need to wire the lower-level crates by hand.
 
-For the most up-to-date source README and examples, use this repository:
-<https://github.com/mzyui/spider-lib>.
-
 ## Why this crate exists
 
 `spider-lib` is meant for projects that need more structure than a one-off `reqwest + scraper` script:
