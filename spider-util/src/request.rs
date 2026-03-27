@@ -146,9 +146,10 @@ impl<'de> Deserialize<'de> for Body {
 }
 
 /// Transport-neutral HTTP method used by [`Request`].
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum Method {
     /// `GET`
+    #[default]
     Get,
     /// `POST`
     Post,
@@ -185,12 +186,6 @@ impl Method {
             Method::Connect => "CONNECT",
             Method::Custom(method) => method.as_str(),
         }
-    }
-}
-
-impl Default for Method {
-    fn default() -> Self {
-        Self::Get
     }
 }
 
