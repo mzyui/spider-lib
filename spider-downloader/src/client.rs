@@ -56,7 +56,7 @@ impl Downloader for ReqwestClientDownloader {
 
         self.apply_default_headers(&mut headers);
 
-        let mut req_builder = client_to_use.request(method, request_url.clone());
+        let mut req_builder = client_to_use.request(method.into(), request_url.clone());
 
         if let Some(body_content) = body {
             req_builder = match body_content {
