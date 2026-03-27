@@ -1,7 +1,9 @@
-//! Item traits and parse results.
+//! Item traits and parse-time output helpers.
 //!
-//! [`ParseOutput`] is what a spider returns after parsing a page. It carries the
-//! emitted items plus any follow-up requests discovered on that page.
+//! [`ParseOutput`] is the async sink carried by a spider's parse context.
+//! Spiders typically use it indirectly through `ParseContext` helpers such as
+//! `cx.add_item(...)` and `cx.add_request(...)`, while the runtime uses it to
+//! stream scraped items and follow-up requests as they are discovered.
 //!
 //! ## Example
 //!
@@ -15,19 +17,22 @@
 //! }
 //!
 //! // In your spider's parse method:
-//! // let mut output = ParseOutput::new();
-//! // output.add_item(Article { title: "...", content: "..." });
-//! // Ok(output)
+//! // output.add_item(Article { title: "...", content: "..." }).await?;
+//! // output.add_request(request).await?;
 //! ```
 //!
-//! `ParseOutput` is intentionally small: it is just the handoff object between
-//! parsing and the rest of the runtime. Use it to emit items, schedule new
-//! requests, or both from the same page.
+//! `ParseOutput` intentionally hides the runtime transport details. The
+//! crawler can backpressure parsing internally while spider code continues to
+//! use familiar `add_*` methods.
 
 use crate::request::Request;
+use async_trait::async_trait;
 use serde_json::Value;
 use std::any::Any;
 use std::fmt::Debug;
+use std::sync::Arc;
+
+use crate::error::SpiderError;
 
 /// Stable field kinds used by typed item schema metadata.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -77,63 +82,72 @@ pub trait TypedItemSchema {
     }
 }
 
-/// The output returned by a spider's `parse` method.
-#[derive(Debug, Clone)]
-pub struct ParseOutput<I> {
-    items: Vec<I>,
-    requests: Vec<Request>,
+#[async_trait]
+#[doc(hidden)]
+pub trait ParseSink<I>: Send + Sync + 'static {
+    async fn add_item(&self, item: I) -> Result<(), SpiderError>;
+    async fn add_request(&self, request: Request) -> Result<(), SpiderError>;
 }
 
-impl<I> ParseOutput<I> {
-    /// Creates a new, empty `ParseOutput`.
-    ///
-    /// Most spiders start each parse call with this and then append items and
-    /// follow-up requests as they discover them.
-    pub fn new() -> Self {
-        Self {
-            items: Vec::new(),
-            requests: Vec::new(),
-        }
+/// Async output sink passed into a spider's `parse` method.
+pub struct ParseOutput<I> {
+    sink: Arc<dyn ParseSink<I>>,
+}
+
+impl<I: 'static> ParseOutput<I> {
+    #[doc(hidden)]
+    pub fn from_sink(sink: Arc<dyn ParseSink<I>>) -> Self {
+        Self { sink }
     }
 
-    /// Consumes the `ParseOutput` and returns its inner items and requests.
-    ///
-    /// This is mainly used by the runtime, but can also be handy in isolated
-    /// parsing helpers.
-    pub fn into_parts(self) -> (Vec<I>, Vec<Request>) {
-        (self.items, self.requests)
-    }
-
-    /// Adds a scraped item to the output.
+    /// Emits a scraped item into the runtime.
     ///
     /// Use this when the current page produced one structured result that
-    /// should continue through the configured pipeline chain.
-    pub fn add_item(&mut self, item: I) {
-        self.items.push(item);
+    /// should continue through the configured pipeline chain. This call is
+    /// async so the runtime can apply backpressure when downstream work is
+    /// saturated.
+    pub async fn add_item(&self, item: I) -> Result<(), SpiderError> {
+        self.sink.add_item(item).await
     }
 
-    /// Adds a new request to be crawled.
+    /// Emits a new request to be crawled.
     ///
-    /// Requests emitted here are handed back to the scheduler after the parse
-    /// step completes.
-    pub fn add_request(&mut self, request: Request) {
-        self.requests.push(request);
+    /// Requests emitted here are forwarded into the scheduler path.
+    pub async fn add_request(&self, request: Request) -> Result<(), SpiderError> {
+        self.sink.add_request(request).await
     }
 
-    /// Adds multiple scraped items to the output.
-    pub fn add_items(&mut self, items: impl IntoIterator<Item = I>) {
-        self.items.extend(items);
+    /// Emits multiple scraped items into the runtime.
+    pub async fn add_items(&self, items: impl IntoIterator<Item = I>) -> Result<(), SpiderError> {
+        for item in items {
+            self.add_item(item).await?;
+        }
+        Ok(())
     }
 
-    /// Adds multiple new requests to be crawled.
-    pub fn add_requests(&mut self, requests: impl IntoIterator<Item = Request>) {
-        self.requests.extend(requests);
+    /// Emits multiple new requests to be crawled.
+    pub async fn add_requests(
+        &self,
+        requests: impl IntoIterator<Item = Request>,
+    ) -> Result<(), SpiderError> {
+        for request in requests {
+            self.add_request(request).await?;
+        }
+        Ok(())
     }
 }
 
-impl<I> Default for ParseOutput<I> {
-    fn default() -> Self {
-        Self::new()
+impl<I: 'static> Debug for ParseOutput<I> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ParseOutput").finish_non_exhaustive()
+    }
+}
+
+impl<I> Clone for ParseOutput<I> {
+    fn clone(&self) -> Self {
+        Self {
+            sink: Arc::clone(&self.sink),
+        }
     }
 }
 

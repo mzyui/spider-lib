@@ -9,7 +9,7 @@ This is not the crawler runtime itself. Think of it as the common language the r
 Use `spider-util` when you need:
 
 - request and response models shared across the runtime
-- `ScrapedItem` and `ParseOutput`
+- `ScrapedItem` and the `ParseOutput` sink used during parsing
 - framework-native errors such as `SpiderError` and `PipelineError`
 - selector and utility helpers already used across the workspace
 
@@ -19,7 +19,7 @@ If you are only writing an application spider, these types are often easier to a
 
 ```toml
 [dependencies]
-spider-util = "0.3.5"
+spider-util = "0.4.0"
 ```
 
 ## What it contains
@@ -34,18 +34,15 @@ spider-util = "0.3.5"
 ## Example
 
 ```rust,ignore
-use spider_util::{
-    item::ParseOutput,
-    request::Request,
-};
-use url::Url;
+use spider_util::{error::SpiderError, item::ParseOutput, request::Request};
 
-let request = Request::new(Url::parse("https://example.com")?)
-    .with_priority(10);
-let mut output = ParseOutput::<String>::new();
+async fn emit_example(output: &ParseOutput<String>) -> Result<(), SpiderError> {
+    let request = Request::try_new("https://example.com")?.with_priority(10);
 
-output.add_request(request);
-output.add_item("example".to_string());
+    output.add_request(request).await?;
+    output.add_item("example".to_string()).await?;
+    Ok(())
+}
 ```
 
 Requests default to priority `0`. Higher values are scheduled before lower

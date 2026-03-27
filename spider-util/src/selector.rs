@@ -5,9 +5,11 @@
 
 use crate::error::SpiderError;
 use ego_tree::NodeId;
+use ego_tree::iter::Children;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use scraper::{ElementRef, Html, Selector};
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -16,6 +18,10 @@ static SELECTOR_CACHE: Lazy<RwLock<HashMap<String, Selector>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 static COMPILED_SELECTOR_CACHE: Lazy<RwLock<HashMap<String, CompiledSelector>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+thread_local! {
+    static DOCUMENT_CACHE: RefCell<HashMap<u64, (Arc<str>, Arc<Html>)>> = RefCell::new(HashMap::new());
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ExtractionKind {
@@ -43,24 +49,41 @@ impl CompiledSelector {
 /// A node selected from an HTML document using the builtin CSS selector API.
 #[derive(Debug, Clone)]
 pub struct SelectorNode {
-    document: Arc<Html>,
-    node_id: NodeId,
+    document_html: Arc<str>,
+    document_hash: u64,
+    path: Arc<[usize]>,
     extraction: ExtractionKind,
 }
 
 /// A Scrapy-like selection result list.
 #[derive(Debug, Clone)]
 pub struct SelectorList {
-    document: Arc<Html>,
-    node_ids: Vec<NodeId>,
+    document_html: Arc<str>,
+    document_hash: u64,
+    paths: Vec<Arc<[usize]>>,
     extraction: ExtractionKind,
 }
 
+fn assert_selector_types_are_send_sync() {
+    fn assert_traits<T: Send + Sync>() {}
+
+    assert_traits::<SelectorNode>();
+    assert_traits::<SelectorList>();
+}
+
+const _: fn() = assert_selector_types_are_send_sync;
+
 impl SelectorNode {
-    pub(crate) fn new(document: Arc<Html>, node_id: NodeId, extraction: ExtractionKind) -> Self {
+    pub(crate) fn new(
+        document_html: Arc<str>,
+        document_hash: u64,
+        path: Arc<[usize]>,
+        extraction: ExtractionKind,
+    ) -> Self {
         Self {
-            document,
-            node_id,
+            document_html,
+            document_hash,
+            path,
             extraction,
         }
     }
@@ -79,29 +102,39 @@ impl SelectorNode {
         }
 
         let compiled = get_cached_compiled_selector(query)?;
-        let Some(scope) = self.element_ref() else {
-            return Ok(SelectorList::empty(
-                self.document.clone(),
-                compiled.extraction().clone(),
-            ));
-        };
+        with_document(
+            self.document_hash,
+            &self.document_html,
+            |document| -> Result<SelectorList, SpiderError> {
+                let Some(scope) = self.element_ref(document) else {
+                    return Ok(SelectorList::empty(
+                        self.document_html.clone(),
+                        self.document_hash,
+                        compiled.extraction().clone(),
+                    ));
+                };
 
-        let node_ids = scope
-            .select(compiled.selector())
-            .map(|element| element.id())
-            .collect();
+                let paths = scope
+                    .select(compiled.selector())
+                    .map(|element| node_path(document, element.id()))
+                    .collect();
 
-        Ok(SelectorList::new(
-            self.document.clone(),
-            node_ids,
-            compiled.extraction().clone(),
-        ))
+                Ok(SelectorList::new(
+                    self.document_html.clone(),
+                    self.document_hash,
+                    paths,
+                    compiled.extraction().clone(),
+                ))
+            },
+        )
     }
 
     /// Returns the extracted value for this node, if present.
     pub fn get(&self) -> Option<String> {
-        self.element_ref()
-            .and_then(|element| extract_element_value(element, &self.extraction))
+        with_document(self.document_hash, &self.document_html, |document| {
+            self.element_ref(document)
+                .and_then(|element| extract_element_value(element, &self.extraction))
+        })
     }
 
     /// Returns this node's extracted value as a single-element vector or an empty one.
@@ -111,14 +144,18 @@ impl SelectorNode {
 
     /// Returns the named attribute from the selected element.
     pub fn attrib(&self, name: &str) -> Option<String> {
-        self.element_ref()
-            .and_then(|element| element.attr(name).map(ToOwned::to_owned))
+        with_document(self.document_hash, &self.document_html, |document| {
+            self.element_ref(document)
+                .and_then(|element| element.attr(name).map(ToOwned::to_owned))
+        })
     }
 
     /// Returns the concatenated text content of the selected element.
     pub fn text_content(&self) -> Option<String> {
-        self.element_ref()
-            .map(|element| element.text().collect::<String>())
+        with_document(self.document_hash, &self.document_html, |document| {
+            self.element_ref(document)
+                .map(|element| element.text().collect::<String>())
+        })
     }
 
     /// Returns `true` when this element has any descendant matching `query`.
@@ -140,49 +177,73 @@ impl SelectorNode {
     pub fn has_ancestor(&self, query: &str) -> Result<bool, SpiderError> {
         let selector =
             Selector::parse(query).map_err(|e| SpiderError::HtmlParseError(e.to_string()))?;
-        let Some(element) = self.element_ref() else {
-            return Ok(false);
-        };
+        with_document(
+            self.document_hash,
+            &self.document_html,
+            |document| -> Result<bool, SpiderError> {
+                let Some(element) = self.element_ref(document) else {
+                    return Ok(false);
+                };
 
-        Ok(element
-            .ancestors()
-            .filter_map(ElementRef::wrap)
-            .any(|ancestor| selector.matches(&ancestor)))
+                Ok(element
+                    .ancestors()
+                    .filter_map(ElementRef::wrap)
+                    .any(|ancestor| selector.matches(&ancestor)))
+            },
+        )
     }
 
-    fn element_ref(&self) -> Option<ElementRef<'_>> {
-        element_ref_by_id(&self.document, self.node_id)
+    fn element_ref<'a>(&self, document: &'a Html) -> Option<ElementRef<'a>> {
+        element_ref_by_path(document, &self.path)
     }
 }
 
 impl SelectorList {
     pub(crate) fn new(
-        document: Arc<Html>,
-        node_ids: Vec<NodeId>,
+        document_html: Arc<str>,
+        document_hash: u64,
+        paths: Vec<Arc<[usize]>>,
         extraction: ExtractionKind,
     ) -> Self {
         Self {
-            document,
-            node_ids,
+            document_html,
+            document_hash,
+            paths,
             extraction,
         }
     }
 
     pub(crate) fn from_document_query(
-        document: Arc<Html>,
+        document_html: Arc<str>,
+        document_hash: u64,
         query: &str,
     ) -> Result<Self, SpiderError> {
         let compiled = get_cached_compiled_selector(query)?;
-        let node_ids = document
-            .select(compiled.selector())
-            .map(|element| element.id())
-            .collect();
+        with_document(
+            document_hash,
+            &document_html,
+            |document| -> Result<Self, SpiderError> {
+                let paths = document
+                    .select(compiled.selector())
+                    .map(|element| node_path(document, element.id()))
+                    .collect();
 
-        Ok(Self::new(document, node_ids, compiled.extraction().clone()))
+                Ok(Self::new(
+                    document_html.clone(),
+                    document_hash,
+                    paths,
+                    compiled.extraction().clone(),
+                ))
+            },
+        )
     }
 
-    pub(crate) fn empty(document: Arc<Html>, extraction: ExtractionKind) -> Self {
-        Self::new(document, Vec::new(), extraction)
+    pub(crate) fn empty(
+        document_html: Arc<str>,
+        document_hash: u64,
+        extraction: ExtractionKind,
+    ) -> Self {
+        Self::new(document_html, document_hash, Vec::new(), extraction)
     }
 
     /// Applies a CSS selector relative to every node in the list.
@@ -200,26 +261,33 @@ impl SelectorList {
 
         let compiled = get_cached_compiled_selector(query)?;
         let mut seen = HashSet::new();
-        let mut node_ids = Vec::new();
+        with_document(
+            self.document_hash,
+            &self.document_html,
+            |document| -> Result<Self, SpiderError> {
+                let mut paths = Vec::new();
 
-        for node_id in &self.node_ids {
-            let Some(scope) = element_ref_by_id(&self.document, *node_id) else {
-                continue;
-            };
+                for path in &self.paths {
+                    let Some(scope) = element_ref_by_path(document, path) else {
+                        continue;
+                    };
 
-            for element in scope.select(compiled.selector()) {
-                let id = element.id();
-                if seen.insert(id) {
-                    node_ids.push(id);
+                    for element in scope.select(compiled.selector()) {
+                        let path = node_path(document, element.id());
+                        if seen.insert(path.clone()) {
+                            paths.push(path);
+                        }
+                    }
                 }
-            }
-        }
 
-        Ok(Self::new(
-            self.document.clone(),
-            node_ids,
-            compiled.extraction().clone(),
-        ))
+                Ok(Self::new(
+                    self.document_html.clone(),
+                    self.document_hash,
+                    paths,
+                    compiled.extraction().clone(),
+                ))
+            },
+        )
     }
 
     /// Returns the first extracted value in the selection.
@@ -229,13 +297,15 @@ impl SelectorList {
 
     /// Returns all extracted values in the selection.
     pub fn get_all(&self) -> Vec<String> {
-        self.node_ids
-            .iter()
-            .filter_map(|node_id| {
-                element_ref_by_id(&self.document, *node_id)
-                    .and_then(|element| extract_element_value(element, &self.extraction))
-            })
-            .collect()
+        with_document(self.document_hash, &self.document_html, |document| {
+            self.paths
+                .iter()
+                .filter_map(|path| {
+                    element_ref_by_path(document, path)
+                        .and_then(|element| extract_element_value(element, &self.extraction))
+                })
+                .collect()
+        })
     }
 
     /// Returns the named attribute from the first selected element.
@@ -245,19 +315,24 @@ impl SelectorList {
 
     /// Returns the first selected node.
     pub fn first(&self) -> Option<SelectorNode> {
-        self.node_ids.first().copied().map(|node_id| {
-            SelectorNode::new(self.document.clone(), node_id, self.extraction.clone())
+        self.paths.first().cloned().map(|path| {
+            SelectorNode::new(
+                self.document_html.clone(),
+                self.document_hash,
+                path,
+                self.extraction.clone(),
+            )
         })
     }
 
     /// Returns the number of matched nodes.
     pub fn len(&self) -> usize {
-        self.node_ids.len()
+        self.paths.len()
     }
 
     /// Returns `true` when the selection has no matched nodes.
     pub fn is_empty(&self) -> bool {
-        self.node_ids.is_empty()
+        self.paths.is_empty()
     }
 }
 
@@ -266,10 +341,15 @@ impl IntoIterator for SelectorList {
     type IntoIter = std::vec::IntoIter<SelectorNode>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.node_ids
+        self.paths
             .into_iter()
-            .map(|node_id| {
-                SelectorNode::new(self.document.clone(), node_id, self.extraction.clone())
+            .map(|path| {
+                SelectorNode::new(
+                    self.document_html.clone(),
+                    self.document_hash,
+                    path,
+                    self.extraction.clone(),
+                )
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -395,8 +475,69 @@ fn parse_selector_parts(query: &str) -> Result<(&str, ExtractionKind), SpiderErr
     Ok((query, ExtractionKind::Element))
 }
 
+fn with_document<T>(document_hash: u64, document_html: &Arc<str>, f: impl FnOnce(&Html) -> T) -> T {
+    DOCUMENT_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let parsed = match cache.get(&document_hash) {
+            Some((cached_html, parsed)) if cached_html.as_ref() == document_html.as_ref() => {
+                parsed.clone()
+            }
+            _ => {
+                let parsed = Arc::new(Html::parse_document(document_html.as_ref()));
+                cache.insert(document_hash, (document_html.clone(), parsed.clone()));
+                parsed
+            }
+        };
+        drop(cache);
+        f(parsed.as_ref())
+    })
+}
+
 fn element_ref_by_id(document: &Html, node_id: NodeId) -> Option<ElementRef<'_>> {
     document.tree.get(node_id).and_then(ElementRef::wrap)
+}
+
+fn element_ref_by_path<'a>(document: &'a Html, path: &[usize]) -> Option<ElementRef<'a>> {
+    let mut current = document.tree.root().id();
+
+    for child_index in path {
+        current = nth_child(document.tree.get(current)?.children(), *child_index)?.id();
+    }
+
+    element_ref_by_id(document, current)
+}
+
+fn node_path(document: &Html, node_id: NodeId) -> Arc<[usize]> {
+    let mut path = Vec::new();
+    let mut current = node_id;
+
+    while let Some(node) = document.tree.get(current) {
+        let Some(parent) = node.parent() else {
+            break;
+        };
+        let parent_id = parent.id();
+
+        let mut child_index = 0usize;
+        for child in parent.children() {
+            if child.id() == current {
+                break;
+            }
+            child_index += 1;
+        }
+
+        path.push(child_index);
+        current = parent_id;
+    }
+
+    path.reverse();
+    Arc::from(path)
+}
+
+fn nth_child<'a>(
+    mut children: Children<'a, scraper::node::Node>,
+    child_index: usize,
+) -> Option<ego_tree::NodeRef<'a, scraper::node::Node>> {
+    children.nth(child_index)
 }
 
 fn extract_element_value(element: ElementRef<'_>, extraction: &ExtractionKind) -> Option<String> {
