@@ -17,6 +17,7 @@
 //! - [`Spider`] describes crawl behavior
 //! - [`CrawlerBuilder`] assembles the runtime
 //! - [`Request`], [`Response`], and [`ParseOutput`] are the core runtime data types
+//! - [`Response::css`](spider_util::response::Response::css) provides Scrapy-like builtin selectors
 //! - middleware and pipelines can be enabled with feature flags and then added
 //!   through the builder
 //!
@@ -84,6 +85,10 @@
 //!     crawler.start_crawl().await
 //! }
 //! ```
+//!
+//! The built-in selector API is the recommended path for HTML extraction:
+//! `response.css(".card")?`, `node.css("a::attr(href)")?.get()`, and
+//! `node.css(".title::text")?.get()`.
 //!
 //! [`Spider::parse`] takes `&self` and a separate shared state parameter.
 //! That design keeps the spider itself immutable while still allowing
