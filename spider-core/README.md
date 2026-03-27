@@ -18,7 +18,7 @@ If your goal is simply “write a spider and run it”, `spider-lib` is usually 
 
 ```toml
 [dependencies]
-spider-core = "2.0.2"
+spider-core = "3.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -42,7 +42,7 @@ The runtime loop is intentionally simple:
 2. Requests go through scheduling and deduplication.
 3. The downloader fetches responses.
 4. Middleware can alter requests, responses, or retry behavior.
-5. `Spider::parse` returns a `ParseOutput` containing items and follow-up requests.
+5. `Spider::parse` receives a `ParseContext` with the response, state, and output sink.
 6. Pipelines process emitted items.
 
 ## API landmarks
@@ -59,8 +59,8 @@ If you are skimming docs.rs, these are the most useful entry points:
 ## Minimal example
 
 ```rust,ignore
-use spider_core::{async_trait, CrawlerBuilder, Spider};
-use spider_util::{error::SpiderError, item::ParseOutput, response::Response};
+use spider_core::{async_trait, CrawlerBuilder, ParseContext, Spider};
+use spider_util::error::SpiderError;
 
 #[spider_macro::scraped_item]
 struct Item {
@@ -81,12 +81,8 @@ impl Spider for MySpider {
         Ok(spider_core::StartRequests::Urls(vec!["https://example.com"]))
     }
 
-    async fn parse(
-        &self,
-        _response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        Ok(ParseOutput::new())
+    async fn parse(&self, _cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        Ok(())
     }
 }
 
@@ -121,7 +117,7 @@ async fn run() -> Result<(), SpiderError> {
 
 ```toml
 [dependencies]
-spider-core = { version = "2.0.2", features = ["checkpoint"] }
+spider-core = { version = "3.0.0", features = ["checkpoint"] }
 ```
 
 ## Practical note

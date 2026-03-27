@@ -7,8 +7,8 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_core::Spider;
-//! use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+//! use spider_core::{ParseContext, Spider};
+//! use spider_util::{error::SpiderError, item::ParseOutput};
 //! use async_trait::async_trait;
 //!
 //! #[spider_macro::scraped_item]
@@ -50,23 +50,21 @@
 //!         Ok(StartRequests::iter(std::iter::once(Ok(req))))
 //!     }
 //!
-//!     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
+//!     async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
 //!         // Update state - can be done concurrently without blocking the spider
-//!         state.increment_page_count();
-//!         state.mark_url_visited(response.url.to_string());
-//!
-//!         let mut output = ParseOutput::new();
+//!         cx.state().increment_page_count();
+//!         cx.state().mark_url_visited(cx.url.to_string());
 //!
 //!         // Extract articles from the page
 //!         // ... parsing logic ...
 //!
 //!         // Add discovered articles to output
-//!         // output.add_item(Article { title, content });
+//!         // cx.add_item(Article { title, content }).await?;
 //!
 //!         // Add new URLs to follow
-//!         // output.add_request(new_request);
+//!         // cx.add_request(new_request).await?;
 //!
-//!         Ok(output)
+//!         Ok(())
 //!     }
 //! }
 //! ```
@@ -80,6 +78,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use url::Url;
 
@@ -187,6 +186,105 @@ fn start_requests_from_file<P: AsRef<Path>>(
     Ok(Box::new(iter))
 }
 
+/// Parse-time context passed into [`Spider::parse`].
+///
+/// This bundles the current [`Response`], shared spider state, and the async
+/// output sink into a single value so user-facing parse signatures stay small.
+///
+/// The context dereferences to [`Response`], which means selector-heavy code
+/// can keep the natural `cx.css(...)` style without manually reaching through a
+/// nested response field.
+pub struct ParseContext<'a, S: Spider + ?Sized> {
+    response: Response,
+    state: &'a S::State,
+    output: ParseOutput<S::Item>,
+}
+
+impl<'a, S: Spider + ?Sized> ParseContext<'a, S> {
+    pub(crate) fn new(
+        response: Response,
+        state: &'a S::State,
+        output: ParseOutput<S::Item>,
+    ) -> Self {
+        Self {
+            response,
+            state,
+            output,
+        }
+    }
+
+    /// Returns the shared spider state for this parse call.
+    pub fn state(&self) -> &'a S::State {
+        self.state
+    }
+
+    /// Returns the current response explicitly.
+    pub fn response(&self) -> &Response {
+        &self.response
+    }
+
+    /// Returns the current response as a mutable reference.
+    pub fn response_mut(&mut self) -> &mut Response {
+        &mut self.response
+    }
+
+    /// Returns the underlying async parse output sink.
+    pub fn output(&self) -> &ParseOutput<S::Item> {
+        &self.output
+    }
+
+    /// Emits a scraped item into the runtime.
+    pub async fn add_item(&self, item: S::Item) -> Result<(), SpiderError> {
+        self.output.add_item(item).await
+    }
+
+    /// Emits multiple scraped items into the runtime.
+    pub async fn add_items(
+        &self,
+        items: impl IntoIterator<Item = S::Item>,
+    ) -> Result<(), SpiderError> {
+        self.output.add_items(items).await
+    }
+
+    /// Emits a follow-up request into the runtime.
+    pub async fn add_request(&self, request: Request) -> Result<(), SpiderError> {
+        self.output.add_request(request).await
+    }
+
+    /// Emits multiple follow-up requests into the runtime.
+    pub async fn add_requests(
+        &self,
+        requests: impl IntoIterator<Item = Request>,
+    ) -> Result<(), SpiderError> {
+        self.output.add_requests(requests).await
+    }
+
+    /// Consumes the context and returns the inner response, state reference,
+    /// and output sink.
+    pub fn into_parts(self) -> (Response, &'a S::State, ParseOutput<S::Item>) {
+        (self.response, self.state, self.output)
+    }
+
+    /// Consumes the context and returns the inner response.
+    pub fn into_response(self) -> Response {
+        self.response
+    }
+}
+
+impl<S: Spider + ?Sized> Deref for ParseContext<'_, S> {
+    type Target = Response;
+
+    fn deref(&self) -> &Self::Target {
+        &self.response
+    }
+}
+
+impl<S: Spider + ?Sized> DerefMut for ParseContext<'_, S> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.response
+    }
+}
+
 /// Defines the contract for a spider.
 ///
 /// ## Type Parameters
@@ -206,7 +304,7 @@ fn start_requests_from_file<P: AsRef<Path>>(
 ///
 /// 1. [`start_requests`](Spider::start_requests) produces the initial requests
 /// 2. the runtime schedules and downloads them
-/// 3. [`parse`](Spider::parse) turns each [`Response`] into a [`ParseOutput`]
+/// 3. [`parse`](Spider::parse) receives a [`ParseContext`] for each response
 /// 4. emitted items go to pipelines and emitted requests go back to the scheduler
 #[async_trait]
 pub trait Spider: Send + Sync + 'static {
@@ -269,8 +367,8 @@ pub trait Spider: Send + Sync + 'static {
     /// ## Example
     ///
     /// ```rust,ignore
-    /// # use spider_core::{scraped_item, Spider, StartRequests};
-    /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
+    /// # use spider_core::{scraped_item, ParseContext, Spider, StartRequests};
+    /// # use spider_util::{error::SpiderError, item::{ParseOutput, ScrapedItem}};
     /// # #[scraped_item]
     /// # struct ExampleItem {
     /// #     value: String,
@@ -283,7 +381,7 @@ pub trait Spider: Send + Sync + 'static {
     /// fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
     ///     Ok(StartRequests::file("seeds/start_urls.txt"))
     /// }
-    /// # async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
+    /// # async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
     /// #     todo!()
     /// # }
     /// # }
@@ -302,22 +400,23 @@ pub trait Spider: Send + Sync + 'static {
     ///
     /// ## Parameters
     ///
-    /// - `response`: The HTTP response to parse, containing the body, headers, and URL
-    /// - `state`: A shared reference to the spider's state, which can be used to
-    ///   track information across multiple parse calls
+    /// - `cx`: A parse context containing the current response, shared spider
+    ///   state, and async output sink
     ///
     /// ## Returns
     ///
-    /// Returns a [`ParseOutput`] containing:
+    /// The provided [`ParseContext`] lets the spider stream:
     /// - Scraped items of type `Self::Item`
     /// - New [`Request`] objects to be enqueued
     ///
     /// The usual pattern is:
-    /// - call [`ParseOutput::new`]
-    /// - add zero or more items with [`ParseOutput::add_item`] or `add_items`
-    /// - add zero or more follow-up requests with [`ParseOutput::add_request`]
-    ///   or `add_requests`
-    /// - return the accumulated output
+    /// - read the response through the context directly, for example
+    ///   `cx.css(...)` via [`Deref`]
+    /// - read shared state with [`ParseContext::state`]
+    /// - call [`ParseContext::add_item`] or `add_items` for scraped items
+    /// - call [`ParseContext::add_request`] or `add_requests` for follow-up
+    ///   requests
+    /// - return `Ok(())` when parsing is done
     ///
     /// ## Design Notes
     ///
@@ -334,8 +433,8 @@ pub trait Spider: Send + Sync + 'static {
     /// # Example
     ///
     /// ```rust,ignore
-    /// # use spider_core::{scraped_item, Spider, StartRequests};
-    /// # use spider_util::{response::Response, error::SpiderError, item::{ParseOutput, ScrapedItem}};
+    /// # use spider_core::{scraped_item, ParseContext, Spider, StartRequests};
+    /// # use spider_util::{error::SpiderError, item::{ParseOutput, ScrapedItem}};
     /// # use async_trait::async_trait;
     /// # struct MySpider;
     /// # #[scraped_item]
@@ -351,21 +450,13 @@ pub trait Spider: Send + Sync + 'static {
     /// #     fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError> {
     /// #         Ok(StartRequests::iter(std::iter::empty()))
     /// #     }
-    /// async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> {
-    ///     let mut output = ParseOutput::new();
-    ///
+    /// async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
     ///     // Parse HTML and extract data
-    ///     if let Ok(html) = response.to_html() {
-    ///         // ... extraction logic ...
-    ///     }
+    ///     let heading = cx.css("h1::text")?.get().unwrap_or_default();
     ///
-    ///     Ok(output)
+    ///     Ok(())
     /// }
     /// # }
     /// ```
-    async fn parse(
-        &self,
-        response: Response,
-        state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError>;
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError>;
 }

@@ -70,8 +70,8 @@ use std::fs;
 /// ## Example
 ///
 /// ```rust,ignore
-/// # use spider_core::{CrawlerBuilder, Spider};
-/// # use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+/// # use spider_core::{CrawlerBuilder, ParseContext, Spider};
+/// # use spider_util::error::SpiderError;
 /// # struct MySpider;
 /// # #[async_trait::async_trait]
 /// # impl Spider for MySpider {
@@ -80,7 +80,7 @@ use std::fs;
 /// #     fn start_requests(&self) -> Result<spider_core::spider::StartRequests<'_>, SpiderError> {
 /// #         Ok(spider_core::spider::StartRequests::iter(std::iter::empty()))
 /// #     }
-/// #     async fn parse(&self, response: Response, state: &Self::State) -> Result<ParseOutput<Self::Item>, SpiderError> { todo!() }
+/// #     async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> { todo!() }
 /// # }
 /// let builder = CrawlerBuilder::new(MySpider)
 ///     .max_concurrent_downloads(8)
