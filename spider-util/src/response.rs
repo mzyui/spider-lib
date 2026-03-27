@@ -2,7 +2,7 @@
 //!
 //! [`Response`] wraps the downloaded body together with the final URL, status,
 //! headers, and request metadata. It also provides convenience methods for
-//! Scrapy-like CSS extraction, parsing HTML or JSON, and extracting links.
+//! Scrapy-like CSS extraction, parsing JSON, and extracting links.
 //!
 //! ## Example
 //!
@@ -386,7 +386,6 @@ impl PageMetadata {
 ///
 /// The type is designed for parse-time ergonomics:
 /// - [`Response::css`] exposes the recommended Scrapy-like selector API
-/// - [`Response::to_html`] remains available for lower-level DOM access
 /// - [`Response::json`] deserializes JSON payloads
 /// - [`Response::links`] and related helpers extract follow-up links
 /// - [`Response::to_request`] reconstructs the originating request context
@@ -565,74 +564,6 @@ impl Response {
         serde_json::from_slice(&self.body)
     }
 
-    /// Parses the response body as HTML.
-    ///
-    /// This method is kept for lower-level DOM access and interop. For most
-    /// spider code, prefer [`Response::css`] and the builtin selector API.
-    ///
-    /// Returns a [`scraper::Html`] document that can be queried directly.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`Utf8Error`] if the response body is not valid UTF-8.
-    ///
-    /// ## Example
-    ///
-    /// ```rust,ignore
-    /// # use spider_util::response::Response;
-    /// # use reqwest::StatusCode;
-    /// # use bytes::Bytes;
-    /// # use url::Url;
-    /// # let response = Response {
-    /// #     url: Url::parse("https://example.com").unwrap(),
-    /// #     status: StatusCode::OK,
-    /// #     headers: http::header::HeaderMap::new(),
-    /// #     body: Bytes::from("<html><body>Hello</body></html>"),
-    /// #     request_url: Url::parse("https://example.com").unwrap(),
-    /// #     meta: None,
-    /// #     cached: false,
-    /// # };
-    /// let html = response.to_html()?;
-    /// # Ok::<(), std::str::Utf8Error>(())
-    /// ```
-    pub fn to_html(&self) -> Result<Html, Utf8Error> {
-        Ok((*self.cached_html()?).clone())
-    }
-
-    /// Lazily parses the response body as HTML.
-    ///
-    /// Returns a closure that can be called when lower-level HTML access is
-    /// actually needed. Most spiders should prefer [`Response::css`].
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`Utf8Error`] if the response body is not valid UTF-8.
-    ///
-    /// ## Example
-    ///
-    /// ```rust,ignore
-    /// # use spider_util::response::Response;
-    /// # use reqwest::StatusCode;
-    /// # use bytes::Bytes;
-    /// # use url::Url;
-    /// # let response = Response {
-    /// #     url: Url::parse("https://example.com").unwrap(),
-    /// #     status: StatusCode::OK,
-    /// #     headers: http::header::HeaderMap::new(),
-    /// #     body: Bytes::from("<html><body>Hello</body></html>"),
-    /// #     request_url: Url::parse("https://example.com").unwrap(),
-    /// #     meta: None,
-    /// #     cached: false,
-    /// # };
-    /// let html_fn = response.lazy_html()?;
-    /// // Parse HTML only when needed
-    /// let html = html_fn()?;
-    /// # Ok::<(), std::str::Utf8Error>(())
-    /// ```
-    pub fn lazy_html(&self) -> Result<impl Fn() -> Result<Html, Utf8Error> + '_, Utf8Error> {
-        Ok(move || self.to_html())
-    }
-
     /// Applies a builtin CSS selector to the response body using a Scrapy-like API.
     ///
     /// Supports standard CSS selectors plus terminal extraction suffixes:
@@ -666,8 +597,8 @@ impl Response {
     /// Returns [`SpiderError::Utf8Error`] when the body is not valid UTF-8 and
     /// [`SpiderError::HtmlParseError`] when the selector is invalid.
     pub fn css(&self, query: &str) -> Result<SelectorList, SpiderError> {
-        let document = self.cached_html()?;
-        SelectorList::from_document_query(document, query)
+        let body = Arc::<str>::from(self.text()?);
+        SelectorList::from_document_query(body, self.html_cache_key(), query)
     }
 
     /// Returns the response body as UTF-8 text.

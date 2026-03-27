@@ -1,6 +1,6 @@
 [package]
 name = "spider-middleware"
-version = "0.3.8"
+version = "0.4.0"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "Middleware implementations for the spider-lib web scraping framework."
@@ -33,7 +33,7 @@ robotstxt = { workspace = true, optional = true }
 ua_generator = { workspace = true, optional = true }
 seahash.workspace = true
 http.workspace = true
-spider-util = { version = "0.3.7", path = "../spider-util" }
+spider-util = { version = "0.4.0", path = "../spider-util" }
 
 [features]
 default = ["core"]

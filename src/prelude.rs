@@ -10,6 +10,9 @@
 //! runtime types, the spider trait, common errors, parsing helpers, middleware,
 //! and the most common pipelines.
 
+/// Logging level enum used by [`CrawlerBuilder::log_level`](spider_core::CrawlerBuilder::log_level).
+pub use log::LevelFilter;
+
 /// Core runtime types and traits used to define and run a crawl.
 pub use spider_core::{
     CrawlShapePreset,
@@ -22,6 +25,7 @@ pub use spider_core::{
     DiscoveryRule,
     // Core traits
     Downloader,
+    ParseContext,
     ReqwestClientDownloader,
     Spider,
     StartRequestIter,
@@ -40,7 +44,7 @@ pub use spider_core::{
 };
 
 pub use spider_util::item::{FieldValueType, ItemFieldSchema, ItemSchema, TypedItemSchema};
-/// Item contracts and parse results returned by [`Spider::parse`].
+/// Parse-time output sink and item contracts used by [`Spider::parse`].
 pub use spider_util::item::{ParseOutput, ScrapedItem};
 
 /// Pipeline trait for item-processing stages.

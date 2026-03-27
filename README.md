@@ -33,7 +33,7 @@ from spiders or middleware that set headers explicitly.
 
 ```toml
 [dependencies]
-spider-lib = "3.0.2"
+spider-lib = "4.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```
@@ -107,6 +107,7 @@ use spider_lib::prelude::*;
 struct Quote {
     text: String,
     author: String,
+    source_url: String,
 }
 
 struct QuotesSpider;
@@ -120,14 +121,8 @@ impl Spider for QuotesSpider {
         Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        for quote in response.css(".quote")? {
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        for quote in cx.css(".quote")? {
             let text = quote
                 .css(".text::text")?
                 .get()
@@ -138,31 +133,45 @@ impl Spider for QuotesSpider {
                 .get()
                 .unwrap_or_default();
 
-            output.add_item(Quote { text, author });
+            cx.add_item(Quote {
+                text,
+                author,
+                source_url: cx.url.to_string(),
+            })
+            .await?;
         }
 
-        Ok(output)
+        if let Some(next_href) = cx.css("li.next a::attr(href)")?.get() {
+            let next_url = cx.url.join(&next_href)?;
+            cx.add_request(Request::new(next_url)).await?;
+        }
+
+        Ok(())
     }
 }
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
-    let crawler = CrawlerBuilder::new(QuotesSpider).build().await?;
+    let crawler = CrawlerBuilder::new(QuotesSpider)
+        .log_level(LevelFilter::Info)
+        .build()
+        .await?;
     crawler.start_crawl().await
 }
 ```
 
 ## Builtin selectors
 
-The recommended parse API is the built-in Scrapy-like selector surface on [`Response`]:
+The recommended parse API is the built-in Scrapy-like selector surface exposed
+through `ParseContext`, which dereferences to [`Response`]:
 
-- `response.css(".quote")?` to select elements
+- `cx.css(".quote")?` to select elements
 - `quote.css(".text::text")?.get()` to extract text
-- `response.css("a::attr(href)")?.get_all()` to extract attributes
+- `cx.css("a::attr(href)")?.get_all()` to extract attributes
 
 `get()` returns the first match as `Option<String>`, and `get_all()` collects all extracted values.
 
-`to_html()` still exists when you need lower-level DOM access, but most spiders should start with `.css(...)`.
+Most spiders should stay on `.css(...)` and the built-in selector API.
 
 ## Run the examples
 
@@ -217,7 +226,7 @@ At a high level:
 2. The scheduler accepts and deduplicates requests.
 3. The downloader performs the HTTP work.
 4. Middleware can inspect or modify requests and responses.
-5. `Spider::parse` turns a `Response` into `ParseOutput`.
+5. `Spider::parse` receives a `ParseContext` for each `Response`.
 6. Pipelines process emitted items.
 
 That separation is what makes the workspace easier to extend than a single-file crawler script.
@@ -316,7 +325,7 @@ Example:
 
 ```toml
 [dependencies]
-spider-lib = { version = "3.0.2", features = ["live-stats", "pipeline-csv"] }
+spider-lib = { version = "4.0.0", features = ["live-stats", "pipeline-csv"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```

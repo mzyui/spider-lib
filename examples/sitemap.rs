@@ -20,32 +20,27 @@ impl Spider for SitemapSpider {
         ]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        let is_xml = response
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        let is_xml = cx
             .headers
             .get("content-type")
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.contains("xml"))
-            || response.url.path().ends_with(".xml");
+            || cx.url.path().ends_with(".xml");
 
         if is_xml {
-            return Ok(output);
+            return Ok(());
         }
 
-        let metadata = response.page_metadata()?;
-        output.add_item(SitemapItem {
-            url: response.url.to_string(),
+        let metadata = cx.page_metadata()?;
+        cx.add_item(SitemapItem {
+            url: cx.url.to_string(),
             title: metadata.title.unwrap_or_default(),
             description: metadata.description.unwrap_or_default(),
-        });
+        })
+        .await?;
 
-        Ok(output)
+        Ok(())
     }
 }
 

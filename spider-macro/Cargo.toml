@@ -1,6 +1,6 @@
 [package]
 name = "spider-macro"
-version = "0.1.14"
+version = "0.1.13"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "Proc-macros for the spider-lib web scraping framework."

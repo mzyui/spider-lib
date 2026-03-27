@@ -18,8 +18,8 @@ use spider_lib::prelude::*;
 
 ```toml
 [dependencies]
-spider-macro = "0.1.12"
-spider-util = "0.3.6"
+spider-macro = "0.1.13"
+spider-util = "0.4.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ```

@@ -13,9 +13,9 @@ If you already know Scrapy, the main translation is:
 - define items as Rust structs with `#[scraped_item]`
 - implement `Spider` for crawl logic
 - seed the crawl with `start_urls()` or `start_requests()`
-- return a `ParseOutput` from `parse()`
-- call `output.add_item(...)` instead of `yield item`
-- call `output.add_request(...)` instead of `yield Request(...)`
+- accept a `ParseContext` in `parse()`
+- call `cx.add_item(...)` instead of `yield item`
+- call `cx.add_request(...)` instead of `yield Request(...)`
 - configure middleware and pipelines through `CrawlerBuilder`
 - put mutable crawl state in `Spider::State`, not on the spider itself
 
@@ -27,9 +27,9 @@ If you already know Scrapy, the main translation is:
 | `class MySpider(scrapy.Spider)` | `struct MySpider;` plus `impl Spider for MySpider` |
 | `name`, `allowed_domains`, `start_urls` | spider struct plus `start_urls()` or `start_requests()` |
 | `start_requests()` | `fn start_requests(&self) -> Result<StartRequests<'_>, SpiderError>` |
-| `parse(self, response)` | `async fn parse(&self, response, state) -> Result<ParseOutput<_>, SpiderError>` |
-| `yield item` | `output.add_item(item)` |
-| `yield scrapy.Request(...)` | `output.add_request(Request::new(...))` |
+| `parse(self, response)` | `async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError>` |
+| `yield item` | `cx.add_item(item).await?` |
+| `yield scrapy.Request(...)` | `cx.add_request(Request::new(...)).await?` |
 | `cb_kwargs` or `meta` | request metadata via `with_meta(...)` or `with_meta_value(...)` |
 | downloader middleware | middleware added with `CrawlerBuilder::add_middleware(...)` |
 | item pipelines | pipelines added with `CrawlerBuilder::add_pipeline(...)` |
@@ -82,14 +82,8 @@ impl Spider for QuoteSpider {
         Ok(StartRequests::Urls(vec!["https://quotes.toscrape.com/"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        for quote in response.css(".quote")? {
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        for quote in cx.css(".quote")? {
             let text = quote
                 .css(".text::text")?
                 .get()
@@ -104,15 +98,15 @@ impl Spider for QuoteSpider {
                 .trim()
                 .to_string();
 
-            output.add_item(QuoteItem { text, author });
+            cx.add_item(QuoteItem { text, author }).await?;
         }
 
-        if let Some(next_href) = response.css(".next a::attr(href)")?.get() {
-            let next_url = response.url.join(&next_href)?;
-            output.add_request(Request::new(next_url));
+        if let Some(next_href) = cx.css(".next a::attr(href)")?.get() {
+            let next_url = cx.url.join(&next_href)?;
+            cx.add_request(Request::new(next_url)).await?;
         }
 
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -150,16 +144,15 @@ The shape of a spider stays familiar:
 - the runtime downloads responses
 - `parse()` extracts items and follow-up requests
 
-The biggest practical difference is that `parse()` returns a `ParseOutput<Self::Item>` instead of yielding values one by one.
+The biggest practical difference is that `parse()` receives a `ParseContext<Self>` instead of yielding values one by one.
 
 ```rust,ignore
-let mut output = ParseOutput::new();
-output.add_item(item);
-output.add_request(request);
-Ok(output)
+cx.add_item(item).await?;
+cx.add_request(request).await?;
+Ok(())
 ```
 
-Think of `ParseOutput` as the explicit handoff object that replaces Scrapy's generator-style `yield`.
+Think of `ParseContext` as the parse-time wrapper around the current response, shared state, and async output methods.
 
 ## Start URLs and start requests
 
@@ -205,15 +198,15 @@ yield response.follow(next_href, callback=self.parse)
 
 ```rust,ignore
 let next_url = response.url.join(next_href)?;
-output.add_request(Request::new(next_url));
+cx.add_request(Request::new(next_url)).await?;
 ```
 
 When the link came from `response.css(...)? .get()`, borrow the returned string:
 
 ```rust,ignore
-if let Some(next_href) = response.css(".next a::attr(href)")?.get() {
-    let next_url = response.url.join(&next_href)?;
-    output.add_request(Request::new(next_url));
+if let Some(next_href) = cx.css(".next a::attr(href)")?.get() {
+    let next_url = cx.url.join(&next_href)?;
+    cx.add_request(Request::new(next_url)).await?;
 }
 ```
 
@@ -234,12 +227,12 @@ Supported suffixes in the built-in selector API:
 Example:
 
 ```rust,ignore
-let title = response
+let title = cx
     .css("h1::text")?
     .get()
     .unwrap_or_default();
 
-let links = response.css("a::attr(href)")?.get_all();
+let links = cx.css("a::attr(href)")?.get_all();
 ```
 
 For custom requests, build them directly:
@@ -251,7 +244,7 @@ let request = Request::try_new("https://example.com/api/items")?
     .with_json(serde_json::json!({ "page": 2 }))
     .with_meta("source", serde_json::json!("pagination"));
 
-output.add_request(request);
+cx.add_request(request).await?;
 ```
 
 ## Request metadata
@@ -295,15 +288,11 @@ impl Spider for MySpider {
     type Item = Item;
     type State = MyState;
 
-    async fn parse(
-        &self,
-        response: Response,
-        state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        state.pages_seen.increment();
-        state.visited.insert(response.url.to_string(), true);
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        cx.state().pages_seen.increment();
+        cx.state().visited.insert(cx.url.to_string(), true);
 
-        Ok(ParseOutput::new())
+        Ok(())
     }
 }
 ```
@@ -379,8 +368,8 @@ Port your Scrapy project in this order:
 
 1. Convert your item definitions into `#[scraped_item]` structs.
 2. Create one Rust spider and port `start_urls` or `start_requests`.
-3. Port one `parse()` path and return a `ParseOutput`.
-4. Add pagination and detail-page requests with `output.add_request(...)`.
+3. Port one `parse()` path and emit through `ParseContext`.
+4. Add pagination and detail-page requests with `cx.add_request(...).await?`.
 5. Move mutable spider fields into `Spider::State`.
 6. Reintroduce middleware and pipelines after the crawl flow works.
 7. Add output pipelines once the item schema looks stable.
@@ -389,7 +378,7 @@ This order keeps the migration boring. You establish the crawl loop first, then 
 
 ## Common gotchas for Scrapy users
 
-- `parse()` does not yield values directly. You collect items and requests in `ParseOutput`.
+- `parse()` does not yield values directly. You emit items and requests through `ParseContext`.
 - The spider instance is not your mutable state bag. Put mutable data in `Spider::State`.
 - Request customization happens on `Request`, not through many global settings.
 - Middleware and pipelines are builder composition concerns, not just project-wide configuration.

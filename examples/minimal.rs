@@ -19,28 +19,23 @@ impl Spider for MinimalSpider {
         Ok(StartRequests::Urls(vec!["https://example.com/"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        let heading = response
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        let heading = cx
             .css("h1::text")?
             .get()
             .unwrap_or_else(|| "Example Domain".to_string())
             .trim()
             .to_string();
 
-        output.add_item(MinimalItem {
+        cx.add_item(MinimalItem {
             title: heading.clone(),
-            url: response.url.to_string(),
-            status: response.status.as_u16(),
+            url: cx.url.to_string(),
+            status: cx.status.as_u16(),
             has_heading: !heading.is_empty(),
-        });
+        })
+        .await?;
 
-        Ok(output)
+        Ok(())
     }
 }
 

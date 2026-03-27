@@ -18,7 +18,7 @@ If your only goal is to enable built-in middleware in an app, the root crate is 
 
 ```toml
 [dependencies]
-spider-middleware = "0.3.6"
+spider-middleware = "0.4.0"
 ```
 
 ## Built-in middleware
@@ -104,7 +104,7 @@ In practice, request-shaping concerns belong in `process_request`, status/body-b
 
 ```toml
 [dependencies]
-spider-middleware = { version = "0.3.6", features = ["middleware-robots", "middleware-user-agent"] }
+spider-middleware = { version = "0.4.0", features = ["middleware-robots", "middleware-user-agent"] }
 ```
 
 When you depend on the root crate instead, enable the same feature names on `spider-lib`.

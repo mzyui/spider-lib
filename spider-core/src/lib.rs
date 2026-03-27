@@ -11,8 +11,8 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_core::{async_trait, CrawlerBuilder, Spider};
-//! use spider_util::{response::Response, error::SpiderError, item::ParseOutput};
+//! use spider_core::{async_trait, CrawlerBuilder, ParseContext, Spider};
+//! use spider_util::error::SpiderError;
 //!
 //! #[spider_macro::scraped_item]
 //! struct Item {
@@ -30,12 +30,8 @@
 //!         Ok(spider_core::StartRequests::Urls(vec!["https://example.com"]))
 //!     }
 //!
-//!     async fn parse(
-//!         &self,
-//!         _response: Response,
-//!         _state: &Self::State,
-//!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         Ok(ParseOutput::new())
+//!     async fn parse(&self, _cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+//!         Ok(())
 //!     }
 //! }
 //!
@@ -94,7 +90,7 @@ pub use spider_macro::scraped_item;
 
 pub use async_trait::async_trait;
 pub use dashmap::DashMap;
-pub use spider::{Spider, StartRequestIter, StartRequests};
+pub use spider::{ParseContext, Spider, StartRequestIter, StartRequests};
 pub use state::{
     ConcurrentMap, ConcurrentVec, Counter, Counter64, Flag, StateAccessMetrics, VisitedUrls,
 };
