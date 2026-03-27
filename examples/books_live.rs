@@ -25,29 +25,23 @@ impl Spider for BooksSpider {
         Ok(StartRequests::Urls(vec!["https://books.toscrape.com/"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        if !response.css(".product_main")?.is_empty() {
-            let title = response
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        if !cx.css(".product_main")?.is_empty() {
+            let title = cx
                 .css(".product_main h1::text")?
                 .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
-            let price = response
+            let price = cx
                 .css(".price_color::text")?
                 .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
-            let rating = response
+            let rating = cx
                 .css(".star-rating")?
                 .attrib("class")
                 .map(|class| {
@@ -64,7 +58,7 @@ impl Spider for BooksSpider {
             let mut reviews = String::new();
             let mut availability = String::new();
 
-            for row in response.css(".table.table-striped tr")? {
+            for row in cx.css(".table.table-striped tr")? {
                 let label = row
                     .css("th::text")?
                     .get()
@@ -87,7 +81,7 @@ impl Spider for BooksSpider {
                 }
             }
 
-            output.add_item(BookItem {
+            cx.add_item(BookItem {
                 title,
                 price,
                 rating,
@@ -96,24 +90,25 @@ impl Spider for BooksSpider {
                 tax,
                 reviews,
                 stock: String::new(),
-            });
+            })
+            .await?;
         } else {
-            for book in response.css("article.product_pod")? {
+            for book in cx.css("article.product_pod")? {
                 if let Some(book_link) = book.css("h3 a::attr(href)")?.get() {
-                    let book_url = response.url.join(&book_link)?;
+                    let book_url = cx.url.join(&book_link)?;
 
                     // Create a request to the book detail page
-                    output.add_request(Request::new(book_url));
+                    cx.add_request(Request::new(book_url)).await?;
                 }
             }
 
-            if let Some(next_href) = response.css(".next > a::attr(href)")?.get() {
-                let next_url = response.url.join(&next_href)?;
-                output.add_request(Request::new(next_url));
+            if let Some(next_href) = cx.css(".next > a::attr(href)")?.get() {
+                let next_url = cx.url.join(&next_href)?;
+                cx.add_request(Request::new(next_url)).await?;
             }
         }
 
-        Ok(output)
+        Ok(())
     }
 }
 
@@ -122,7 +117,6 @@ async fn main() -> Result<(), SpiderError> {
     let crawler = CrawlerBuilder::new(BooksSpider)
         .live_stats(true)
         .add_pipeline(CsvPipeline::new("output/books_live.csv")?)
-        .limit(50)
         .build()
         .await?;
     crawler.start_crawl().await?;

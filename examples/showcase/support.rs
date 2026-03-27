@@ -25,24 +25,24 @@ pub struct ShowcaseState {
 }
 
 impl ShowcaseState {
-    pub fn record_response(&self, response: &Response, title: &str) {
+    pub fn record_response(&self, cx: &ParseContext<'_, ShowcaseSpider>, title: &str) {
         self.access_metrics.record_access_start();
         self.access_metrics.record_read();
         self.access_metrics.record_write();
 
         self.pages_seen.inc();
-        self.total_bytes_seen.add(response.body.len() as u64);
+        self.total_bytes_seen.add(cx.body.len() as u64);
 
-        if response.cached {
+        if cx.cached {
             self.saw_cached_response.set(true);
         }
 
-        let url = response.url.to_string();
+        let url = cx.url.to_string();
         if !self.visited_urls.is_visited(&url) {
             self.visited_urls.mark(url);
         }
 
-        let status_key = response.status.as_u16().to_string();
+        let status_key = cx.status.as_u16().to_string();
         let next_count = self.status_counts.get(&status_key).unwrap_or(0) + 1;
         self.status_counts.insert(status_key, next_count);
 
@@ -81,38 +81,33 @@ impl Spider for ShowcaseSpider {
         ))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        let title = response
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        let title = cx
             .css("h1::text")?
             .get()
             .unwrap_or_else(|| "Example Domain".to_string())
             .trim()
             .to_string();
 
-        let url = response.url.to_string();
-        let first_visit = !state.visited_urls.is_visited(&url);
+        let url = cx.url.to_string();
+        let first_visit = !cx.state().visited_urls.is_visited(&url);
 
-        state.record_response(&response, &title);
+        cx.state().record_response(&cx, &title);
 
-        output.add_item(ShowcaseItem {
+        cx.add_item(ShowcaseItem {
             title,
             url,
-            status: response.status.as_u16(),
-            body_bytes: response.body.len(),
-            cached: response.cached,
-            pages_seen: state.pages_seen.get(),
-            total_bytes_seen: state.total_bytes_seen.get(),
+            status: cx.status.as_u16(),
+            body_bytes: cx.body.len(),
+            cached: cx.cached,
+            pages_seen: cx.state().pages_seen.get(),
+            total_bytes_seen: cx.state().total_bytes_seen.get(),
             first_visit,
-            note: Some(state.summary()),
-        });
+            note: Some(cx.state().summary()),
+        })
+        .await?;
 
-        Ok(output)
+        Ok(())
     }
 }
 

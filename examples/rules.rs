@@ -11,66 +11,52 @@ struct RuleRoutedItem {
 struct RuleSpider;
 
 impl RuleSpider {
-    async fn parse_listing(
-        &self,
-        response: Response,
-        _state: &(),
-    ) -> Result<ParseOutput<RuleRoutedItem>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        let title = response
+    async fn parse_listing(&self, cx: &ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        let title = cx
             .css("title::text")?
             .get()
             .unwrap_or_default()
             .trim()
             .to_string();
 
-        output.add_item(RuleRoutedItem {
+        cx.add_item(RuleRoutedItem {
             page_kind: "listing".to_string(),
             title,
-            url: response.url.to_string(),
-        });
+            url: cx.url.to_string(),
+        })
+        .await?;
 
-        Ok(output)
+        Ok(())
     }
 
-    async fn parse_book(
-        &self,
-        response: Response,
-        _state: &(),
-    ) -> Result<ParseOutput<RuleRoutedItem>, SpiderError> {
-        let mut output = ParseOutput::new();
-
-        let title = response
+    async fn parse_book(&self, cx: &ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        let title = cx
             .css(".product_main h1::text")?
             .get()
             .unwrap_or_default()
             .trim()
             .to_string();
 
-        output.add_item(RuleRoutedItem {
+        cx.add_item(RuleRoutedItem {
             page_kind: "book".to_string(),
             title,
-            url: response.url.to_string(),
-        });
+            url: cx.url.to_string(),
+        })
+        .await?;
 
-        Ok(output)
+        Ok(())
     }
 
-    async fn parse_default(
-        &self,
-        response: Response,
-        _state: &(),
-    ) -> Result<ParseOutput<RuleRoutedItem>, SpiderError> {
-        let mut output = ParseOutput::new();
-        output.add_item(RuleRoutedItem {
+    async fn parse_default(&self, cx: &ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        cx.add_item(RuleRoutedItem {
             page_kind: "default".to_string(),
-            title: response
+            title: cx
                 .discovery_rule_name()
                 .unwrap_or_else(|| "unmatched".to_string()),
-            url: response.url.to_string(),
-        });
-        Ok(output)
+            url: cx.url.to_string(),
+        })
+        .await?;
+        Ok(())
     }
 }
 
@@ -83,16 +69,12 @@ impl Spider for RuleSpider {
         Ok(StartRequests::Urls(vec!["https://books.toscrape.com"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
         route_by_rule!(
-            response,
-            "listing" => self.parse_listing(response, state).await,
-            "book" => self.parse_book(response, state).await,
-            _ => self.parse_default(response, state).await,
+            cx,
+            "listing" => self.parse_listing(&cx).await,
+            "book" => self.parse_book(&cx).await,
+            _ => self.parse_default(&cx).await,
         )
     }
 }

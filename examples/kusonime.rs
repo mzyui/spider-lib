@@ -23,59 +23,58 @@ impl Spider for KusonimeSpider {
         Ok(StartRequests::Urls(vec!["https://kusonime.com/"]))
     }
 
-    async fn parse(
-        &self,
-        response: Response,
-        _state: &Self::State,
-    ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let mut output = ParseOutput::new();
+    async fn parse(&self, cx: ParseContext<'_, Self>) -> Result<(), SpiderError> {
+        if !cx.css("#dl .smokeurlrh")?.is_empty() {
+            let title = clean_title(&first_text(&cx, "h1.jdlz")?);
+            let description = extract_description(&cx)?;
+            let metadata = extract_metadata(&cx)?;
+            let download_links = extract_download_links(&cx)?;
 
-        if !response.css("#dl .smokeurlrh")?.is_empty() {
-            let title = clean_title(&first_text(&response, "h1.jdlz")?);
-            let description = extract_description(&response)?;
-            let metadata = extract_metadata(&response)?;
-            let download_links = extract_download_links(&response)?;
-
-            output.add_item(KusonimeItem {
-                source_url: response.url.to_string(),
+            cx.add_item(KusonimeItem {
+                source_url: cx.url.to_string(),
                 title,
                 description,
                 metadata,
                 download_links,
-            });
+            })
+            .await?;
 
-            return Ok(output);
+            return Ok(());
         }
 
-        for entry in response.css(".kover .content h2.episodeye a[href]")? {
+        for entry in cx.css(".kover .content h2.episodeye a[href]")? {
             if let Some(href) = entry.attrib("href") {
-                output.add_request(Request::new(response.url.join(&href)?));
+                cx.add_request(Request::new(cx.url.join(&href)?)).await?;
             }
         }
 
-        if let Some(next_href) = response
+        if let Some(next_href) = cx
             .css(".pagination .nextpostslink[href], link[rel='next'][href]::attr(href)")?
             .get()
         {
-            output.add_request(Request::new(response.url.join(&next_href)?));
+            cx.add_request(Request::new(cx.url.join(&next_href)?))
+                .await?;
         }
 
-        Ok(output)
+        Ok(())
     }
 }
 
-fn first_text(response: &Response, selector: &str) -> Result<String, SpiderError> {
-    Ok(response
+fn first_text(
+    cx: &ParseContext<'_, KusonimeSpider>,
+    selector: &str,
+) -> Result<String, SpiderError> {
+    Ok(cx
         .css(&format!("{selector}::text"))?
         .get()
         .map(|text| normalize_whitespace(&text))
         .unwrap_or_default())
 }
 
-fn extract_description(response: &Response) -> Result<String, SpiderError> {
+fn extract_description(cx: &ParseContext<'_, KusonimeSpider>) -> Result<String, SpiderError> {
     let mut paragraphs = Vec::new();
 
-    for paragraph in response.css(".venutama p")? {
+    for paragraph in cx.css(".venutama p")? {
         if has_excluded_ancestor(&paragraph)? || paragraph.has_css("a[href]")? {
             continue;
         }
@@ -95,7 +94,7 @@ fn extract_description(response: &Response) -> Result<String, SpiderError> {
         return Ok(description);
     }
 
-    Ok(response
+    Ok(cx
         .css("meta[name='description']::attr(content)")?
         .get()
         .map(|text| normalize_whitespace(&text))
@@ -103,10 +102,10 @@ fn extract_description(response: &Response) -> Result<String, SpiderError> {
         .unwrap_or_default())
 }
 
-fn extract_metadata(response: &Response) -> Result<Value, SpiderError> {
+fn extract_metadata(cx: &ParseContext<'_, KusonimeSpider>) -> Result<Value, SpiderError> {
     let mut entries = Vec::new();
 
-    for paragraph in response.css(".info p")? {
+    for paragraph in cx.css(".info p")? {
         let full_text = normalize_whitespace(&paragraph.text_content().unwrap_or_default());
         let raw_label = paragraph
             .css("b::text")?
@@ -125,10 +124,10 @@ fn extract_metadata(response: &Response) -> Result<Value, SpiderError> {
     Ok(Value::Object(entries.into_iter().collect()))
 }
 
-fn extract_download_links(response: &Response) -> Result<Value, SpiderError> {
+fn extract_download_links(cx: &ParseContext<'_, KusonimeSpider>) -> Result<Value, SpiderError> {
     let mut resolutions = Vec::new();
 
-    for block in response.css("#dl .smokeurlrh")? {
+    for block in cx.css("#dl .smokeurlrh")? {
         let resolution = block
             .css("strong::text")?
             .get()
