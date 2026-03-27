@@ -1,6 +1,6 @@
 [package]
 name = "spider-lib"
-version = "3.0.3"
+version = "3.0.4"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "A Rust-based web scraping framework inspired by Scrapy (Python)."
@@ -88,11 +88,11 @@ quote = "1.0"
 
 [dependencies]
 
-spider-util = { version = "0.3.6", path = "spider-util" }
-spider-macro = { version = "0.1.13", path = "spider-macro" }
-spider-middleware = { version = "0.3.7", path = "spider-middleware", features = ["core"] }
-spider-core = { version = "2.0.3", path = "spider-core", default-features = false }
-spider-pipeline = { version = "0.3.8", path = "spider-pipeline" }
+spider-util = { version = "0.3.7", path = "spider-util" }
+spider-macro = { version = "0.1.14", path = "spider-macro" }
+spider-middleware = { version = "0.3.8", path = "spider-middleware", features = ["core"] }
+spider-core = { version = "2.0.4", path = "spider-core", default-features = false }
+spider-pipeline = { version = "0.3.9", path = "spider-pipeline" }
 
 
 [features]

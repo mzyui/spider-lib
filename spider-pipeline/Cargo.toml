@@ -1,6 +1,6 @@
 [package]
 name = "spider-pipeline"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2024"
 authors = ["mzyui <mzyui@proton.me>"]
 description = "Pipeline implementations for the spider-lib web scraping framework."
@@ -23,7 +23,7 @@ log.workspace = true
 seahash.workspace = true
 kanal.workspace = true
 
-spider-util = { version = "0.3.6", path = "../spider-util" }
+spider-util = { version = "0.3.7", path = "../spider-util" }
 
 [features]
 default = ["core"]
