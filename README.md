@@ -53,6 +53,9 @@ For most projects, the smoothest path is:
 Only drop to the lower-level crates when you need deeper runtime control or
 want to publish reusable extensions.
 
+If you are coming from Scrapy, start with the dedicated migration guide in
+[`MIGRATION.md`](MIGRATION.md) before porting an existing spider.
+
 ## Typed data workflow
 
 `#[scraped_item]` now generates typed schema metadata in addition to the
