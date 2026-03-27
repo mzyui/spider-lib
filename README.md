@@ -107,6 +107,7 @@ use spider_lib::prelude::*;
 struct Quote {
     text: String,
     author: String,
+    source_url: String,
 }
 
 struct QuotesSpider;
@@ -132,7 +133,17 @@ impl Spider for QuotesSpider {
                 .get()
                 .unwrap_or_default();
 
-            cx.add_item(Quote { text, author }).await?;
+            cx.add_item(Quote {
+                text,
+                author,
+                source_url: cx.url.to_string(),
+            })
+            .await?;
+        }
+
+        if let Some(next_href) = cx.css("li.next a::attr(href)")?.get() {
+            let next_url = cx.url.join(&next_href)?;
+            cx.add_request(Request::new(next_url)).await?;
         }
 
         Ok(())
@@ -141,7 +152,10 @@ impl Spider for QuotesSpider {
 
 #[tokio::main]
 async fn main() -> Result<(), SpiderError> {
-    let crawler = CrawlerBuilder::new(QuotesSpider).build().await?;
+    let crawler = CrawlerBuilder::new(QuotesSpider)
+        .log_level(LevelFilter::Info)
+        .build()
+        .await?;
     crawler.start_crawl().await
 }
 ```

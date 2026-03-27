@@ -93,6 +93,7 @@ spider-macro = { version = "0.1.13", path = "spider-macro" }
 spider-middleware = { version = "0.4.0", path = "spider-middleware", features = ["core"] }
 spider-core = { version = "3.0.0", path = "spider-core", default-features = false }
 spider-pipeline = { version = "0.4.0", path = "spider-pipeline" }
+log.workspace = true
 
 
 [features]
