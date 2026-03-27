@@ -19,6 +19,7 @@ http.workspace = true
 linkify.workspace = true
 once_cell.workspace = true
 parking_lot.workspace = true
+ego-tree.workspace = true
 psl.workspace = true
 reqwest.workspace = true
 rusqlite.workspace = true

@@ -2303,6 +2303,7 @@ dependencies = [
  "bytes",
  "csv",
  "dashmap 6.1.0",
+ "ego-tree",
  "http",
  "linkify",
  "once_cell",
