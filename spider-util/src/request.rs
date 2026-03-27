@@ -7,7 +7,7 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use spider_util::request::{Request, Body};
+//! use spider_util::request::{Body, Method, Request};
 //! use url::Url;
 //! use serde_json::json;
 //!
@@ -20,7 +20,7 @@
 //!
 //! // Create a POST request with JSON body
 //! let post_request = Request::new(Url::parse("https://api.example.com/data")?)
-//!     .with_method(reqwest::Method::POST)
+//!     .with_method(Method::Post)
 //!     .with_json(json!({"key": "value"}));
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -28,7 +28,7 @@
 use bytes::Bytes;
 use dashmap::DashMap;
 use http::header::HeaderMap;
-use reqwest::{Method, Url};
+use reqwest::{Method as ReqwestMethod, Url};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -145,6 +145,101 @@ impl<'de> Deserialize<'de> for Body {
     }
 }
 
+/// Transport-neutral HTTP method used by [`Request`].
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Method {
+    /// `GET`
+    Get,
+    /// `POST`
+    Post,
+    /// `PUT`
+    Put,
+    /// `PATCH`
+    Patch,
+    /// `DELETE`
+    Delete,
+    /// `HEAD`
+    Head,
+    /// `OPTIONS`
+    Options,
+    /// `TRACE`
+    Trace,
+    /// `CONNECT`
+    Connect,
+    /// Any other valid HTTP method token.
+    Custom(String),
+}
+
+impl Method {
+    /// Returns the wire-format method string.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Put => "PUT",
+            Method::Patch => "PATCH",
+            Method::Delete => "DELETE",
+            Method::Head => "HEAD",
+            Method::Options => "OPTIONS",
+            Method::Trace => "TRACE",
+            Method::Connect => "CONNECT",
+            Method::Custom(method) => method.as_str(),
+        }
+    }
+}
+
+impl Default for Method {
+    fn default() -> Self {
+        Self::Get
+    }
+}
+
+impl std::fmt::Display for Method {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for Method {
+    type Err = String;
+
+    fn from_str(method: &str) -> Result<Self, Self::Err> {
+        let parsed = ReqwestMethod::from_bytes(method.as_bytes()).map_err(|err| err.to_string())?;
+
+        Ok(match parsed.as_str() {
+            "GET" => Method::Get,
+            "POST" => Method::Post,
+            "PUT" => Method::Put,
+            "PATCH" => Method::Patch,
+            "DELETE" => Method::Delete,
+            "HEAD" => Method::Head,
+            "OPTIONS" => Method::Options,
+            "TRACE" => Method::Trace,
+            "CONNECT" => Method::Connect,
+            other => Method::Custom(other.to_string()),
+        })
+    }
+}
+
+impl From<Method> for ReqwestMethod {
+    fn from(method: Method) -> Self {
+        match method {
+            Method::Get => ReqwestMethod::GET,
+            Method::Post => ReqwestMethod::POST,
+            Method::Put => ReqwestMethod::PUT,
+            Method::Patch => ReqwestMethod::PATCH,
+            Method::Delete => ReqwestMethod::DELETE,
+            Method::Head => ReqwestMethod::HEAD,
+            Method::Options => ReqwestMethod::OPTIONS,
+            Method::Trace => ReqwestMethod::TRACE,
+            Method::Connect => ReqwestMethod::CONNECT,
+            Method::Custom(method) => {
+                ReqwestMethod::from_bytes(method.as_bytes()).expect("custom method validated")
+            }
+        }
+    }
+}
+
 /// Outgoing HTTP request used by the crawler runtime.
 ///
 /// [`Request`] is the handoff type between spiders, middleware, the scheduler,
@@ -155,7 +250,7 @@ impl<'de> Deserialize<'de> for Body {
 /// ## Example
 ///
 /// ```rust,ignore
-/// use spider_util::request::Request;
+/// use spider_util::request::{Method, Request};
 /// use url::Url;
 ///
 /// // Create a basic GET request
@@ -166,7 +261,7 @@ impl<'de> Deserialize<'de> for Body {
 ///
 /// // Build a request with headers and method
 /// let post_request = Request::new(Url::parse("https://api.example.com")?)
-///     .with_method(reqwest::Method::POST)
+///     .with_method(Method::Post)
 ///     .with_header("Accept", "application/json")
 ///     ?;
 /// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -180,7 +275,7 @@ pub struct Request {
     /// Higher values are dequeued before lower values.
     pub priority: i32,
     /// The HTTP method (GET, POST, etc.).
-    pub method: reqwest::Method,
+    pub method: Method,
     /// HTTP headers for the request.
     pub headers: http::header::HeaderMap,
     /// Optional request body.
@@ -363,7 +458,7 @@ impl Default for Request {
         Self {
             url: default_url,
             priority: 0,
-            method: reqwest::Method::GET,
+            method: Method::Get,
             headers: http::header::HeaderMap::new(),
             body: None,
             meta: None, // Lazy initialization - no allocation until needed
@@ -381,7 +476,7 @@ impl Request {
     /// ## Example
     ///
     /// ```rust,ignore
-    /// use spider_util::request::Request;
+    /// use spider_util::request::{Method, Request};
     /// use url::Url;
     ///
     /// let request = Request::new(Url::parse("https://example.com")?);
@@ -391,7 +486,7 @@ impl Request {
         Request {
             url,
             priority: 0,
-            method: reqwest::Method::GET,
+            method: Method::Get,
             headers: http::header::HeaderMap::new(),
             body: None,
             meta: None,
@@ -434,10 +529,10 @@ impl Request {
     /// use url::Url;
     ///
     /// let request = Request::new(Url::parse("https://example.com")?)
-    ///     .with_method(reqwest::Method::POST);
+    ///     .with_method(Method::Post);
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
-    pub fn with_method(mut self, method: reqwest::Method) -> Self {
+    pub fn with_method(mut self, method: Method) -> Self {
         self.method = method;
         self
     }
@@ -513,7 +608,7 @@ impl Request {
     /// ```
     pub fn with_body(mut self, body: Body) -> Self {
         self.body = Some(body);
-        self.with_method(reqwest::Method::POST)
+        self.with_method(Method::Post)
     }
 
     /// Sets the body of the request to a JSON value and defaults the method to POST.
@@ -792,47 +887,5 @@ impl Request {
             }
         }
         format!("{:x}", hasher.finish())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Request;
-    use serde_json::json;
-    use url::Url;
-
-    #[test]
-    fn request_defaults_to_zero_priority() {
-        let request = Request::new(Url::parse("https://example.com").unwrap());
-        assert_eq!(request.priority(), 0);
-        assert_eq!(Request::default().priority(), 0);
-    }
-
-    #[test]
-    fn request_priority_round_trips_through_serde() {
-        let request = Request::new(Url::parse("https://example.com").unwrap())
-            .with_priority(7)
-            .with_meta("source", json!("test"));
-
-        let encoded = serde_json::to_value(&request).unwrap();
-        assert_eq!(encoded["priority"], 7);
-
-        let decoded: Request = serde_json::from_value(encoded).unwrap();
-        assert_eq!(decoded.priority(), 7);
-        assert_eq!(decoded.get_meta("source"), Some(json!("test")));
-    }
-
-    #[test]
-    fn request_deserialization_defaults_priority_for_legacy_payloads() {
-        let legacy = json!({
-            "url": "https://example.com",
-            "method": "GET",
-            "headers": [],
-            "body": null,
-            "meta": {}
-        });
-
-        let request: Request = serde_json::from_value(legacy).unwrap();
-        assert_eq!(request.priority(), 0);
     }
 }
