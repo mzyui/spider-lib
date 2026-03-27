@@ -10,8 +10,8 @@
 //!
 //! ```toml
 //! [dependencies]
-//! spider-macro = "0.1.12"
-//! spider-util = "0.3.6"
+//! spider-macro = "0.1.13"
+//! spider-util = "0.4.0"
 //! serde = { version = "1.0", features = ["derive"] }
 //! serde_json = "1.0"
 //! ```
@@ -52,7 +52,7 @@ use syn::{Fields, ItemStruct, Type, parse_macro_input};
 ///
 /// ```toml
 /// [dependencies]
-/// spider-util = "0.3.6"
+/// spider-util = "0.4.0"
 /// serde = { version = "1.0", features = ["derive"] }
 /// serde_json = "1.0"
 /// ```
