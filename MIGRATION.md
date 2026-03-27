@@ -4,6 +4,8 @@
 
 This guide shows how to translate that mental model into the current `spider-lib` API.
 
+The recommended selector style in current `spider-lib` is the built-in Scrapy-like `.css(...)` API on [`Response`] and selector nodes. You no longer need to drop down to manual selector parsing for common HTML extraction.
+
 ## The short version
 
 If you already know Scrapy, the main translation is:
@@ -204,6 +206,40 @@ yield response.follow(next_href, callback=self.parse)
 ```rust,ignore
 let next_url = response.url.join(next_href)?;
 output.add_request(Request::new(next_url));
+```
+
+When the link came from `response.css(...)? .get()`, borrow the returned string:
+
+```rust,ignore
+if let Some(next_href) = response.css(".next a::attr(href)")?.get() {
+    let next_url = response.url.join(&next_href)?;
+    output.add_request(Request::new(next_url));
+}
+```
+
+## CSS selectors
+
+If you are coming from Scrapy, this is the closest mental model:
+
+- `response.css(".quote")?` returns a `SelectorList`
+- iterating that list yields selector nodes
+- `node.css(".text::text")?.get()` extracts the first text match
+- `node.css("a::attr(href)")?.get_all()` extracts multiple attribute values
+
+Supported suffixes in the built-in selector API:
+
+- `::text`
+- `::attr(name)`
+
+Example:
+
+```rust,ignore
+let title = response
+    .css("h1::text")?
+    .get()
+    .unwrap_or_default();
+
+let links = response.css("a::attr(href)")?.get_all();
 ```
 
 For custom requests, build them directly:

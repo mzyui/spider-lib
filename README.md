@@ -13,7 +13,7 @@ The workspace is split into small crates, but the root crate is the easiest plac
 
 ## Why this crate exists
 
-`spider-lib` is meant for projects that need more structure than a one-off `reqwest + scraper` script:
+`spider-lib` is meant for projects that need more structure than a one-off `reqwest` plus ad-hoc HTML parsing script:
 
 - multiple follow-up requests from each page
 - shared crawl state
@@ -152,6 +152,18 @@ async fn main() -> Result<(), SpiderError> {
 }
 ```
 
+## Builtin selectors
+
+The recommended parse API is the built-in Scrapy-like selector surface on [`Response`]:
+
+- `response.css(".quote")?` to select elements
+- `quote.css(".text::text")?.get()` to extract text
+- `response.css("a::attr(href)")?.get_all()` to extract attributes
+
+`get()` returns the first match as `Option<String>`, and `get_all()` collects all extracted values.
+
+`to_html()` still exists when you need lower-level DOM access, but most spiders should start with `.css(...)`.
+
 ## Run the examples
 
 The repository ships with maintained examples that you can run as-is:
@@ -208,7 +220,7 @@ At a high level:
 5. `Spider::parse` turns a `Response` into `ParseOutput`.
 6. Pipelines process emitted items.
 
-That separation is what makes the workspace easier to extend than a single-file scraper.
+That separation is what makes the workspace easier to extend than a single-file crawler script.
 
 ## Where to add behavior
 
