@@ -53,7 +53,7 @@ pub use spider_middleware::middleware::{Middleware, MiddlewareAction};
 /// Shared runtime data types and convenience helpers.
 pub use spider_util::{
     error::{PipelineError, SpiderError},
-    request::Request,
+    request::{Method, Request},
     response::{Link, LinkExtractOptions, LinkSource, LinkType, PageMetadata, Response},
     util::{ToSelector, create_dir, is_same_site, normalize_origin, validate_output_dir},
 };
