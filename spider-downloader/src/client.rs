@@ -47,6 +47,7 @@ impl Downloader for ReqwestClientDownloader {
         let meta = request.take_meta();
         let Request {
             url: request_url,
+            priority: request_priority,
             method,
             mut headers,
             body,
@@ -78,6 +79,7 @@ impl Downloader for ReqwestClientDownloader {
             headers: response_headers,
             body: response_body,
             request_url,
+            request_priority,
             meta,
             cached: false,
         })
