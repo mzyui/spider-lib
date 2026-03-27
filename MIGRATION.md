@@ -85,22 +85,19 @@ impl Spider for QuoteSpider {
         response: Response,
         _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        for quote in html.select(&".quote".to_selector()?) {
+        for quote in response.css(".quote")? {
             let text = quote
-                .select(&".text".to_selector()?)
-                .next()
-                .map(|node| node.text().collect::<String>())
+                .css(".text::text")?
+                .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
             let author = quote
-                .select(&".author".to_selector()?)
-                .next()
-                .map(|node| node.text().collect::<String>())
+                .css(".author::text")?
+                .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
@@ -108,12 +105,8 @@ impl Spider for QuoteSpider {
             output.add_item(QuoteItem { text, author });
         }
 
-        if let Some(next_href) = html
-            .select(&".next a[href]".to_selector()?)
-            .next()
-            .and_then(|node| node.attr("href"))
-        {
-            let next_url = response.url.join(next_href)?;
+        if let Some(next_href) = response.css(".next a::attr(href)")?.get() {
+            let next_url = response.url.join(&next_href)?;
             output.add_request(Request::new(next_url));
         }
 

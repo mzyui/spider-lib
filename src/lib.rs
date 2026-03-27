@@ -58,20 +58,17 @@
 //!         response: Response,
 //!         _state: &Self::State,
 //!     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-//!         let html = response.to_html()?;
 //!         let mut output = ParseOutput::new();
 //!
-//!         for quote in html.select(&".quote".to_selector()?) {
+//!         for quote in response.css(".quote")? {
 //!             let text = quote
-//!                 .select(&".text".to_selector()?)
-//!                 .next()
-//!                 .map(|node| node.text().collect::<String>())
+//!                 .css(".text::text")?
+//!                 .get()
 //!                 .unwrap_or_default();
 //!
 //!             let author = quote
-//!                 .select(&".author".to_selector()?)
-//!                 .next()
-//!                 .map(|node| node.text().collect::<String>())
+//!                 .css(".author::text")?
+//!                 .get()
 //!                 .unwrap_or_default();
 //!
 //!             output.add_item(Quote { text, author });
