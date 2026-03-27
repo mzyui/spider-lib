@@ -29,3 +29,4 @@ gha-creds-*.json
 AGENTS.md
 TODO.md
 docs/
+.codex*
