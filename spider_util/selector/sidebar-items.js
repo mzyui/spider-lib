@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["get_cached_selector","prewarm_cache"]};
+window.SIDEBAR_ITEMS = {"fn":["get_cached_selector","prewarm_cache"],"struct":["SelectorList","SelectorNode"]};
