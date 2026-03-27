@@ -28,7 +28,7 @@
 //! ```
 
 use crate::scheduler::Scheduler;
-use crate::spider::Spider;
+use crate::spider::{ParseContext, Spider};
 use crate::state::CrawlerState;
 use crate::stats::StatCollector;
 use crate::{
@@ -37,11 +37,177 @@ use crate::{
 };
 use kanal::{AsyncReceiver, AsyncSender};
 use log::{debug, error, info, trace, warn};
-use spider_util::item::{ParseOutput, ScrapedItem};
+use spider_util::error::SpiderError;
+use spider_util::item::{ParseOutput, ParseSink, ScrapedItem};
+use spider_util::request::Request;
 use spider_util::response::Response;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use tokio::time::Instant;
+
+struct RuntimeParseSink<S>
+where
+    S: Spider + 'static,
+    S::Item: ScrapedItem,
+{
+    scheduler: Arc<Scheduler>,
+    item_tx: AsyncSender<S::Item>,
+    state: Arc<CrawlerState>,
+    item_limit: Option<usize>,
+    stats: Arc<StatCollector>,
+}
+
+impl<S> RuntimeParseSink<S>
+where
+    S: Spider + 'static,
+    S::Item: ScrapedItem,
+{
+    fn new(
+        scheduler: Arc<Scheduler>,
+        item_tx: AsyncSender<S::Item>,
+        state: Arc<CrawlerState>,
+        item_limit: Option<usize>,
+        stats: Arc<StatCollector>,
+    ) -> Self {
+        Self {
+            scheduler,
+            item_tx,
+            state,
+            item_limit,
+            stats,
+        }
+    }
+
+    fn item_limit_shutdown(&self) -> bool {
+        self.state.item_limit_reached.load(Ordering::SeqCst)
+            && self.scheduler.is_shutting_down.load(Ordering::SeqCst)
+    }
+
+    async fn trigger_item_limit_shutdown(&self) {
+        if self
+            .state
+            .item_limit_reached
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            info!("Item limit reached, initiating scheduler shutdown");
+            if let Err(err) = self.scheduler.shutdown().await {
+                error!(
+                    "Failed to shut down scheduler after reaching item limit: {:?}",
+                    err
+                );
+            }
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<S> ParseSink<S::Item> for RuntimeParseSink<S>
+where
+    S: Spider + 'static,
+    S::Item: ScrapedItem,
+{
+    async fn add_item(&self, item: S::Item) -> Result<(), SpiderError> {
+        if self.scheduler.is_shutting_down.load(Ordering::SeqCst) {
+            if self.item_limit_shutdown() {
+                self.state
+                    .shutdown_dropped_items
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            return Ok(());
+        }
+
+        if let Some(limit) = self.item_limit
+            && self
+                .state
+                .admitted_items
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                    (current < limit).then_some(current + 1)
+                })
+                .is_err()
+        {
+            self.trigger_item_limit_shutdown().await;
+            self.state
+                .shutdown_dropped_items
+                .fetch_add(1, Ordering::AcqRel);
+            return Ok(());
+        }
+
+        if self.item_tx.is_closed() {
+            if !self.item_limit_shutdown() {
+                warn!("Item channel is closed, stopping item processing");
+            }
+            if self.item_limit.is_some() {
+                self.state.admitted_items.fetch_sub(1, Ordering::AcqRel);
+            }
+            if self.item_limit_shutdown() {
+                self.state
+                    .shutdown_dropped_items
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            return Ok(());
+        }
+
+        self.stats.record_current_item_preview(&item);
+        self.state.processing_items.fetch_add(1, Ordering::AcqRel);
+
+        if self.item_tx.send(item).await.is_err() {
+            if !self.item_limit_shutdown() {
+                error!("Failed to send item to processing channel");
+            }
+            self.state.processing_items.fetch_sub(1, Ordering::AcqRel);
+            if self.item_limit.is_some() {
+                self.state.admitted_items.fetch_sub(1, Ordering::AcqRel);
+            }
+            if self.item_limit_shutdown() {
+                self.state
+                    .shutdown_dropped_items
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            return Ok(());
+        }
+
+        self.stats.add_items_scraped(1);
+        if matches!(
+            self.item_limit,
+            Some(limit) if self.state.admitted_items.load(Ordering::Acquire) >= limit
+        ) {
+            self.trigger_item_limit_shutdown().await;
+        }
+
+        Ok(())
+    }
+
+    async fn add_request(&self, request: Request) -> Result<(), SpiderError> {
+        if self.scheduler.is_shutting_down.load(Ordering::SeqCst) {
+            if self.item_limit_shutdown() {
+                self.state
+                    .shutdown_skipped_requests
+                    .fetch_add(1, Ordering::AcqRel);
+            }
+            return Ok(());
+        }
+
+        match self.scheduler.enqueue_request(request).await {
+            Ok(()) => {
+                self.stats.increment_requests_enqueued();
+            }
+            Err(err) => {
+                if self.scheduler.is_shutting_down.load(Ordering::SeqCst) {
+                    if self.item_limit_shutdown() {
+                        self.state
+                            .shutdown_skipped_requests
+                            .fetch_add(1, Ordering::AcqRel);
+                    }
+                } else {
+                    error!("Failed to enqueue request: {:?}", err);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 fn spawn_parser_worker<S>(
@@ -52,7 +218,7 @@ fn spawn_parser_worker<S>(
     item_tx: AsyncSender<S::Item>,
     state: Arc<CrawlerState>,
     discovery_config: DiscoveryConfig,
-    output_batch_size: usize,
+    _output_batch_size: usize,
     item_limit: Option<usize>,
     stats: Arc<StatCollector>,
 ) where
@@ -77,27 +243,27 @@ fn spawn_parser_worker<S>(
             }
 
             let start_time = Instant::now();
-            let parse_output = spider.parse(response, &spider_state).await;
+            let output = ParseOutput::from_sink(Arc::new(RuntimeParseSink::<S>::new(
+                scheduler.clone(),
+                item_tx.clone(),
+                state.clone(),
+                item_limit,
+                stats.clone(),
+            )));
+            let cx = ParseContext::new(response, spider_state.as_ref(), output.clone());
+            let parse_output = spider.parse(cx).await;
             let elapsed = start_time.elapsed();
 
             // Record parsing time for performance metrics
             stats.record_parsing_time(elapsed);
 
             match parse_output {
-                Ok(mut outputs) => {
+                Ok(()) => {
                     if !discovery.requests.is_empty() {
-                        outputs.add_requests(discovery.requests);
+                        if let Err(err) = output.add_requests(discovery.requests).await {
+                            error!("Failed to emit discovery requests: {:?}", err);
+                        }
                     }
-                    process_crawl_outputs::<S>(
-                        outputs,
-                        scheduler.clone(),
-                        item_tx.clone(),
-                        state.clone(),
-                        output_batch_size,
-                        item_limit,
-                        stats.clone(),
-                    )
-                    .await;
                 }
                 Err(e) => error!("Spider parsing error: {:?}", e),
             }
@@ -117,7 +283,7 @@ pub fn spawn_parser_task<S>(
     item_tx: AsyncSender<S::Item>,
     parser_workers: usize,
     discovery_config: DiscoveryConfig,
-    output_batch_size: usize,
+    _output_batch_size: usize,
     item_backpressure_threshold: usize,
     item_limit: Option<usize>,
     stats: Arc<StatCollector>,
@@ -138,7 +304,7 @@ where
             item_tx.clone(),
             Arc::clone(&state),
             discovery_config.clone(),
-            output_batch_size,
+            _output_batch_size,
             item_limit,
             Arc::clone(&stats),
         );
@@ -168,250 +334,4 @@ where
         drop(internal_parse_tx);
         info!("Response parser coordinator finished");
     })
-}
-
-pub async fn process_crawl_outputs<S>(
-    outputs: ParseOutput<S::Item>,
-    scheduler: Arc<Scheduler>,
-    item_tx: AsyncSender<S::Item>,
-    state: Arc<CrawlerState>,
-    output_batch_size: usize,
-    item_limit: Option<usize>,
-    stats: Arc<StatCollector>,
-) where
-    S: Spider + 'static,
-    S::Item: ScrapedItem,
-{
-    let item_limit_shutdown = || {
-        state.item_limit_reached.load(Ordering::SeqCst)
-            && scheduler.is_shutting_down.load(Ordering::SeqCst)
-    };
-    let (items, requests) = outputs.into_parts();
-    let items_len = items.len();
-    let requests_len = requests.len();
-
-    if requests_len > 0 || items_len > 0 {
-        debug!(
-            "Processing {} requests and {} items from spider output.",
-            requests_len, items_len
-        );
-    } else {
-        trace!("Spider output contained no requests or items");
-    }
-
-    let mut item_error_total = 0;
-    let mut items_sent = 0usize;
-    let mut item_limit_hit = false;
-    let batch_size = output_batch_size.max(1);
-    let mut item_batch_len = 0usize;
-    for item in items {
-        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-            item_error_total += 1;
-            if item_limit_shutdown() {
-                state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
-            }
-            continue;
-        }
-
-        if let Some(limit) = item_limit
-            && state
-                .admitted_items
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                    (current < limit).then_some(current + 1)
-                })
-                .is_err()
-        {
-            item_limit_hit = true;
-            break;
-        }
-
-        item_batch_len += 1;
-        if item_tx.is_closed() {
-            if !item_limit_shutdown() {
-                warn!("Item channel is closed, stopping item processing");
-            }
-            item_error_total += 1;
-            if item_limit_shutdown() {
-                state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
-            }
-            if item_limit.is_some() {
-                state.admitted_items.fetch_sub(1, Ordering::AcqRel);
-            }
-        } else {
-            stats.record_current_item_preview(&item);
-            state.processing_items.fetch_add(1, Ordering::AcqRel);
-            if item_tx.send(item).await.is_err() {
-                if !item_limit_shutdown() {
-                    error!("Failed to send item to processing channel");
-                }
-                item_error_total += 1;
-                if item_limit_shutdown() {
-                    state.shutdown_dropped_items.fetch_add(1, Ordering::AcqRel);
-                }
-                state.processing_items.fetch_sub(1, Ordering::AcqRel);
-                if item_limit.is_some() {
-                    state.admitted_items.fetch_sub(1, Ordering::AcqRel);
-                }
-            } else {
-                items_sent += 1;
-                if matches!(item_limit, Some(limit) if state.admitted_items.load(Ordering::Acquire) >= limit)
-                {
-                    item_limit_hit = true;
-                }
-            }
-        }
-
-        if item_batch_len == batch_size {
-            item_batch_len = 0;
-        }
-    }
-
-    if items_sent > 0 {
-        stats.add_items_scraped(items_sent);
-    }
-
-    if item_error_total > 0 {
-        if item_limit_shutdown() {
-            debug!(
-                "Dropping {} of {} scraped items during item-limit shutdown",
-                item_error_total, items_len
-            );
-        } else {
-            warn!(
-                "Failed to send {} of {} scraped items.",
-                item_error_total, items_len
-            );
-        }
-    } else if items_sent > 0 {
-        debug!(
-            "Successfully sent {} scraped items for processing",
-            items_sent
-        );
-    }
-
-    if item_limit_hit
-        && state
-            .item_limit_reached
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .is_ok()
-    {
-        info!("Item limit reached, initiating scheduler shutdown");
-        if let Err(err) = scheduler.shutdown().await {
-            error!(
-                "Failed to shut down scheduler after reaching item limit: {:?}",
-                err
-            );
-        }
-    }
-
-    let mut request_error_total = 0;
-
-    if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-        request_error_total = requests_len;
-        if requests_len > 0 {
-            debug!("Scheduler is shutting down, skipping remaining requests");
-            if item_limit_shutdown() {
-                state
-                    .shutdown_skipped_requests
-                    .fetch_add(requests_len, Ordering::AcqRel);
-            }
-        }
-    } else {
-        let mut request_batch = Vec::with_capacity(batch_size);
-        for request in requests {
-            request_batch.push(request);
-            if request_batch.len() < batch_size {
-                continue;
-            }
-
-            if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                debug!("Scheduler is shutting down, skipping remaining requests");
-                request_error_total += request_batch.len();
-                if item_limit_shutdown() {
-                    state
-                        .shutdown_skipped_requests
-                        .fetch_add(request_batch.len(), Ordering::AcqRel);
-                }
-                request_batch.clear();
-                continue;
-            }
-
-            let current_batch = std::mem::take(&mut request_batch);
-            match scheduler.enqueue_requests_batch(current_batch).await {
-                Ok(enqueued) => {
-                    for _ in 0..enqueued {
-                        stats.increment_requests_enqueued();
-                    }
-                    request_error_total += batch_size.saturating_sub(enqueued);
-                }
-                Err(e) => {
-                    if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                        debug!("Scheduler is shutting down, skipping remaining requests");
-                        request_error_total += batch_size;
-                        if item_limit_shutdown() {
-                            state
-                                .shutdown_skipped_requests
-                                .fetch_add(batch_size, Ordering::AcqRel);
-                        }
-                        continue;
-                    }
-
-                    error!("Failed to enqueue request batch: {:?}", e);
-                    request_error_total += batch_size;
-                }
-            }
-        }
-
-        if !request_batch.is_empty() {
-            if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                debug!("Scheduler is shutting down, skipping remaining requests");
-                request_error_total += request_batch.len();
-                if item_limit_shutdown() {
-                    state
-                        .shutdown_skipped_requests
-                        .fetch_add(request_batch.len(), Ordering::AcqRel);
-                }
-            } else {
-                let remaining = request_batch.len();
-                match scheduler.enqueue_requests_batch(request_batch).await {
-                    Ok(enqueued) => {
-                        for _ in 0..enqueued {
-                            stats.increment_requests_enqueued();
-                        }
-                        request_error_total += remaining.saturating_sub(enqueued);
-                    }
-                    Err(e) => {
-                        if scheduler.is_shutting_down.load(Ordering::SeqCst) {
-                            debug!("Scheduler is shutting down, skipping remaining requests");
-                            request_error_total += remaining;
-                            if item_limit_shutdown() {
-                                state
-                                    .shutdown_skipped_requests
-                                    .fetch_add(remaining, Ordering::AcqRel);
-                            }
-                        } else {
-                            error!("Failed to enqueue request batch: {:?}", e);
-                            request_error_total += remaining;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if request_error_total > 0 {
-        if item_limit_shutdown() {
-            debug!(
-                "Skipping {} of {} requests during item-limit shutdown",
-                request_error_total, requests_len
-            );
-        } else {
-            warn!(
-                "Failed to enqueue {} of {} requests.",
-                request_error_total, requests_len
-            );
-        }
-    } else if requests_len > 0 {
-        debug!("Successfully enqueued all {} requests", requests_len);
-    }
 }
