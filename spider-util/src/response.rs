@@ -2,7 +2,7 @@
 //!
 //! [`Response`] wraps the downloaded body together with the final URL, status,
 //! headers, and request metadata. It also provides convenience methods for
-//! parsing HTML or JSON and for extracting links.
+//! Scrapy-like CSS extraction, parsing HTML or JSON, and extracting links.
 //!
 //! ## Example
 //!
@@ -24,8 +24,8 @@
 //!     cached: false,
 //! };
 //!
-//! // Parse as HTML
-//! let html = response.to_html().unwrap();
+//! // Extract text with the builtin selector API
+//! let heading = response.css("h1::text").unwrap().get();
 //!
 //! // Extract links from the response
 //! let links = response.links();
@@ -385,7 +385,8 @@ impl PageMetadata {
 /// and metadata carried over from the original request.
 ///
 /// The type is designed for parse-time ergonomics:
-/// - [`Response::to_html`] parses the body as HTML
+/// - [`Response::css`] exposes the recommended Scrapy-like selector API
+/// - [`Response::to_html`] remains available for lower-level DOM access
 /// - [`Response::json`] deserializes JSON payloads
 /// - [`Response::links`] and related helpers extract follow-up links
 /// - [`Response::to_request`] reconstructs the originating request context
@@ -408,10 +409,8 @@ impl PageMetadata {
 ///     cached: false,
 /// };
 ///
-/// // Parse the response body as HTML
-/// if let Ok(html) = response.to_html() {
-///     // Process HTML...
-/// }
+/// // Extract text using the builtin selector API
+/// let title = response.css("title::text").ok().and_then(|list| list.get());
 /// ```
 #[derive(Debug)]
 pub struct Response {
@@ -568,7 +567,10 @@ impl Response {
 
     /// Parses the response body as HTML.
     ///
-    /// Returns a [`scraper::Html`] document that can be queried using CSS selectors.
+    /// This method is kept for lower-level DOM access and interop. For most
+    /// spider code, prefer [`Response::css`] and the builtin selector API.
+    ///
+    /// Returns a [`scraper::Html`] document that can be queried directly.
     ///
     /// # Errors
     ///
@@ -599,8 +601,8 @@ impl Response {
 
     /// Lazily parses the response body as HTML.
     ///
-    /// Returns a closure that can be called when the HTML is actually needed.
-    /// This avoids parsing HTML for responses where it may not be used.
+    /// Returns a closure that can be called when lower-level HTML access is
+    /// actually needed. Most spiders should prefer [`Response::css`].
     ///
     /// # Errors
     ///
@@ -636,6 +638,28 @@ impl Response {
     /// Supports standard CSS selectors plus terminal extraction suffixes:
     /// - `::text`
     /// - `::attr(name)`
+    ///
+    /// ## Example
+    ///
+    /// ```rust,ignore
+    /// # use spider_util::response::Response;
+    /// # use reqwest::StatusCode;
+    /// # use bytes::Bytes;
+    /// # use url::Url;
+    /// # let response = Response {
+    /// #     url: Url::parse("https://example.com").unwrap(),
+    /// #     status: StatusCode::OK,
+    /// #     headers: http::header::HeaderMap::new(),
+    /// #     body: Bytes::from(r#"<html><body><h1>Hello</h1><a href="/next">Next</a></body></html>"#),
+    /// #     request_url: Url::parse("https://example.com").unwrap(),
+    /// #     request_priority: 0,
+    /// #     meta: None,
+    /// #     cached: false,
+    /// # };
+    /// let heading = response.css("h1::text")?.get().unwrap_or_default();
+    /// let next_href = response.css("a::attr(href)")?.get();
+    /// # Ok::<(), crate::error::SpiderError>(())
+    /// ```
     ///
     /// # Errors
     ///
