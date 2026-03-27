@@ -38,9 +38,10 @@ use spider_util::constants::{
 };
 use spider_util::error::SpiderError;
 use spider_util::request::Request;
-use std::collections::HashSet;
+use std::cmp::Ordering as CmpOrdering;
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 /// Internal messages sent to the scheduler's event loop.
 enum SchedulerMessage {
@@ -62,6 +63,45 @@ use spider_util::bloom::BloomFilter;
 
 use parking_lot::Mutex;
 use tokio::sync::Notify;
+
+#[derive(Debug, Clone)]
+struct ScheduledRequest {
+    request: Request,
+    priority: i32,
+    sequence: u64,
+}
+
+impl ScheduledRequest {
+    fn new(request: Request, sequence: u64) -> Self {
+        Self {
+            priority: request.priority(),
+            request,
+            sequence,
+        }
+    }
+}
+
+impl PartialEq for ScheduledRequest {
+    fn eq(&self, other: &Self) -> bool {
+        self.priority == other.priority && self.sequence == other.sequence
+    }
+}
+
+impl Eq for ScheduledRequest {}
+
+impl PartialOrd for ScheduledRequest {
+    fn partial_cmp(&self, other: &Self) -> Option<CmpOrdering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for ScheduledRequest {
+    fn cmp(&self, other: &Self) -> CmpOrdering {
+        self.priority
+            .cmp(&other.priority)
+            .then_with(|| other.sequence.cmp(&self.sequence))
+    }
+}
 
 /// Manages the crawl frontier and tracks visited request fingerprints.
 ///
@@ -86,7 +126,7 @@ use tokio::sync::Notify;
 /// duplicate, the LRU cache is consulted for confirmation.
 pub struct Scheduler {
     /// Queue of pending requests waiting to be processed.
-    queue: SegQueue<Request>,
+    queue: Mutex<BinaryHeap<ScheduledRequest>>,
     /// Cache of visited URL fingerprints with TTL-based eviction.
     visited: Cache<String, bool>,
     /// Bloom filter for fast preliminary duplicate detection.
@@ -103,6 +143,8 @@ pub struct Scheduler {
     pending: AtomicUsize,
     /// Queue of requests that could not be enqueued and were salvaged.
     salvaged: SegQueue<Request>,
+    /// Monotonic sequence used to keep FIFO ordering within the same priority.
+    sequence: AtomicU64,
     /// Flag indicating if the scheduler is shutting down.
     pub(crate) is_shutting_down: AtomicBool,
     /// Maximum number of pending requests before applying backpressure.
@@ -148,10 +190,11 @@ impl Scheduler {
         let output_capacity = (max_pending / 8).clamp(256, 2048);
         let (tx_out, rx_out) = bounded_async(output_capacity);
 
-        let queue: SegQueue<Request>;
+        let queue: Mutex<BinaryHeap<ScheduledRequest>>;
         let visited: Cache<String, bool>;
         let pending: AtomicUsize;
         let salvaged: SegQueue<Request>;
+        let sequence: AtomicU64;
 
         #[cfg(feature = "checkpoint")]
         {
@@ -163,10 +206,13 @@ impl Scheduler {
                     state.salvaged_requests.len(),
                 );
                 let pend = state.request_queue.len() + state.salvaged_requests.len();
-                queue = SegQueue::new();
+                let mut restored_queue = BinaryHeap::with_capacity(state.request_queue.len());
+                let mut next_sequence = 0_u64;
                 for request in state.request_queue {
-                    queue.push(request);
+                    restored_queue.push(ScheduledRequest::new(request, next_sequence));
+                    next_sequence += 1;
                 }
+                queue = Mutex::new(restored_queue);
 
                 visited = Cache::builder()
                     .max_capacity(VISITED_URL_CACHE_CAPACITY)
@@ -182,19 +228,21 @@ impl Scheduler {
                 for request in state.salvaged_requests {
                     salvaged.push(request);
                 }
+                sequence = AtomicU64::new(next_sequence);
             } else {
-                queue = SegQueue::new();
+                queue = Mutex::new(BinaryHeap::new());
                 visited = Cache::builder()
                     .max_capacity(DEFAULT_VISITED_CACHE_SIZE)
                     .build();
                 pending = AtomicUsize::new(0);
                 salvaged = SegQueue::new();
+                sequence = AtomicU64::new(0);
             }
         }
 
         #[cfg(not(feature = "checkpoint"))]
         {
-            queue = SegQueue::new();
+            queue = Mutex::new(BinaryHeap::new());
             visited = Cache::builder()
                 .max_capacity(VISITED_URL_CACHE_CAPACITY)
                 .time_to_idle(std::time::Duration::from_secs(VISITED_URL_CACHE_TTL_SECS))
@@ -202,6 +250,7 @@ impl Scheduler {
                 .build();
             pending = AtomicUsize::new(0);
             salvaged = SegQueue::new();
+            sequence = AtomicU64::new(0);
         }
 
         let buffer = Arc::new(Mutex::new(HashSet::new()));
@@ -221,6 +270,7 @@ impl Scheduler {
             tx,
             pending,
             salvaged,
+            sequence,
             is_shutting_down: AtomicBool::new(false),
             max_pending,
         });
@@ -263,7 +313,7 @@ impl Scheduler {
             }
 
             let request = if !tx_out.is_closed() && !self.is_idle() {
-                self.queue.pop()
+                self.pop_request()
             } else {
                 None
             };
@@ -305,14 +355,14 @@ impl Scheduler {
                 // Arc allows sharing without cloning; if this is the only reference, we can unwrap
                 let request = Arc::unwrap_or_clone(arc_request);
                 trace!("Enqueuing request: {}", request.url);
-                self.queue.push(request);
+                self.push_request(request);
                 self.pending.fetch_add(1, Ordering::AcqRel);
                 true
             }
             Ok(SchedulerMessage::EnqueueBatch(requests)) => {
                 let count = requests.len();
                 for request in requests {
-                    self.queue.push(Arc::unwrap_or_clone(request));
+                    self.push_request(Arc::unwrap_or_clone(request));
                 }
                 self.pending.fetch_add(count, Ordering::AcqRel);
                 true
@@ -320,7 +370,7 @@ impl Scheduler {
             Ok(SchedulerMessage::Requeue(arc_request)) => {
                 let request = Arc::unwrap_or_clone(arc_request);
                 trace!("Re-enqueuing request: {}", request.url);
-                self.queue.push(request);
+                self.push_request(request);
                 true
             }
             Ok(SchedulerMessage::MarkAsVisited(fingerprint)) => {
@@ -387,18 +437,20 @@ impl Scheduler {
         }
 
         let mut request_queue = std::collections::VecDeque::new();
-        let mut temp_requests = Vec::new();
+        let mut queue = self.queue.lock();
+        let mut temp_requests = Vec::with_capacity(queue.len());
 
-        while let Some(request) = self.queue.pop() {
-            temp_requests.push(request);
+        while let Some(scheduled) = queue.pop() {
+            request_queue.push_back(scheduled.request.clone());
+            temp_requests.push(scheduled);
         }
 
-        for request in temp_requests.into_iter() {
-            request_queue.push_back(request.clone());
-            if !self.is_shutting_down.load(Ordering::SeqCst) {
-                self.queue.push(request);
+        if !self.is_shutting_down.load(Ordering::SeqCst) {
+            for scheduled in temp_requests {
+                queue.push(scheduled);
             }
         }
+        drop(queue);
 
         let mut salvaged_requests = std::collections::VecDeque::new();
         let mut temp_salvaged = Vec::new();
@@ -751,5 +803,106 @@ impl Scheduler {
     #[inline]
     pub fn is_idle(&self) -> bool {
         self.is_empty()
+    }
+}
+
+impl Scheduler {
+    fn next_sequence(&self) -> u64 {
+        self.sequence.fetch_add(1, Ordering::AcqRel)
+    }
+
+    fn push_request(&self, request: Request) {
+        let scheduled = ScheduledRequest::new(request, self.next_sequence());
+        self.queue.lock().push(scheduled);
+    }
+
+    fn pop_request(&self) -> Option<Request> {
+        self.queue.lock().pop().map(|scheduled| scheduled.request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scheduler;
+    use spider_util::request::Request;
+    use url::Url;
+
+    fn request(url: &str, priority: i32) -> Request {
+        Request::new(Url::parse(url).unwrap()).with_priority(priority)
+    }
+
+    #[tokio::test]
+    async fn scheduler_prioritizes_higher_priority_requests() {
+        let (scheduler, rx) = Scheduler::new(None, 32);
+
+        scheduler
+            .enqueue_request(request("https://example.com/low", 0))
+            .await
+            .unwrap();
+        scheduler
+            .enqueue_request(request("https://example.com/high", 10))
+            .await
+            .unwrap();
+
+        let first = rx.recv().await.unwrap();
+        let second = rx.recv().await.unwrap();
+
+        assert_eq!(first.url.as_str(), "https://example.com/high");
+        assert_eq!(second.url.as_str(), "https://example.com/low");
+    }
+
+    #[tokio::test]
+    async fn scheduler_preserves_fifo_within_same_priority() {
+        let (scheduler, rx) = Scheduler::new(None, 32);
+
+        scheduler
+            .enqueue_request(request("https://example.com/first", 5))
+            .await
+            .unwrap();
+        scheduler
+            .enqueue_request(request("https://example.com/second", 5))
+            .await
+            .unwrap();
+
+        let first = rx.recv().await.unwrap();
+        let second = rx.recv().await.unwrap();
+
+        assert_eq!(first.url.as_str(), "https://example.com/first");
+        assert_eq!(second.url.as_str(), "https://example.com/second");
+    }
+
+    #[cfg(feature = "checkpoint")]
+    #[tokio::test]
+    async fn scheduler_snapshot_preserves_priority_order() {
+        let (scheduler, _rx) = Scheduler::new(None, 32);
+
+        scheduler
+            .enqueue_request(request("https://example.com/low", 0))
+            .await
+            .unwrap();
+        scheduler
+            .enqueue_request(request("https://example.com/high", 10))
+            .await
+            .unwrap();
+        scheduler
+            .enqueue_request(request("https://example.com/mid", 5))
+            .await
+            .unwrap();
+
+        let snapshot = scheduler.snapshot().await.unwrap();
+        let urls: Vec<_> = snapshot
+            .request_queue
+            .iter()
+            .map(|request| request.url.as_str().to_string())
+            .collect();
+
+        assert_eq!(
+            urls,
+            vec![
+                "https://example.com/high".to_string(),
+                "https://example.com/mid".to_string(),
+                "https://example.com/low".to_string()
+            ]
+        );
     }
 }
