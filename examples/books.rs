@@ -71,34 +71,26 @@ impl Spider for BooksSpider {
         state.increment_page_count();
         state.mark_url_visited(response.url.to_string());
 
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        if html
-            .select(&".product_main".to_selector()?)
-            .next()
-            .is_some()
-        {
-            let title = html
-                .select(&".product_main h1".to_selector()?)
-                .next()
-                .map(|e| e.text().collect::<String>())
+        if !response.css(".product_main")?.is_empty() {
+            let title = response
+                .css(".product_main h1::text")?
+                .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
-            let price = html
-                .select(&".price_color".to_selector()?)
-                .next()
-                .map(|e| e.text().collect::<String>())
+            let price = response
+                .css(".price_color::text")?
+                .get()
                 .unwrap_or_default()
                 .trim()
                 .to_string();
 
-            let rating = html
-                .select(&".star-rating".to_selector()?)
-                .next()
-                .and_then(|e| e.attr("class"))
+            let rating = response
+                .css(".star-rating")?
+                .attrib("class")
                 .map(|class| {
                     class
                         .split_whitespace()
@@ -113,21 +105,26 @@ impl Spider for BooksSpider {
             let mut reviews = String::new();
             let mut availability = String::new();
 
-            for row in html.select(&".table.table-striped tr".to_selector()?) {
-                if let (Some(label_elem), Some(value_elem)) = (
-                    row.select(&"th".to_selector()?).next(),
-                    row.select(&"td".to_selector()?).next(),
-                ) {
-                    let label = label_elem.text().collect::<String>().trim().to_lowercase();
-                    let value = value_elem.text().collect::<String>().trim().to_string();
+            for row in response.css(".table.table-striped tr")? {
+                let label = row
+                    .css("th::text")?
+                    .get()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_lowercase();
+                let value = row
+                    .css("td::text")?
+                    .get()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string();
 
-                    match label.as_str() {
-                        "upc" => upc = value,
-                        "tax" => tax = value,
-                        "number of reviews" => reviews = value,
-                        "availability" => availability = value,
-                        _ => {}
-                    }
+                match label.as_str() {
+                    "upc" => upc = value,
+                    "tax" => tax = value,
+                    "number of reviews" => reviews = value,
+                    "availability" => availability = value,
+                    _ => {}
                 }
             }
 
@@ -144,13 +141,9 @@ impl Spider for BooksSpider {
 
             state.increment_book_count();
         } else {
-            for book in html.select(&"article.product_pod".to_selector()?) {
-                if let Some(book_link) = book
-                    .select(&"h3 a".to_selector()?)
-                    .next()
-                    .and_then(|a| a.attr("href"))
-                {
-                    let book_url = response.url.join(book_link)?;
+            for book in response.css("article.product_pod")? {
+                if let Some(book_link) = book.css("h3 a::attr(href)")?.get() {
+                    let book_url = response.url.join(&book_link)?;
 
                     // Create a request to the book detail page
                     output.add_request(Request::new(book_url));
@@ -159,12 +152,8 @@ impl Spider for BooksSpider {
                 state.increment_book_count();
             }
 
-            if let Some(next_href) = html
-                .select(&".next > a[href]".to_selector()?)
-                .next()
-                .and_then(|a| a.attr("href"))
-            {
-                let next_url = response.url.join(next_href)?;
+            if let Some(next_href) = response.css(".next > a::attr(href)")?.get() {
+                let next_url = response.url.join(&next_href)?;
                 output.add_request(Request::new(next_url));
             }
         }

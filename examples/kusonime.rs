@@ -1,4 +1,3 @@
-use scraper::{ElementRef, Html};
 use serde_json::{Value, json};
 use spider_lib::prelude::*;
 
@@ -29,18 +28,13 @@ impl Spider for KusonimeSpider {
         response: Response,
         _state: &Self::State,
     ) -> Result<ParseOutput<Self::Item>, SpiderError> {
-        let html = response.to_html()?;
         let mut output = ParseOutput::new();
 
-        if html
-            .select(&"#dl .smokeurlrh".to_selector()?)
-            .next()
-            .is_some()
-        {
-            let title = clean_title(&first_text(&html, "h1.jdlz")?);
-            let description = extract_description(&html)?;
-            let metadata = extract_metadata(&html)?;
-            let download_links = extract_download_links(&html)?;
+        if !response.css("#dl .smokeurlrh")?.is_empty() {
+            let title = clean_title(&first_text(&response, "h1.jdlz")?);
+            let description = extract_description(&response)?;
+            let metadata = extract_metadata(&response)?;
+            let download_links = extract_download_links(&response)?;
 
             output.add_item(KusonimeItem {
                 source_url: response.url.to_string(),
@@ -53,46 +47,42 @@ impl Spider for KusonimeSpider {
             return Ok(output);
         }
 
-        for entry in html.select(&".kover .content h2.episodeye a[href]".to_selector()?) {
-            if let Some(href) = entry.attr("href") {
-                output.add_request(Request::new(response.url.join(href)?));
+        for entry in response.css(".kover .content h2.episodeye a[href]")? {
+            if let Some(href) = entry.attrib("href") {
+                output.add_request(Request::new(response.url.join(&href)?));
             }
         }
 
-        if let Some(next_href) = html
-            .select(&".pagination .nextpostslink[href], link[rel='next'][href]".to_selector()?)
-            .next()
-            .and_then(|node| node.attr("href"))
+        if let Some(next_href) = response
+            .css(".pagination .nextpostslink[href], link[rel='next'][href]::attr(href)")?
+            .get()
         {
-            output.add_request(Request::new(response.url.join(next_href)?));
+            output.add_request(Request::new(response.url.join(&next_href)?));
         }
 
         Ok(output)
     }
 }
 
-fn first_text(html: &Html, selector: &str) -> Result<String, SpiderError> {
-    Ok(html
-        .select(&selector.to_selector()?)
-        .next()
-        .map(|node| normalize_whitespace(&node.text().collect::<String>()))
+fn first_text(response: &Response, selector: &str) -> Result<String, SpiderError> {
+    Ok(response
+        .css(&format!("{selector}::text"))?
+        .get()
+        .map(|text| normalize_whitespace(&text))
         .unwrap_or_default())
 }
 
-fn extract_description(html: &Html) -> Result<String, SpiderError> {
+fn extract_description(response: &Response) -> Result<String, SpiderError> {
     let mut paragraphs = Vec::new();
-    let paragraph_selector = ".venutama p".to_selector()?;
-    let meta_description_selector = "meta[name='description']".to_selector()?;
 
-    for paragraph in html.select(&paragraph_selector) {
-        if has_excluded_ancestor(&paragraph)
-            || paragraph.select(&"a[href]".to_selector()?).next().is_some()
-        {
+    for paragraph in response.css(".venutama p")? {
+        if has_excluded_ancestor(&paragraph)? || paragraph.has_css("a[href]")? {
             continue;
         }
 
-        let text =
-            clean_description_text(&normalize_whitespace(&paragraph.text().collect::<String>()));
+        let text = clean_description_text(&normalize_whitespace(
+            &paragraph.text_content().unwrap_or_default(),
+        ));
         if text.is_empty() || text == "\u{a0}" || text.chars().count() < 80 {
             continue;
         }
@@ -105,24 +95,23 @@ fn extract_description(html: &Html) -> Result<String, SpiderError> {
         return Ok(description);
     }
 
-    Ok(html
-        .select(&meta_description_selector)
-        .next()
-        .and_then(|node| node.attr("content"))
-        .map(normalize_whitespace)
+    Ok(response
+        .css("meta[name='description']::attr(content)")?
+        .get()
+        .map(|text| normalize_whitespace(&text))
         .map(|text| clean_description_text(&text))
         .unwrap_or_default())
 }
 
-fn extract_metadata(html: &Html) -> Result<Value, SpiderError> {
+fn extract_metadata(response: &Response) -> Result<Value, SpiderError> {
     let mut entries = Vec::new();
 
-    for paragraph in html.select(&".info p".to_selector()?) {
-        let full_text = normalize_whitespace(&paragraph.text().collect::<String>());
+    for paragraph in response.css(".info p")? {
+        let full_text = normalize_whitespace(&paragraph.text_content().unwrap_or_default());
         let raw_label = paragraph
-            .select(&"b".to_selector()?)
-            .next()
-            .map(|node| normalize_whitespace(&node.text().collect::<String>()))
+            .css("b::text")?
+            .get()
+            .map(|text| normalize_whitespace(&text))
             .unwrap_or_default();
         let raw_label = clean_metadata_part(&raw_label);
         let label = normalize_metadata_key(&raw_label);
@@ -136,20 +125,20 @@ fn extract_metadata(html: &Html) -> Result<Value, SpiderError> {
     Ok(Value::Object(entries.into_iter().collect()))
 }
 
-fn extract_download_links(html: &Html) -> Result<Value, SpiderError> {
+fn extract_download_links(response: &Response) -> Result<Value, SpiderError> {
     let mut resolutions = Vec::new();
 
-    for block in html.select(&"#dl .smokeurlrh".to_selector()?) {
+    for block in response.css("#dl .smokeurlrh")? {
         let resolution = block
-            .select(&"strong".to_selector()?)
-            .next()
-            .map(|node| normalize_whitespace(&node.text().collect::<String>()))
+            .css("strong::text")?
+            .get()
+            .map(|text| normalize_whitespace(&text))
             .unwrap_or_default();
 
         let mut mirrors = Vec::new();
-        for link in block.select(&"a[href]".to_selector()?) {
-            let provider = normalize_whitespace(&link.text().collect::<String>());
-            let url = link.attr("href").unwrap_or_default().trim().to_string();
+        for link in block.css("a[href]")? {
+            let provider = normalize_whitespace(&link.text_content().unwrap_or_default());
+            let url = link.attrib("href").unwrap_or_default().trim().to_string();
 
             if !provider.is_empty() && !url.is_empty() {
                 mirrors.push(json!({
@@ -287,29 +276,10 @@ fn find_download_marker(input: &str) -> Option<usize> {
         .min()
 }
 
-fn has_excluded_ancestor(element: &ElementRef<'_>) -> bool {
-    element
-        .ancestors()
-        .filter_map(ElementRef::wrap)
-        .any(|ancestor| {
-            has_class_token(&ancestor, "info")
-                || has_class_token(&ancestor, "dlbodz")
-                || has_class_token(&ancestor, "infolink")
-                || has_class_token(&ancestor, "socialshare")
-                || has_class_token(&ancestor, "tagser")
-                || has_class_token(&ancestor, "kategoz")
-                || has_class_token(&ancestor, "rtd")
-                || ancestor.attr("id") == Some("dl")
-                || ancestor.attr("id") == Some("dl-notif")
-        })
-}
-
-fn has_class_token(element: &ElementRef<'_>, token: &str) -> bool {
-    element.attr("class").is_some_and(|classes| {
-        classes
-            .split_whitespace()
-            .any(|class_name| class_name == token)
-    })
+fn has_excluded_ancestor(element: &SelectorNode) -> Result<bool, SpiderError> {
+    element.has_ancestor(
+        ".info, .dlbodz, .infolink, .socialshare, .tagser, .kategoz, .rtd, #dl, #dl-notif",
+    )
 }
 
 #[tokio::main]
